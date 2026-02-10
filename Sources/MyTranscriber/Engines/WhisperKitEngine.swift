@@ -11,13 +11,88 @@ final class WhisperKitEngine: TranscriptionEngine {
     }
 
     func setup(model: String) async throws {
-        let whisper = try await WhisperKit(
-            model: model,
-            verbose: true,
-            logLevel: .info,
-            download: true
+        // Use cached model folder if available, otherwise download
+        let modelFolder = Self.findCachedModelFolder(for: model)
+        NSLog("[WhisperKitEngine] Model folder: \(modelFolder ?? "none, will download")")
+
+        // Use cpuAndGPU to avoid slow ANE compilation
+        let computeOptions = ModelComputeOptions(
+            melCompute: .cpuAndGPU,
+            audioEncoderCompute: .cpuAndGPU,
+            textDecoderCompute: .cpuAndGPU,
+            prefillCompute: .cpuAndGPU
         )
+
+        let whisper: WhisperKit
+        if let modelFolder {
+            whisper = try await WhisperKit(
+                modelFolder: modelFolder,
+                computeOptions: computeOptions,
+                verbose: true,
+                logLevel: .info,
+                load: true,
+                download: false
+            )
+        } else {
+            whisper = try await WhisperKit(
+                model: model,
+                computeOptions: computeOptions,
+                verbose: true,
+                logLevel: .info,
+                load: true,
+                download: true
+            )
+        }
         self.whisperKit = whisper
+    }
+
+    /// Stable model storage path under Application Support.
+    private static var appModelBaseDir: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return appSupport.appendingPathComponent("MyTranscriber/Models")
+    }
+
+    /// Search for a cached model folder. First checks our stable App Support path,
+    /// then known HuggingFace download locations.
+    private static func findCachedModelFolder(for model: String) -> String? {
+        let modelDirName = "openai_whisper-\(model)"
+        let fm = FileManager.default
+        let homeDir = fm.homeDirectoryForCurrentUser
+
+        // Priority 1: Our stable Application Support path
+        let stablePath = appModelBaseDir.appendingPathComponent(modelDirName)
+        if fm.fileExists(atPath: stablePath.appendingPathComponent("AudioEncoder.mlmodelc").path) {
+            return stablePath.path
+        }
+
+        // Priority 2: Known download locations
+        let searchPaths = [
+            homeDir.appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml"),
+            homeDir.appendingPathComponent("Library/Application Support/MacWhisper/models/whisperkit/models/argmaxinc/whisperkit-coreml"),
+        ]
+
+        for basePath in searchPaths {
+            let candidateDir = basePath.appendingPathComponent(modelDirName)
+            if fm.fileExists(atPath: candidateDir.appendingPathComponent("AudioEncoder.mlmodelc").path) {
+                // Copy to stable path for consistent CoreML cache
+                copyToStablePath(from: candidateDir, to: stablePath)
+                return stablePath.path
+            }
+        }
+        return nil
+    }
+
+    /// Copy model files to the stable Application Support path.
+    private static func copyToStablePath(from source: URL, to destination: URL) {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: destination.path) else { return }
+        do {
+            try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.copyItem(at: source, to: destination)
+            NSLog("[WhisperKitEngine] Copied model to stable path: \(destination.path)")
+        } catch {
+            NSLog("[WhisperKitEngine] Failed to copy model to stable path: \(error)")
+        }
     }
 
     func startStreaming(
@@ -35,6 +110,8 @@ final class WhisperKitEngine: TranscriptionEngine {
         let decodingOptions = DecodingOptions(
             task: .transcribe,
             language: language,
+            skipSpecialTokens: true,
+            withoutTimestamps: true,
             chunkingStrategy: .vad
         )
 
@@ -51,11 +128,13 @@ final class WhisperKitEngine: TranscriptionEngine {
             useVAD: true
         ) { oldState, newState in
             let confirmedText = newState.confirmedSegments
-                .map { $0.text.trimmingCharacters(in: .whitespaces) }
+                .map { Self.cleanSegmentText($0.text) }
+                .filter { !$0.isEmpty }
                 .joined(separator: "\n")
 
             let unconfirmedText = newState.unconfirmedSegments
-                .map { $0.text.trimmingCharacters(in: .whitespaces) }
+                .map { Self.cleanSegmentText($0.text) }
+                .filter { !$0.isEmpty }
                 .joined(separator: "\n")
 
             let state = TranscriptionState(
@@ -82,6 +161,22 @@ final class WhisperKitEngine: TranscriptionEngine {
             await stopStreaming()
         }
         whisperKit = nil
+    }
+}
+
+extension WhisperKitEngine {
+    /// Remove special tokens, timestamps, and invalid characters from segment text.
+    static func cleanSegmentText(_ text: String) -> String {
+        var cleaned = text
+        // Remove any remaining special tokens like <|...|>
+        cleaned = cleaned.replacingOccurrences(
+            of: "<\\|[^|]*\\|>",
+            with: "",
+            options: .regularExpression
+        )
+        // Remove Unicode replacement characters
+        cleaned = cleaned.replacingOccurrences(of: "\u{FFFD}", with: "")
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

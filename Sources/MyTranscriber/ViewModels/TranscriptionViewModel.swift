@@ -21,7 +21,7 @@ final class TranscriptionViewModel: ObservableObject {
 
     init(
         engine: TranscriptionEngine = WhisperKitEngine(),
-        modelName: String = "large-v3-turbo"
+        modelName: String = "large-v3-v20240930_turbo"
     ) {
         self.service = TranscriptionService(engine: engine)
         self.modelName = modelName
@@ -29,11 +29,14 @@ final class TranscriptionViewModel: ObservableObject {
 
     func loadModel() async {
         modelState = .loading
+        NSLog("[MyTranscriber] Loading model: \(modelName)")
         do {
             try await service.prepare(model: modelName)
             modelState = .ready
+            NSLog("[MyTranscriber] Model ready")
         } catch {
             modelState = .error(error.localizedDescription)
+            NSLog("[MyTranscriber] Model load error: \(error)")
         }
     }
 
@@ -84,14 +87,19 @@ final class TranscriptionViewModel: ObservableObject {
     // MARK: - Private
 
     private func startRecording() {
-        guard modelState == .ready else { return }
+        guard modelState == .ready else {
+            NSLog("[MyTranscriber] Cannot record: model state = \(modelState)")
+            return
+        }
         isRecording = true
+        NSLog("[MyTranscriber] Starting recording, language: \(currentLanguage.rawValue)")
 
         Task {
             do {
                 try await service.startTranscription(
                     language: currentLanguage.rawValue
                 ) { [weak self] state in
+                    NSLog("[MyTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         self.confirmedText = state.confirmedText
@@ -99,6 +107,7 @@ final class TranscriptionViewModel: ObservableObject {
                     }
                 }
             } catch {
+                NSLog("[MyTranscriber] Recording error: \(error)")
                 isRecording = false
             }
         }
