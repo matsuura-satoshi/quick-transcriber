@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash(swift build *)",
+      "Bash(swift test *)",
+      "Bash(swift package *)",
+      "Bash(swift run *)",
+      "Bash(xcodebuild *)",
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git branch *)",
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git switch *)",
+      "Bash(git merge *)",
+      "Bash(git fetch *)",
+      "Bash(git remote *)",
+      "Bash(git tag *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(which *)",
+      "Bash(brew *)",
+      "Bash(open *)",
+      "WebFetch",
+      "WebSearch"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git rebase *)",
+      "Bash(git reset *)",
+      "Bash(rm *)",
+      "Bash(gh *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(sudo *)"
+    ]
+  }
+}
