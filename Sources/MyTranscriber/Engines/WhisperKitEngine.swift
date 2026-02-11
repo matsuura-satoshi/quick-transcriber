@@ -1,19 +1,19 @@
 import Foundation
-import WhisperKit
 
 public final class WhisperKitEngine: TranscriptionEngine {
-    private var whisperKit: WhisperKit?
-    private var streamTranscriber: AudioStreamTranscriber?
+    private let provider: WhisperKitProviding
     private var _isStreaming = false
 
-    public init() {}
+    public init(provider: WhisperKitProviding? = nil) {
+        self.provider = provider ?? DefaultWhisperKitProvider()
+    }
 
     public var isStreaming: Bool {
         get async { _isStreaming }
     }
 
     public func setup(model: String) async throws {
-        self.whisperKit = try await WhisperKitModelLoader.createWhisperKit(model: model)
+        try await provider.setup(model: model)
     }
 
     public func startStreaming(
@@ -21,76 +21,35 @@ public final class WhisperKitEngine: TranscriptionEngine {
         parameters: TranscriptionParameters = .default,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
-        guard let whisperKit else {
-            throw WhisperKitEngineError.notInitialized
-        }
-
-        guard let tokenizer = whisperKit.tokenizer else {
-            throw WhisperKitEngineError.tokenizerNotAvailable
-        }
-
-        let decodingOptions = DecodingOptions(
-            task: .transcribe,
+        _isStreaming = true
+        try await provider.startStreamTranscription(
             language: language,
-            temperature: parameters.temperature,
-            temperatureFallbackCount: parameters.temperatureFallbackCount,
-            sampleLength: parameters.sampleLength,
-            skipSpecialTokens: true,
-            withoutTimestamps: true,
-            compressionRatioThreshold: parameters.compressionRatioThreshold,
-            logProbThreshold: parameters.logProbThreshold,
-            firstTokenLogProbThreshold: parameters.firstTokenLogProbThreshold,
-            noSpeechThreshold: parameters.noSpeechThreshold,
-            concurrentWorkerCount: parameters.concurrentWorkerCount,
-            chunkingStrategy: .vad
-        )
-
-        let transcriber = AudioStreamTranscriber(
-            audioEncoder: whisperKit.audioEncoder,
-            featureExtractor: whisperKit.featureExtractor,
-            segmentSeeker: whisperKit.segmentSeeker,
-            textDecoder: whisperKit.textDecoder,
-            tokenizer: tokenizer,
-            audioProcessor: whisperKit.audioProcessor,
-            decodingOptions: decodingOptions,
-            requiredSegmentsForConfirmation: parameters.requiredSegmentsForConfirmation,
-            silenceThreshold: parameters.silenceThreshold,
-            compressionCheckWindow: parameters.compressionCheckWindow,
-            useVAD: parameters.useVAD
-        ) { oldState, newState in
-            let confirmedText = newState.confirmedSegments
-                .map { Self.cleanSegmentText($0.text) }
+            parameters: parameters
+        ) { confirmed, unconfirmed in
+            let confirmedText = confirmed
+                .map { Self.cleanSegmentText($0) }
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
-
-            let unconfirmedText = newState.unconfirmedSegments
-                .map { Self.cleanSegmentText($0.text) }
+            let unconfirmedText = unconfirmed
+                .map { Self.cleanSegmentText($0) }
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
-
-            let state = TranscriptionState(
+            onStateChange(TranscriptionState(
                 confirmedText: confirmedText,
                 unconfirmedText: unconfirmedText,
-                isRecording: newState.isRecording
-            )
-            onStateChange(state)
+                isRecording: true
+            ))
         }
-
-        self.streamTranscriber = transcriber
-        self._isStreaming = true
-        try await transcriber.startStreamTranscription()
     }
 
     public func stopStreaming() async {
-        await streamTranscriber?.stopStreamTranscription()
-        self.streamTranscriber = nil
-        self._isStreaming = false
+        await provider.stopStreamTranscription()
+        _isStreaming = false
     }
 
     public func cleanup() {
         Task { [weak self] in
             await self?.stopStreaming()
-            self?.whisperKit = nil
         }
     }
 }
