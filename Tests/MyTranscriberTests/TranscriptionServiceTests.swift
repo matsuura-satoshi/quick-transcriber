@@ -72,4 +72,52 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(engine.cleanupCalled)
         XCTAssertFalse(service.isReady)
     }
+
+    // MARK: - エッジケース
+
+    func testDoubleStartThrowsAlreadyStreaming() async throws {
+        let engine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: engine)
+
+        try await service.prepare(model: "test-model")
+        try await service.startTranscription(language: "en") { _ in }
+
+        do {
+            try await service.startTranscription(language: "en") { _ in }
+            XCTFail("Expected alreadyStreaming error")
+        } catch let error as TranscriptionServiceError {
+            XCTAssertEqual(error, .alreadyStreaming)
+        } catch {
+            XCTFail("Unexpected error type: \(error)")
+        }
+    }
+
+    func testStopWithoutStartIsSafe() async {
+        let engine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: engine)
+
+        // stopTranscription on a non-started service should not crash
+        await service.stopTranscription()
+        XCTAssertTrue(engine.stopStreamingCalled)
+    }
+
+    func testCleanupThenStartThrows() async throws {
+        let engine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: engine)
+
+        try await service.prepare(model: "test-model")
+        service.cleanup()
+
+        do {
+            try await service.startTranscription(language: "en") { _ in }
+            XCTFail("Expected error after cleanup")
+        } catch let error as TranscriptionServiceError {
+            XCTAssertEqual(error, .engineNotReady)
+        }
+    }
+
+    func testServiceErrorDescriptions() {
+        XCTAssertNotNil(TranscriptionServiceError.engineNotReady.errorDescription)
+        XCTAssertNotNil(TranscriptionServiceError.alreadyStreaming.errorDescription)
+    }
 }
