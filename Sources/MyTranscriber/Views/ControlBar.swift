@@ -6,6 +6,8 @@ struct ControlBar: View {
     let modelState: ModelState
     let onToggleRecording: () -> Void
     let onSwitchLanguage: (Language) -> Void
+    let onCopyAll: () -> Void
+    let onExport: () -> Void
     let onClear: () -> Void
 
     var body: some View {
@@ -13,6 +15,8 @@ struct ControlBar: View {
             recordButton
             languagePicker
             Spacer()
+            copyAllButton
+            exportButton
             clearButton
         }
         .padding(.horizontal)
@@ -44,6 +48,24 @@ struct ControlBar: View {
         .frame(width: 200)
     }
 
+    private var copyAllButton: some View {
+        Button(action: onCopyAll) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.on.doc")
+                Text("Copy")
+            }
+        }
+    }
+
+    private var exportButton: some View {
+        Button(action: onExport) {
+            HStack(spacing: 6) {
+                Image(systemName: "square.and.arrow.up")
+                Text("Export")
+            }
+        }
+    }
+
     private var clearButton: some View {
         Button(action: onClear) {
             HStack(spacing: 6) {
@@ -51,6 +73,5 @@ struct ControlBar: View {
                 Text("Clear")
             }
         }
-        .keyboardShortcut(.delete, modifiers: .command)
     }
 }

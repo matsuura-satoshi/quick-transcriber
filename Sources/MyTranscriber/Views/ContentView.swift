@@ -1,9 +1,11 @@
 import SwiftUI
 
-struct ContentView: View {
+public struct ContentView: View {
     @StateObject private var viewModel = TranscriptionViewModel()
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         VStack(spacing: 0) {
             statusBar
             Divider()
@@ -15,12 +17,35 @@ struct ContentView: View {
                 modelState: viewModel.modelState,
                 onToggleRecording: { viewModel.toggleRecording() },
                 onSwitchLanguage: { viewModel.switchLanguage($0) },
+                onCopyAll: { viewModel.copyAllText() },
+                onExport: { viewModel.exportText() },
                 onClear: { viewModel.clearText() }
             )
         }
+        .navigationTitle("MyTranscriber")
         .frame(minWidth: 600, minHeight: 400)
         .task {
             await viewModel.loadModel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuCopyAll"))) { _ in
+            viewModel.copyAllText()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuExport"))) { _ in
+            viewModel.exportText()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuClear"))) { _ in
+            viewModel.clearText()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuIncreaseFontSize"))) { _ in
+            viewModel.increaseFontSize()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuDecreaseFontSize"))) { _ in
+            viewModel.decreaseFontSize()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuIsRecordingQuery"))) { notification in
+            if let callback = notification.userInfo?["callback"] as? (Bool) -> Void {
+                callback(viewModel.isRecording)
+            }
         }
     }
 
@@ -44,6 +69,7 @@ struct ContentView: View {
                     .foregroundStyle(.red)
             }
             Spacer()
+            fontSizeControls
             if viewModel.isRecording {
                 Label("Recording", systemImage: "waveform")
                     .foregroundStyle(.red)
@@ -54,10 +80,35 @@ struct ContentView: View {
         .font(.caption)
     }
 
+    private var fontSizeControls: some View {
+        HStack(spacing: 4) {
+            Button(action: { viewModel.decreaseFontSize() }) {
+                Text("A-")
+                    .font(.caption2)
+                    .frame(width: 24, height: 18)
+            }
+            .buttonStyle(.borderless)
+
+            Text("\(Int(viewModel.fontSize))pt")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 30)
+
+            Button(action: { viewModel.increaseFontSize() }) {
+                Text("A+")
+                    .font(.caption2)
+                    .frame(width: 24, height: 18)
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.trailing, 8)
+    }
+
     private var transcriptionArea: some View {
-        TranscriptionView(
+        TranscriptionTextView(
             confirmedText: viewModel.confirmedText,
-            unconfirmedText: viewModel.unconfirmedText
+            unconfirmedText: viewModel.unconfirmedText,
+            fontSize: viewModel.fontSize
         )
         .frame(maxHeight: .infinity)
     }

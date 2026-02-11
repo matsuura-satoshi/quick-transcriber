@@ -1,10 +1,10 @@
 import Foundation
 
-enum TranscriptionServiceError: LocalizedError {
+public enum TranscriptionServiceError: LocalizedError {
     case engineNotReady
     case alreadyStreaming
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .engineNotReady:
             return "Transcription engine is not ready."
@@ -14,21 +14,22 @@ enum TranscriptionServiceError: LocalizedError {
     }
 }
 
-final class TranscriptionService {
+public final class TranscriptionService {
     private let engine: TranscriptionEngine
-    private(set) var isReady = false
+    public private(set) var isReady = false
 
-    init(engine: TranscriptionEngine) {
+    public init(engine: TranscriptionEngine) {
         self.engine = engine
     }
 
-    func prepare(model: String) async throws {
+    public func prepare(model: String) async throws {
         try await engine.setup(model: model)
         isReady = true
     }
 
-    func startTranscription(
+    public func startTranscription(
         language: String,
+        parameters: TranscriptionParameters = .default,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         guard isReady else {
@@ -37,14 +38,14 @@ final class TranscriptionService {
         guard await !engine.isStreaming else {
             throw TranscriptionServiceError.alreadyStreaming
         }
-        try await engine.startStreaming(language: language, onStateChange: onStateChange)
+        try await engine.startStreaming(language: language, parameters: parameters, onStateChange: onStateChange)
     }
 
-    func stopTranscription() async {
+    public func stopTranscription() async {
         await engine.stopStreaming()
     }
 
-    func cleanup() {
+    public func cleanup() {
         engine.cleanup()
         isReady = false
     }
