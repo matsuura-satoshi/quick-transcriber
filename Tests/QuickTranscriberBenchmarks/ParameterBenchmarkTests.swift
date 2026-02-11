@@ -1,9 +1,9 @@
 import XCTest
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class ParameterBenchmarkTests: BenchmarkTestBase {
 
-    override var outputPath: String { "/tmp/mytranscriber_parameter_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_parameter_results.json" }
     private let testFixture = "en_medium"
 
     // MARK: - temperatureFallbackCount

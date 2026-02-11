@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-OUTPUT_DIR="Tests/MyTranscriberBenchmarks/Resources"
+OUTPUT_DIR="Tests/QuickTranscriberBenchmarks/Resources"
 mkdir -p "$OUTPUT_DIR"
 
 echo "Generating test audio fixtures..."

@@ -1,5 +1,5 @@
 import XCTest
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class ChunkAccumulatorTests: XCTestCase {
     private let sampleRate: Double = 16000.0

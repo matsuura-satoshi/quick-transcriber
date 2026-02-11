@@ -22,27 +22,27 @@ public struct ContentView: View {
                 onClear: { viewModel.clearText() }
             )
         }
-        .navigationTitle("MyTranscriber")
+        .navigationTitle("Quick Transcriber")
         .frame(minWidth: 600, minHeight: 400)
         .task {
             await viewModel.loadModel()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuCopyAll"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuCopyAll"))) { _ in
             viewModel.copyAllText()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuExport"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuExport"))) { _ in
             viewModel.exportText()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuClear"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuClear"))) { _ in
             viewModel.clearText()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuIncreaseFontSize"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuIncreaseFontSize"))) { _ in
             viewModel.increaseFontSize()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuDecreaseFontSize"))) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuDecreaseFontSize"))) { _ in
             viewModel.decreaseFontSize()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .init("MyTranscriber.menuIsRecordingQuery"))) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuIsRecordingQuery"))) { notification in
             if let callback = notification.userInfo?["callback"] as? (Bool) -> Void {
                 callback(viewModel.isRecording)
             }

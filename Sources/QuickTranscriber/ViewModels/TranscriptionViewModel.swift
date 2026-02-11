@@ -42,7 +42,7 @@ public final class TranscriptionViewModel: ObservableObject {
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self, self.isRecording else { return }
-                NSLog("[MyTranscriber] Parameters changed, restarting recording")
+                NSLog("[QuickTranscriber] Parameters changed, restarting recording")
                 self.restartRecording()
             }
             .store(in: &cancellables)
@@ -50,14 +50,14 @@ public final class TranscriptionViewModel: ObservableObject {
 
     public func loadModel() async {
         modelState = .loading
-        NSLog("[MyTranscriber] Loading model: \(modelName)")
+        NSLog("[QuickTranscriber] Loading model: \(modelName)")
         do {
             try await service.prepare(model: modelName)
             modelState = .ready
-            NSLog("[MyTranscriber] Model ready")
+            NSLog("[QuickTranscriber] Model ready")
         } catch {
             modelState = .error(error.localizedDescription)
-            NSLog("[MyTranscriber] Model load error: \(error)")
+            NSLog("[QuickTranscriber] Model load error: \(error)")
         }
     }
 
@@ -136,9 +136,9 @@ public final class TranscriptionViewModel: ObservableObject {
             if response == .OK, let url = panel.url {
                 do {
                     try text.write(to: url, atomically: true, encoding: .utf8)
-                    NSLog("[MyTranscriber] Exported to: \(url.path)")
+                    NSLog("[QuickTranscriber] Exported to: \(url.path)")
                 } catch {
-                    NSLog("[MyTranscriber] Export error: \(error)")
+                    NSLog("[QuickTranscriber] Export error: \(error)")
                 }
             }
         }
@@ -168,12 +168,12 @@ public final class TranscriptionViewModel: ObservableObject {
 
     private func startRecording() {
         guard modelState == .ready else {
-            NSLog("[MyTranscriber] Cannot record: model state = \(modelState)")
+            NSLog("[QuickTranscriber] Cannot record: model state = \(modelState)")
             return
         }
         isRecording = true
         let params = parametersStore.parameters
-        NSLog("[MyTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
+        NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
         let sessionPrefix = self.previousSessionText
         Task {
@@ -182,7 +182,7 @@ public final class TranscriptionViewModel: ObservableObject {
                     language: currentLanguage.rawValue,
                     parameters: params
                 ) { [weak self] state in
-                    NSLog("[MyTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
+                    NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
                         guard let self else { return }
                         if sessionPrefix.isEmpty {
@@ -196,7 +196,7 @@ public final class TranscriptionViewModel: ObservableObject {
                     }
                 }
             } catch {
-                NSLog("[MyTranscriber] Recording error: \(error)")
+                NSLog("[QuickTranscriber] Recording error: \(error)")
                 isRecording = false
             }
         }

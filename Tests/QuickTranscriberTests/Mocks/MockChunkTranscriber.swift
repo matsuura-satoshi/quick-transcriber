@@ -1,5 +1,5 @@
 import Foundation
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class MockChunkTranscriber: ChunkTranscriber {
     var setupCalled = false

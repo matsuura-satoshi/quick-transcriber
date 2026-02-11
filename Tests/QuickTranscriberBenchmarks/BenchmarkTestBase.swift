@@ -1,6 +1,6 @@
 import XCTest
 import WhisperKit
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 class BenchmarkTestBase: XCTestCase {
 
@@ -58,7 +58,7 @@ class BenchmarkTestBase: XCTestCase {
     }
 
     /// Override in subclass to specify output path
-    var outputPath: String { "/tmp/mytranscriber_benchmark_results.json" }
+    var outputPath: String { "/tmp/quicktranscriber_benchmark_results.json" }
 
     func runBenchmark(
         fixture: String,
@@ -96,7 +96,7 @@ class BenchmarkTestBase: XCTestCase {
         let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
 
         let searchPaths = [
-            appSupport.appendingPathComponent("MyTranscriber/Models/\(modelDirName)"),
+            appSupport.appendingPathComponent("QuickTranscriber/Models/\(modelDirName)"),
             homeDir.appendingPathComponent("Documents/huggingface/models/argmaxinc/whisperkit-coreml/\(modelDirName)"),
         ]
 

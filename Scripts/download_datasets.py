@@ -6,7 +6,7 @@ Datasets:
   - LibriSpeech test-other (standard, ~200 utterances subset)
   - ReazonSpeech test (standard, ~200 utterances subset)
 
-Output: ~/Documents/MyTranscriber/test-audio/<dataset_name>/
+Output: ~/Documents/QuickTranscriber/test-audio/<dataset_name>/
   Each directory contains WAV files + references.json
 """
 
@@ -16,7 +16,7 @@ import random
 import sys
 
 def main():
-    base_dir = os.path.expanduser("~/Documents/MyTranscriber/test-audio")
+    base_dir = os.path.expanduser("~/Documents/QuickTranscriber/test-audio")
     os.makedirs(base_dir, exist_ok=True)
 
     tasks = [

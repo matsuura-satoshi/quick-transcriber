@@ -1,5 +1,5 @@
 import XCTest
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class WhisperKitModelLoaderTests: XCTestCase {
 
@@ -14,10 +14,10 @@ final class WhisperKitModelLoaderTests: XCTestCase {
             path.contains("Library/Application Support"),
             "appModelBaseDir should be under Application Support, got: \(path)"
         )
-        // Must end with MyTranscriber/Models
+        // Must end with QuickTranscriber/Models
         XCTAssertTrue(
-            path.hasSuffix("MyTranscriber/Models"),
-            "appModelBaseDir should end with MyTranscriber/Models, got: \(path)"
+            path.hasSuffix("QuickTranscriber/Models"),
+            "appModelBaseDir should end with QuickTranscriber/Models, got: \(path)"
         )
     }
 
@@ -49,7 +49,7 @@ final class WhisperKitModelLoaderTests: XCTestCase {
             "Model directory name should follow 'openai_whisper-{model}' format"
         )
         XCTAssertTrue(
-            expectedPath.path.contains("MyTranscriber/Models/openai_whisper-large-v3-v20240930_turbo"),
+            expectedPath.path.contains("QuickTranscriber/Models/openai_whisper-large-v3-v20240930_turbo"),
             "Full path should contain the expected model directory structure"
         )
     }
