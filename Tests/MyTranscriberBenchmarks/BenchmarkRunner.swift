@@ -67,7 +67,7 @@ final class BenchmarkRunner {
 
         let transcribedText = results
             .flatMap { $0.segments }
-            .map { WhisperKitEngine.cleanSegmentText($0.text) }
+            .map { TranscriptionUtils.cleanSegmentText($0.text) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
 
