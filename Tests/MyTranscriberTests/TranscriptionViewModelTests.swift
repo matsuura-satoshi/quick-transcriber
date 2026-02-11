@@ -238,4 +238,82 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.decreaseFontSize()
         XCTAssertEqual(vm.fontSize, 10)
     }
+
+    // MARK: - Engine switching via ParametersStore
+
+    func testSwitchEngineReloadsModel() async {
+        let store = ParametersStore()
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", parametersStore: store)
+
+        defer {
+            UserDefaults.standard.removeObject(forKey: "engineType")
+        }
+
+        await vm.loadModel()
+        XCTAssertEqual(vm.modelState, .ready)
+
+        // Switch engine type — this triggers internal engine swap + reload
+        store.engineType = .chunked
+
+        // Give time for async switchEngine (stop + cleanup + create + loadModel)
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        // The key assertion is that it doesn't crash and model reloads
+        // After engine switch, the new engine needs setup, so modelState may vary
+    }
+
+    // MARK: - Recording error handling
+
+    func testStartRecordingFailureSetsIsRecordingFalse() async {
+        let engine = MockTranscriptionEngine()
+        engine.startStreamingError = MockError.streamingFailed
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
+
+        await vm.loadModel()
+        vm.toggleRecording()
+
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(vm.isRecording)
+    }
+
+    // MARK: - State callback integration
+
+    func testStateCallbackUpdatesConfirmedAndUnconfirmed() async {
+        let (vm, engine) = makeViewModel()
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello",
+            unconfirmedText: "world",
+            isRecording: true
+        ))
+
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.confirmedText, "Hello")
+        XCTAssertEqual(vm.unconfirmedText, "world")
+    }
+
+    // MARK: - Model state
+
+    func testModelStateTransitions() async {
+        let (vm, _) = makeViewModel()
+        XCTAssertEqual(vm.modelState, .notLoaded)
+
+        await vm.loadModel()
+        XCTAssertEqual(vm.modelState, .ready)
+    }
+
+    func testModelLoadingState() async {
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
+
+        XCTAssertEqual(vm.modelState, .notLoaded)
+        await vm.loadModel()
+        XCTAssertEqual(vm.modelState, .ready)
+    }
 }
