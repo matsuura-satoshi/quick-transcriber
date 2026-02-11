@@ -46,10 +46,10 @@ final class BenchmarkRunner {
             sampleLength: parameters.sampleLength,
             skipSpecialTokens: true,
             withoutTimestamps: true,
-            compressionRatioThreshold: parameters.compressionRatioThreshold,
-            logProbThreshold: parameters.logProbThreshold,
-            firstTokenLogProbThreshold: parameters.firstTokenLogProbThreshold,
-            noSpeechThreshold: parameters.noSpeechThreshold,
+            compressionRatioThreshold: 2.4,
+            logProbThreshold: -1.0,
+            firstTokenLogProbThreshold: -1.5,
+            noSpeechThreshold: 0.4,
             concurrentWorkerCount: parameters.concurrentWorkerCount,
             chunkingStrategy: .vad
         )

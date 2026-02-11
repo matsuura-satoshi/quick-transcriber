@@ -8,67 +8,31 @@ final class CompositeParameterTests: BenchmarkTestBase {
     // MARK: - Preset parameter sets
 
     static let speedKing = TranscriptionParameters(
-        requiredSegmentsForConfirmation: 1,
-        silenceThreshold: 0.5,
-        compressionCheckWindow: 20,
-        useVAD: true,
         temperature: 0.0,
         temperatureFallbackCount: 0,
-        noSpeechThreshold: 0.4,
-        concurrentWorkerCount: 4,
-        compressionRatioThreshold: 2.4,
-        logProbThreshold: -1.0,
-        firstTokenLogProbThreshold: -1.5,
         sampleLength: 128,
-        windowClipTime: 1.0
+        concurrentWorkerCount: 4
     )
 
     static let balanced = TranscriptionParameters(
-        requiredSegmentsForConfirmation: 1,
-        silenceThreshold: 0.5,
-        compressionCheckWindow: 20,
-        useVAD: true,
         temperature: 0.0,
         temperatureFallbackCount: 1,
-        noSpeechThreshold: 0.4,
-        concurrentWorkerCount: 8,
-        compressionRatioThreshold: 2.4,
-        logProbThreshold: -1.0,
-        firstTokenLogProbThreshold: -1.5,
         sampleLength: 224,
-        windowClipTime: 1.0
+        concurrentWorkerCount: 8
     )
 
     static let accuracyFirst = TranscriptionParameters(
-        requiredSegmentsForConfirmation: 2,
-        silenceThreshold: 0.3,
-        compressionCheckWindow: 20,
-        useVAD: true,
         temperature: 0.0,
         temperatureFallbackCount: 3,
-        noSpeechThreshold: 0.3,
-        concurrentWorkerCount: 16,
-        compressionRatioThreshold: 2.4,
-        logProbThreshold: -1.0,
-        firstTokenLogProbThreshold: -1.5,
         sampleLength: 224,
-        windowClipTime: 1.0
+        concurrentWorkerCount: 16
     )
 
     static let tvMedia = TranscriptionParameters(
-        requiredSegmentsForConfirmation: 1,
-        silenceThreshold: 0.5,
-        compressionCheckWindow: 20,
-        useVAD: true,
         temperature: 0.0,
         temperatureFallbackCount: 0,
-        noSpeechThreshold: 0.5,
-        concurrentWorkerCount: 4,
-        compressionRatioThreshold: 2.0,
-        logProbThreshold: -1.0,
-        firstTokenLogProbThreshold: -1.5,
         sampleLength: 128,
-        windowClipTime: 1.0
+        concurrentWorkerCount: 4
     )
 
     // MARK: - English tests

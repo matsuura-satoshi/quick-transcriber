@@ -12,7 +12,7 @@ public struct SettingsView: View {
                     Label("Transcription", systemImage: "waveform")
                 }
         }
-        .frame(width: 480, height: 580)
+        .frame(width: 480, height: 400)
     }
 }
 
@@ -21,50 +21,15 @@ private struct TranscriptionSettingsTab: View {
 
     var body: some View {
         Form {
-            engineSection
-            if store.engineType == .chunked {
-                chunkedSection
-            } else {
-                vadSection
-                segmentSection
-            }
+            chunkSection
             decodingSection
-            if store.engineType == .streaming {
-                thresholdsSection
-
-                Section("Presets") {
-                    HStack {
-                        Spacer()
-                        Button("Aggressive (confirm fast)") {
-                            store.parameters = .aggressive
-                        }
-                        Button("Default") {
-                            store.resetToDefaults()
-                        }
-                        Spacer()
-                    }
-                }
-            }
         }
         .formStyle(.grouped)
     }
 
-    // MARK: - Engine
+    // MARK: - Chunk Settings
 
-    private var engineSection: some View {
-        Section("Engine") {
-            Picker("Engine Type", selection: $store.engineType) {
-                ForEach(EngineType.allCases) { type in
-                    Text(type.displayName).tag(type)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-
-    // MARK: - Chunked Engine
-
-    private var chunkedSection: some View {
+    private var chunkSection: some View {
         Section("Chunk Settings") {
             DoubleSliderRow(
                 label: "Chunk Duration",
@@ -88,56 +53,6 @@ private struct TranscriptionSettingsTab: View {
                 range: 0.001...0.1,
                 step: 0.001,
                 format: "%.3f"
-            )
-        }
-    }
-
-    // MARK: - VAD
-
-    private var vadSection: some View {
-        Section("Voice Activity Detection") {
-            Toggle("Use VAD", isOn: $store.parameters.useVAD)
-
-            SliderRow(
-                label: "Silence Threshold",
-                value: $store.parameters.silenceThreshold,
-                range: 0.0...1.0,
-                step: 0.05,
-                format: "%.2f"
-            )
-
-            SliderRow(
-                label: "No Speech Threshold",
-                value: $store.parameters.noSpeechThreshold,
-                range: 0.0...1.0,
-                step: 0.05,
-                format: "%.2f"
-            )
-        }
-    }
-
-    // MARK: - Segment Confirmation
-
-    private var segmentSection: some View {
-        Section("Segment Confirmation") {
-            StepperRow(
-                label: "Required Segments",
-                value: $store.parameters.requiredSegmentsForConfirmation,
-                range: 1...10
-            )
-
-            StepperRow(
-                label: "Compression Check Window",
-                value: $store.parameters.compressionCheckWindow,
-                range: 1...100
-            )
-
-            SliderRow(
-                label: "Window Clip Time",
-                value: $store.parameters.windowClipTime,
-                range: 0.0...5.0,
-                step: 0.1,
-                format: "%.1f s"
             )
         }
     }
@@ -170,36 +85,6 @@ private struct TranscriptionSettingsTab: View {
                 label: "Concurrent Workers",
                 value: $store.parameters.concurrentWorkerCount,
                 range: 1...8
-            )
-        }
-    }
-
-    // MARK: - Thresholds
-
-    private var thresholdsSection: some View {
-        Section("Quality Thresholds") {
-            SliderRow(
-                label: "Compression Ratio",
-                value: $store.parameters.compressionRatioThreshold,
-                range: 0.0...5.0,
-                step: 0.1,
-                format: "%.1f"
-            )
-
-            SliderRow(
-                label: "Log Prob Threshold",
-                value: $store.parameters.logProbThreshold,
-                range: -5.0...0.0,
-                step: 0.1,
-                format: "%.1f"
-            )
-
-            SliderRow(
-                label: "First Token Log Prob",
-                value: $store.parameters.firstTokenLogProbThreshold,
-                range: -5.0...0.0,
-                step: 0.1,
-                format: "%.1f"
             )
         }
     }
