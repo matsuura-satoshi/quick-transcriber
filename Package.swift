@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "MyTranscriber",
+    name: "QuickTranscriber",
     platforms: [
         .macOS(.v14)
     ],
@@ -12,29 +12,29 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "MyTranscriberLib",
+            name: "QuickTranscriberLib",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
             ],
-            path: "Sources/MyTranscriber"
+            path: "Sources/QuickTranscriber"
         ),
         .executableTarget(
-            name: "MyTranscriber",
-            dependencies: ["MyTranscriberLib"],
-            path: "Sources/MyTranscriberApp"
+            name: "QuickTranscriber",
+            dependencies: ["QuickTranscriberLib"],
+            path: "Sources/QuickTranscriberApp"
         ),
         .testTarget(
-            name: "MyTranscriberTests",
-            dependencies: ["MyTranscriberLib"],
-            path: "Tests/MyTranscriberTests"
+            name: "QuickTranscriberTests",
+            dependencies: ["QuickTranscriberLib"],
+            path: "Tests/QuickTranscriberTests"
         ),
         .testTarget(
-            name: "MyTranscriberBenchmarks",
+            name: "QuickTranscriberBenchmarks",
             dependencies: [
-                "MyTranscriberLib",
+                "QuickTranscriberLib",
                 .product(name: "WhisperKit", package: "WhisperKit"),
             ],
-            path: "Tests/MyTranscriberBenchmarks",
+            path: "Tests/QuickTranscriberBenchmarks",
             resources: [
                 .copy("Resources")
             ]

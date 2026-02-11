@@ -1,12 +1,12 @@
 import XCTest
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class RealWorldBenchmarkTests: BenchmarkTestBase {
 
     private static let testAudioDir = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Documents/MyTranscriber/test-audio")
+        .appendingPathComponent("Documents/QuickTranscriber/test-audio")
 
-    override var outputPath: String { "/tmp/mytranscriber_realworld_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_realworld_results.json" }
 
     func testRealWorldAudio() async throws {
         let fm = FileManager.default

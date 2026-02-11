@@ -1,19 +1,19 @@
 import SwiftUI
-import MyTranscriberLib
+import QuickTranscriberLib
 
 // MARK: - Menu Notification Names
 
 extension Notification.Name {
-    static let menuCopyAll = Notification.Name("MyTranscriber.menuCopyAll")
-    static let menuExport = Notification.Name("MyTranscriber.menuExport")
-    static let menuClear = Notification.Name("MyTranscriber.menuClear")
-    static let menuIncreaseFontSize = Notification.Name("MyTranscriber.menuIncreaseFontSize")
-    static let menuDecreaseFontSize = Notification.Name("MyTranscriber.menuDecreaseFontSize")
-    static let menuIsRecordingQuery = Notification.Name("MyTranscriber.menuIsRecordingQuery")
+    static let menuCopyAll = Notification.Name("QuickTranscriber.menuCopyAll")
+    static let menuExport = Notification.Name("QuickTranscriber.menuExport")
+    static let menuClear = Notification.Name("QuickTranscriber.menuClear")
+    static let menuIncreaseFontSize = Notification.Name("QuickTranscriber.menuIncreaseFontSize")
+    static let menuDecreaseFontSize = Notification.Name("QuickTranscriber.menuDecreaseFontSize")
+    static let menuIsRecordingQuery = Notification.Name("QuickTranscriber.menuIsRecordingQuery")
 }
 
 @main
-struct MyTranscriberApp: App {
+struct QuickTranscriberApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
@@ -23,7 +23,7 @@ struct MyTranscriberApp: App {
         .commands {
             // Replace the About menu item
             CommandGroup(replacing: .appInfo) {
-                Button("About MyTranscriber") {
+                Button("About Quick Transcriber") {
                     appDelegate.showAboutWindow()
                 }
             }
@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "About MyTranscriber"
+        window.title = "About Quick Transcriber"
         window.contentView = hostingView
         window.center()
         window.isReleasedWhenClosed = false
@@ -151,7 +151,7 @@ struct AboutView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(.blue)
 
-            Text("MyTranscriber")
+            Text("Quick Transcriber")
                 .font(.title)
                 .fontWeight(.bold)
 

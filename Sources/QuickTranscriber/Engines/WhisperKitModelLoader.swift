@@ -5,7 +5,7 @@ public enum WhisperKitModelLoader {
     /// Stable model storage path under Application Support.
     public static var appModelBaseDir: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return appSupport.appendingPathComponent("MyTranscriber/Models")
+        return appSupport.appendingPathComponent("QuickTranscriber/Models")
     }
 
     /// Search for a cached model folder. First checks our stable App Support path,

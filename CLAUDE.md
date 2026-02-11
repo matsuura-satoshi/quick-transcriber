@@ -1,4 +1,4 @@
-# MyTranscriber
+# Quick Transcriber
 
 macOSリアルタイム文字起こしアプリ。WhisperKit (large-v3-turbo) + SwiftUI。
 
@@ -12,16 +12,16 @@ macOSリアルタイム文字起こしアプリ。WhisperKit (large-v3-turbo) + 
 
 ## Build & Run
 ```
-swift build && swift run MyTranscriber
+swift build && swift run QuickTranscriber
 ```
 
 ## Test
 ```bash
 # ユニットテスト（モデル不要、~2秒）
-swift test --filter MyTranscriberTests
+swift test --filter QuickTranscriberTests
 
 # ベンチマーク全体（モデル必要、5-10分）
-swift test --filter MyTranscriberBenchmarks
+swift test --filter QuickTranscriberBenchmarks
 
 # 特定ベンチマーク
 swift test --filter ParameterBenchmarkTests
@@ -30,7 +30,7 @@ swift test --filter ReazonSpeechBenchmarkTests
 ```
 
 ## Architecture
-- **ターゲット構成**: `MyTranscriberLib`(library) + `MyTranscriber`(executable)
+- **ターゲット構成**: `QuickTranscriberLib`(library) + `QuickTranscriber`(executable)
 - MVVM: Views -> TranscriptionViewModel -> TranscriptionService -> TranscriptionEngine(protocol) -> ChunkedWhisperEngine
 - ChunkedWhisperEngine: AudioCaptureService → ChunkAccumulator → ChunkTranscriber(WhisperKit) のパイプライン
 - 短チャンク（3秒等）の品質フィルタは全てnil必須（30秒パディングで90%無音になるため）
@@ -50,4 +50,4 @@ swift test --filter ReazonSpeechBenchmarkTests
 pip3 install "datasets>=3.0,<4.0" soundfile librosa
 python3 Scripts/download_datasets.py
 ```
-出力先: `~/Documents/MyTranscriber/test-audio/`（fleurs_en, fleurs_ja, librispeech_test_other, reazonspeech_test）
+出力先: `~/Documents/QuickTranscriber/test-audio/`（fleurs_en, fleurs_ja, librispeech_test_other, reazonspeech_test）

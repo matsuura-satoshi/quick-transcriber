@@ -1,9 +1,9 @@
 import XCTest
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class BaselineBenchmarkTests: BenchmarkTestBase {
 
-    override var outputPath: String { "/tmp/mytranscriber_baseline_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_baseline_results.json" }
 
     func testBaseline_enShort() async throws {
         let result = try await runBenchmark(fixture: "en_short")

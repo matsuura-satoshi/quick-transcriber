@@ -1,6 +1,6 @@
 import Foundation
 import WhisperKit
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 struct BenchmarkResult: Codable {
     let fixture: String

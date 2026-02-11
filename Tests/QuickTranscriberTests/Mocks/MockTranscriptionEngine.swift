@@ -1,5 +1,5 @@
 import Foundation
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class MockTranscriptionEngine: TranscriptionEngine {
     var setupCalled = false

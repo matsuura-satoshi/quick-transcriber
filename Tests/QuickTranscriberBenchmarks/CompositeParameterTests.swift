@@ -1,9 +1,9 @@
 import XCTest
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 final class CompositeParameterTests: BenchmarkTestBase {
 
-    override var outputPath: String { "/tmp/mytranscriber_composite_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_composite_results.json" }
 
     // MARK: - Preset parameter sets
 

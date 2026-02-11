@@ -1,9 +1,9 @@
 import XCTest
 import WhisperKit
-@testable import MyTranscriberLib
+@testable import QuickTranscriberLib
 
 /// Base class for dataset-based benchmarks.
-/// Reads WAV + references.json from ~/Documents/MyTranscriber/test-audio/<dataset>/
+/// Reads WAV + references.json from ~/Documents/QuickTranscriber/test-audio/<dataset>/
 class DatasetBenchmarkTestBase: BenchmarkTestBase {
 
     struct DatasetReference: Codable {
@@ -14,7 +14,7 @@ class DatasetBenchmarkTestBase: BenchmarkTestBase {
 
     func datasetDir(name: String) -> URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Documents/MyTranscriber/test-audio/\(name)")
+            .appendingPathComponent("Documents/QuickTranscriber/test-audio/\(name)")
     }
 
     func loadDatasetReferences(name: String) throws -> [String: DatasetReference] {
@@ -92,7 +92,7 @@ class DatasetBenchmarkTestBase: BenchmarkTestBase {
 
 final class FLEURSBenchmarkTests: DatasetBenchmarkTestBase {
 
-    override var outputPath: String { "/tmp/mytranscriber_fleurs_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_fleurs_results.json" }
 
     // Samples that cause WhisperKit fatalError
     private let knownBadJaKeys: Set<String> = ["ja_0023"]
@@ -119,7 +119,7 @@ final class FLEURSBenchmarkTests: DatasetBenchmarkTestBase {
 
 final class LibriSpeechBenchmarkTests: DatasetBenchmarkTestBase {
 
-    override var outputPath: String { "/tmp/mytranscriber_librispeech_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_librispeech_results.json" }
 
     // Samples that cause WhisperKit fatalError (non-deterministic crash)
     private let knownBadKeys: Set<String> = ["en_0047"]
@@ -165,7 +165,7 @@ final class LibriSpeechBenchmarkTests: DatasetBenchmarkTestBase {
 
 final class ReazonSpeechBenchmarkTests: DatasetBenchmarkTestBase {
 
-    override var outputPath: String { "/tmp/mytranscriber_reazonspeech_results.json" }
+    override var outputPath: String { "/tmp/quicktranscriber_reazonspeech_results.json" }
 
     func testReazonSpeech_default() async throws {
         let (wer, _, count) = try await runDatasetBenchmark(
