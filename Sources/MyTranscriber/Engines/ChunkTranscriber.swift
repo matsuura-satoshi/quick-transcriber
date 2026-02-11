@@ -20,7 +20,7 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
 
     public func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [String] {
         guard let whisperKit else {
-            throw WhisperKitEngineError.notInitialized
+            throw TranscriptionEngineError.notInitialized
         }
 
         // Short chunks are padded to 30s mel spectrogram → ~90% silence.
@@ -42,7 +42,7 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
 
         let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: options)
         return results.flatMap { result in
-            result.segments.map { WhisperKitEngine.cleanSegmentText($0.text) }
+            result.segments.map { TranscriptionUtils.cleanSegmentText($0.text) }
         }.filter { !$0.isEmpty }
     }
 }
