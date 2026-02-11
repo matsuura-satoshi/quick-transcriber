@@ -31,8 +31,9 @@ swift test --filter ReazonSpeechBenchmarkTests
 
 ## Architecture
 - **ターゲット構成**: `MyTranscriberLib`(library) + `MyTranscriber`(executable)
-- MVVM: Views -> TranscriptionViewModel -> TranscriptionService -> TranscriptionEngine(protocol) -> WhisperKitEngine
-- AudioStreamTranscriber がマイクキャプチャ+VAD+推論を一体で処理（AudioCaptureService不要）
+- MVVM: Views -> TranscriptionViewModel -> TranscriptionService -> TranscriptionEngine(protocol) -> ChunkedWhisperEngine
+- ChunkedWhisperEngine: AudioCaptureService → ChunkAccumulator → ChunkTranscriber(WhisperKit) のパイプライン
+- 短チャンク（3秒等）の品質フィルタは全てnil必須（30秒パディングで90%無音になるため）
 
 ## Pitfalls
 - WhisperKit init には `load: true` 必須（省略するとtokenizerがロードされない）
