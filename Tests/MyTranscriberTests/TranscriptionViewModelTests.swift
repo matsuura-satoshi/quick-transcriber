@@ -122,7 +122,7 @@ final class TranscriptionViewModelTests: XCTestCase {
     }
 
     func testClearTextWhileRecording() async {
-        let (vm, engine) = makeViewModel()
+        let (vm, _) = makeViewModel()
         await vm.loadModel()
 
         vm.toggleRecording()
@@ -166,7 +166,7 @@ final class TranscriptionViewModelTests: XCTestCase {
     }
 
     func testSwitchLanguageWhileRecordingRestarts() async {
-        let (vm, engine) = makeViewModel()
+        let (vm, _) = makeViewModel()
         await vm.loadModel()
 
         vm.toggleRecording()
