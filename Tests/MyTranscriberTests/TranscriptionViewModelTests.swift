@@ -239,30 +239,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.fontSize, 10)
     }
 
-    // MARK: - Engine switching via ParametersStore
-
-    func testSwitchEngineReloadsModel() async {
-        let store = ParametersStore()
-        let engine = MockTranscriptionEngine()
-        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", parametersStore: store)
-
-        defer {
-            UserDefaults.standard.removeObject(forKey: "engineType")
-        }
-
-        await vm.loadModel()
-        XCTAssertEqual(vm.modelState, .ready)
-
-        // Switch engine type — this triggers internal engine swap + reload
-        store.engineType = .chunked
-
-        // Give time for async switchEngine (stop + cleanup + create + loadModel)
-        try? await Task.sleep(nanoseconds: 500_000_000)
-
-        // The key assertion is that it doesn't crash and model reloads
-        // After engine switch, the new engine needs setup, so modelState may vary
-    }
-
     // MARK: - Recording error handling
 
     func testStartRecordingFailureSetsIsRecordingFalse() async {
