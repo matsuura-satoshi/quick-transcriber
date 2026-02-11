@@ -1,5 +1,5 @@
 import XCTest
-@testable import MyTranscriber
+@testable import MyTranscriberLib
 
 final class LanguageTests: XCTestCase {
     func testLanguageProperties() {

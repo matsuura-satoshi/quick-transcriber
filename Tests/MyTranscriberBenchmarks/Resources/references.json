@@ -1,0 +1,27 @@
+{
+  "en_short": {
+    "language": "en",
+    "text": "The quick brown fox jumps over the lazy dog.",
+    "duration_seconds": 3.0
+  },
+  "en_medium": {
+    "language": "en",
+    "text": "Artificial intelligence has transformed the way we interact with technology. From voice assistants to autonomous vehicles, machine learning models are becoming increasingly sophisticated. Natural language processing allows computers to understand and generate human speech with remarkable accuracy.",
+    "duration_seconds": 15.0
+  },
+  "en_pauses": {
+    "language": "en",
+    "text": "Good morning everyone. Today we will discuss the latest developments in technology. First, let us review the quarterly results. Revenue increased by fifteen percent.",
+    "duration_seconds": 10.0
+  },
+  "ja_short": {
+    "language": "ja",
+    "text": "本日のニュースをお伝えします。",
+    "duration_seconds": 3.0
+  },
+  "ja_medium": {
+    "language": "ja",
+    "text": "人工知能の技術は近年急速に発展しています。音声認識の分野では、深層学習モデルの進化により、人間に近い精度で音声をテキストに変換できるようになりました。今後もさらなる技術革新が期待されています。",
+    "duration_seconds": 15.0
+  }
+}
