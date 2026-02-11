@@ -31,7 +31,7 @@ public final class TranscriptionViewModel: ObservableObject {
         parametersStore: ParametersStore? = nil
     ) {
         let resolvedStore = parametersStore ?? ParametersStore.shared
-        let resolvedEngine = engine ?? Self.createEngine(for: resolvedStore.engineType)
+        let resolvedEngine = engine ?? ChunkedWhisperEngine()
         self.service = TranscriptionService(engine: resolvedEngine)
         self.modelName = modelName
         self.parametersStore = resolvedStore
@@ -46,43 +46,6 @@ public final class TranscriptionViewModel: ObservableObject {
                 self.restartRecording()
             }
             .store(in: &cancellables)
-
-        resolvedStore.$engineType
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] newType in
-                guard let self else { return }
-                NSLog("[MyTranscriber] Engine type changed to: \(newType.rawValue)")
-                self.switchEngine(to: newType)
-            }
-            .store(in: &cancellables)
-    }
-
-    private static func createEngine(for type: EngineType) -> TranscriptionEngine {
-        switch type {
-        case .streaming:
-            return WhisperKitEngine()
-        case .chunked:
-            return ChunkedWhisperEngine()
-        }
-    }
-
-    private func switchEngine(to type: EngineType) {
-        let wasRecording = isRecording
-        if wasRecording {
-            saveUnconfirmedText()
-            isRecording = false
-        }
-        Task {
-            await service.stopTranscription()
-            service.cleanup()
-            let newEngine = Self.createEngine(for: type)
-            self.service = TranscriptionService(engine: newEngine)
-            await loadModel()
-            if wasRecording {
-                startRecording()
-            }
-        }
     }
 
     public func loadModel() async {
