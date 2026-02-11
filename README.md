@@ -1,4 +1,4 @@
-# MyTranscriber
+# Quick Transcriber
 
 macOS native real-time transcription app. Captures in-person conversations via microphone and displays live subtitles. Fully local processing powered by WhisperKit on Apple Silicon.
 
@@ -19,7 +19,7 @@ macOS native real-time transcription app. Captures in-person conversations via m
 
 ```bash
 swift build
-swift run MyTranscriber
+swift run QuickTranscriber
 ```
 
 ## Status
