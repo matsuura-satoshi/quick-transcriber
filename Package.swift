@@ -11,17 +11,33 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0"),
     ],
     targets: [
-        .executableTarget(
-            name: "MyTranscriber",
+        .target(
+            name: "MyTranscriberLib",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
             ],
             path: "Sources/MyTranscriber"
         ),
+        .executableTarget(
+            name: "MyTranscriber",
+            dependencies: ["MyTranscriberLib"],
+            path: "Sources/MyTranscriberApp"
+        ),
         .testTarget(
             name: "MyTranscriberTests",
-            dependencies: ["MyTranscriber"],
+            dependencies: ["MyTranscriberLib"],
             path: "Tests/MyTranscriberTests"
+        ),
+        .testTarget(
+            name: "MyTranscriberBenchmarks",
+            dependencies: [
+                "MyTranscriberLib",
+                .product(name: "WhisperKit", package: "WhisperKit"),
+            ],
+            path: "Tests/MyTranscriberBenchmarks",
+            resources: [
+                .copy("Resources")
+            ]
         ),
     ]
 )

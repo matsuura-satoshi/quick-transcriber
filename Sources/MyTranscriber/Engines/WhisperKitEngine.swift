@@ -1,16 +1,18 @@
 import Foundation
 import WhisperKit
 
-final class WhisperKitEngine: TranscriptionEngine {
+public final class WhisperKitEngine: TranscriptionEngine {
     private var whisperKit: WhisperKit?
     private var streamTranscriber: AudioStreamTranscriber?
     private var _isStreaming = false
 
-    var isStreaming: Bool {
+    public init() {}
+
+    public var isStreaming: Bool {
         get async { _isStreaming }
     }
 
-    func setup(model: String) async throws {
+    public func setup(model: String) async throws {
         // Use cached model folder if available, otherwise download
         let modelFolder = Self.findCachedModelFolder(for: model)
         NSLog("[WhisperKitEngine] Model folder: \(modelFolder ?? "none, will download")")
@@ -95,8 +97,9 @@ final class WhisperKitEngine: TranscriptionEngine {
         }
     }
 
-    func startStreaming(
+    public func startStreaming(
         language: String,
+        parameters: TranscriptionParameters = .default,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         guard let whisperKit else {
@@ -110,8 +113,16 @@ final class WhisperKitEngine: TranscriptionEngine {
         let decodingOptions = DecodingOptions(
             task: .transcribe,
             language: language,
+            temperature: parameters.temperature,
+            temperatureFallbackCount: parameters.temperatureFallbackCount,
+            sampleLength: parameters.sampleLength,
             skipSpecialTokens: true,
             withoutTimestamps: true,
+            compressionRatioThreshold: parameters.compressionRatioThreshold,
+            logProbThreshold: parameters.logProbThreshold,
+            firstTokenLogProbThreshold: parameters.firstTokenLogProbThreshold,
+            noSpeechThreshold: parameters.noSpeechThreshold,
+            concurrentWorkerCount: parameters.concurrentWorkerCount,
             chunkingStrategy: .vad
         )
 
@@ -123,9 +134,10 @@ final class WhisperKitEngine: TranscriptionEngine {
             tokenizer: tokenizer,
             audioProcessor: whisperKit.audioProcessor,
             decodingOptions: decodingOptions,
-            requiredSegmentsForConfirmation: 2,
-            silenceThreshold: 0.3,
-            useVAD: true
+            requiredSegmentsForConfirmation: parameters.requiredSegmentsForConfirmation,
+            silenceThreshold: parameters.silenceThreshold,
+            compressionCheckWindow: parameters.compressionCheckWindow,
+            useVAD: parameters.useVAD
         ) { oldState, newState in
             let confirmedText = newState.confirmedSegments
                 .map { Self.cleanSegmentText($0.text) }
@@ -150,13 +162,13 @@ final class WhisperKitEngine: TranscriptionEngine {
         try await transcriber.startStreamTranscription()
     }
 
-    func stopStreaming() async {
+    public func stopStreaming() async {
         await streamTranscriber?.stopStreamTranscription()
         self.streamTranscriber = nil
         self._isStreaming = false
     }
 
-    func cleanup() {
+    public func cleanup() {
         Task {
             await stopStreaming()
         }
@@ -165,8 +177,7 @@ final class WhisperKitEngine: TranscriptionEngine {
 }
 
 extension WhisperKitEngine {
-    /// Remove special tokens, timestamps, and invalid characters from segment text.
-    static func cleanSegmentText(_ text: String) -> String {
+    public static func cleanSegmentText(_ text: String) -> String {
         var cleaned = text
         // Remove any remaining special tokens like <|...|>
         cleaned = cleaned.replacingOccurrences(
@@ -180,11 +191,11 @@ extension WhisperKitEngine {
     }
 }
 
-enum WhisperKitEngineError: LocalizedError {
+public enum WhisperKitEngineError: LocalizedError {
     case notInitialized
     case tokenizerNotAvailable
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .notInitialized:
             return "WhisperKit is not initialized. Call setup() first."

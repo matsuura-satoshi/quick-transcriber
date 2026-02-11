@@ -1,34 +1,41 @@
 import Foundation
 
-struct TranscriptionSegmentData: Sendable {
-    let text: String
-    let start: Float
-    let end: Float
-    let isConfirmed: Bool
+public struct TranscriptionSegmentData: Sendable {
+    public let text: String
+    public let start: Float
+    public let end: Float
+    public let isConfirmed: Bool
+
+    public init(text: String, start: Float, end: Float, isConfirmed: Bool) {
+        self.text = text
+        self.start = start
+        self.end = end
+        self.isConfirmed = isConfirmed
+    }
 }
 
-struct TranscriptionState: Sendable {
-    var confirmedText: String
-    var unconfirmedText: String
-    var isRecording: Bool
+public struct TranscriptionState: Sendable {
+    public var confirmedText: String
+    public var unconfirmedText: String
+    public var isRecording: Bool
+
+    public init(confirmedText: String, unconfirmedText: String, isRecording: Bool) {
+        self.confirmedText = confirmedText
+        self.unconfirmedText = unconfirmedText
+        self.isRecording = isRecording
+    }
 }
 
-protocol TranscriptionEngine: AnyObject {
-    /// Set up the engine with a specific model. Downloads model if needed.
+public protocol TranscriptionEngine: AnyObject {
     func setup(model: String) async throws
-
-    /// Start real-time streaming transcription from microphone.
-    /// - Parameters:
-    ///   - language: Language code (e.g., "en", "ja")
-    ///   - onStateChange: Called when transcription state changes
-    func startStreaming(language: String, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
-
-    /// Stop streaming transcription.
+    func startStreaming(language: String, parameters: TranscriptionParameters, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
     func stopStreaming() async
-
-    /// Clean up resources.
     func cleanup()
-
-    /// Whether the engine is currently streaming.
     var isStreaming: Bool { get async }
+}
+
+extension TranscriptionEngine {
+    public func startStreaming(language: String, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws {
+        try await startStreaming(language: language, parameters: .default, onStateChange: onStateChange)
+    }
 }

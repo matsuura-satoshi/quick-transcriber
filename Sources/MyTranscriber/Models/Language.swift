@@ -1,10 +1,10 @@
-enum Language: String, CaseIterable, Identifiable {
+public enum Language: String, CaseIterable, Identifiable, Sendable {
     case english = "en"
     case japanese = "ja"
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .english: return "English"
         case .japanese: return "Japanese"
