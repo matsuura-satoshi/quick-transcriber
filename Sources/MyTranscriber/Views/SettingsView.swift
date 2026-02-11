@@ -12,7 +12,7 @@ public struct SettingsView: View {
                     Label("Transcription", systemImage: "waveform")
                 }
         }
-        .frame(width: 480, height: 520)
+        .frame(width: 480, height: 580)
     }
 }
 
@@ -21,25 +21,75 @@ private struct TranscriptionSettingsTab: View {
 
     var body: some View {
         Form {
-            vadSection
-            segmentSection
+            engineSection
+            if store.engineType == .chunked {
+                chunkedSection
+            } else {
+                vadSection
+                segmentSection
+            }
             decodingSection
-            thresholdsSection
+            if store.engineType == .streaming {
+                thresholdsSection
 
-            Section("Presets") {
-                HStack {
-                    Spacer()
-                    Button("Aggressive (confirm fast)") {
-                        store.parameters = .aggressive
+                Section("Presets") {
+                    HStack {
+                        Spacer()
+                        Button("Aggressive (confirm fast)") {
+                            store.parameters = .aggressive
+                        }
+                        Button("Default") {
+                            store.resetToDefaults()
+                        }
+                        Spacer()
                     }
-                    Button("Default") {
-                        store.resetToDefaults()
-                    }
-                    Spacer()
                 }
             }
         }
         .formStyle(.grouped)
+    }
+
+    // MARK: - Engine
+
+    private var engineSection: some View {
+        Section("Engine") {
+            Picker("Engine Type", selection: $store.engineType) {
+                ForEach(EngineType.allCases) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+    }
+
+    // MARK: - Chunked Engine
+
+    private var chunkedSection: some View {
+        Section("Chunk Settings") {
+            DoubleSliderRow(
+                label: "Chunk Duration",
+                value: $store.parameters.chunkDuration,
+                range: 1.0...10.0,
+                step: 0.5,
+                format: "%.1f s"
+            )
+
+            DoubleSliderRow(
+                label: "Silence Cutoff",
+                value: $store.parameters.silenceCutoffDuration,
+                range: 0.3...2.0,
+                step: 0.1,
+                format: "%.1f s"
+            )
+
+            SliderRow(
+                label: "Silence Threshold",
+                value: $store.parameters.silenceEnergyThreshold,
+                range: 0.001...0.1,
+                step: 0.001,
+                format: "%.3f"
+            )
+        }
     }
 
     // MARK: - VAD
@@ -181,6 +231,27 @@ private struct SliderRow: View {
                 in: Double(range.lowerBound)...Double(range.upperBound),
                 step: Double(step)
             )
+        }
+    }
+}
+
+private struct DoubleSliderRow: View {
+    let label: String
+    @Binding var value: TimeInterval
+    let range: ClosedRange<Double>
+    let step: Double
+    let format: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label)
+                Spacer()
+                Text(String(format: format, value))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: $value, in: range, step: step)
         }
     }
 }

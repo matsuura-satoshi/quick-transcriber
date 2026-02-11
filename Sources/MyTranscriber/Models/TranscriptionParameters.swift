@@ -16,6 +16,11 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
     public var sampleLength: Int
     public var windowClipTime: Float
 
+    // ChunkedWhisperEngine parameters (ignored by WhisperKitEngine)
+    public var chunkDuration: TimeInterval
+    public var silenceCutoffDuration: TimeInterval
+    public var silenceEnergyThreshold: Float
+
     public init(
         requiredSegmentsForConfirmation: Int = 1,
         silenceThreshold: Float = 0.5,
@@ -29,7 +34,10 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         logProbThreshold: Float = -1.0,
         firstTokenLogProbThreshold: Float = -1.5,
         sampleLength: Int = 224,
-        windowClipTime: Float = 1.0
+        windowClipTime: Float = 1.0,
+        chunkDuration: TimeInterval = 3.0,
+        silenceCutoffDuration: TimeInterval = 0.8,
+        silenceEnergyThreshold: Float = 0.01
     ) {
         self.requiredSegmentsForConfirmation = requiredSegmentsForConfirmation
         self.silenceThreshold = silenceThreshold
@@ -44,6 +52,9 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         self.firstTokenLogProbThreshold = firstTokenLogProbThreshold
         self.sampleLength = sampleLength
         self.windowClipTime = windowClipTime
+        self.chunkDuration = chunkDuration
+        self.silenceCutoffDuration = silenceCutoffDuration
+        self.silenceEnergyThreshold = silenceEnergyThreshold
     }
 
     public static let `default` = TranscriptionParameters()

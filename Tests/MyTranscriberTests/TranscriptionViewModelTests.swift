@@ -132,8 +132,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.confirmedText = "Some text"
         vm.clearText()
 
-        // Should stop, clear, and restart
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        // clearText internally does: stopTranscription (await) + 100ms sleep + startRecording
+        try? await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(vm.confirmedText, "")
         XCTAssertEqual(vm.unconfirmedText, "")
         XCTAssertTrue(vm.isRecording)
@@ -175,7 +175,8 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         vm.switchLanguage(.japanese)
 
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        // switchLanguage internally does: stopTranscription (await) + 100ms sleep + startRecording
+        try? await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertTrue(vm.isRecording)
         XCTAssertEqual(vm.currentLanguage, .japanese)
     }

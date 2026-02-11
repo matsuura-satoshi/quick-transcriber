@@ -19,23 +19,24 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
 
-    private let service: TranscriptionService
+    private var service: TranscriptionService
     private let modelName: String
     private let parametersStore: ParametersStore
     private var previousSessionText: String = ""
-    private var parametersCancellable: AnyCancellable?
+    private var cancellables: Set<AnyCancellable> = []
 
     public init(
-        engine: TranscriptionEngine = WhisperKitEngine(),
+        engine: TranscriptionEngine? = nil,
         modelName: String = "large-v3-v20240930_turbo",
         parametersStore: ParametersStore? = nil
     ) {
-        self.service = TranscriptionService(engine: engine)
-        self.modelName = modelName
         let resolvedStore = parametersStore ?? ParametersStore.shared
+        let resolvedEngine = engine ?? Self.createEngine(for: resolvedStore.engineType)
+        self.service = TranscriptionService(engine: resolvedEngine)
+        self.modelName = modelName
         self.parametersStore = resolvedStore
 
-        parametersCancellable = resolvedStore.$parameters
+        resolvedStore.$parameters
             .dropFirst()
             .removeDuplicates()
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
@@ -44,6 +45,44 @@ public final class TranscriptionViewModel: ObservableObject {
                 NSLog("[MyTranscriber] Parameters changed, restarting recording")
                 self.restartRecording()
             }
+            .store(in: &cancellables)
+
+        resolvedStore.$engineType
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] newType in
+                guard let self else { return }
+                NSLog("[MyTranscriber] Engine type changed to: \(newType.rawValue)")
+                self.switchEngine(to: newType)
+            }
+            .store(in: &cancellables)
+    }
+
+    private static func createEngine(for type: EngineType) -> TranscriptionEngine {
+        switch type {
+        case .streaming:
+            return WhisperKitEngine()
+        case .chunked:
+            return ChunkedWhisperEngine()
+        }
+    }
+
+    private func switchEngine(to type: EngineType) {
+        let wasRecording = isRecording
+        if wasRecording {
+            saveUnconfirmedText()
+            isRecording = false
+        }
+        Task {
+            await service.stopTranscription()
+            service.cleanup()
+            let newEngine = Self.createEngine(for: type)
+            self.service = TranscriptionService(engine: newEngine)
+            await loadModel()
+            if wasRecording {
+                startRecording()
+            }
+        }
     }
 
     public func loadModel() async {
