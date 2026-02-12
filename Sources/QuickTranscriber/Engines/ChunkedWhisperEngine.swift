@@ -93,22 +93,44 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     // MARK: - Private
 
+    /// RMS energy threshold for skipping silent chunks.
+    /// Lower than ChunkAccumulator.silenceEnergyThreshold (0.01) to be more conservative.
+    private static let silenceSkipThreshold: Float = 0.005
+
     private func processChunk(
         _ chunk: [Float],
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async {
         let chunkDuration = Double(chunk.count) / 16000.0
-        NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples")
+        let energy = ChunkAccumulator.rmsEnergy(of: chunk)
+
+        if energy < Self.silenceSkipThreshold {
+            NSLog("[ChunkedWhisperEngine] Skipping silent chunk: \(String(format: "%.1f", chunkDuration))s, energy=\(String(format: "%.6f", energy))")
+            return
+        }
+
+        NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, energy=\(String(format: "%.6f", energy))")
 
         do {
-            let texts = try await transcriber.transcribe(
+            let segments = try await transcriber.transcribe(
                 audioArray: chunk,
                 language: currentLanguage,
                 parameters: currentParameters
             )
-            confirmedSegments.append(contentsOf: texts)
-            for text in texts {
-                NSLog("[ChunkedWhisperEngine] Confirmed: \(text)")
+            let filtered = segments.filter { segment in
+                if TranscriptionUtils.shouldFilterByMetadata(segment) {
+                    NSLog("[ChunkedWhisperEngine] Filtered (metadata): \(segment.text) [noSpeech=\(String(format: "%.2f", segment.noSpeechProb)), logprob=\(String(format: "%.2f", segment.avgLogprob))]")
+                    return false
+                }
+                if TranscriptionUtils.shouldFilterSegment(segment.text, language: currentLanguage) {
+                    NSLog("[ChunkedWhisperEngine] Filtered (text): \(segment.text)")
+                    return false
+                }
+                return true
+            }
+            confirmedSegments.append(contentsOf: filtered.map(\.text))
+            for segment in filtered {
+                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text)")
             }
 
             let confirmedText = confirmedSegments.joined(separator: "\n")

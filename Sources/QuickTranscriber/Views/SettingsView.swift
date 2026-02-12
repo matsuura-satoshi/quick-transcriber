@@ -23,8 +23,19 @@ private struct TranscriptionSettingsTab: View {
         Form {
             chunkSection
             decodingSection
+            resetSection
         }
         .formStyle(.grouped)
+    }
+
+    // MARK: - Reset
+
+    private var resetSection: some View {
+        Section {
+            Button("Reset to Defaults") {
+                store.resetToDefaults()
+            }
+        }
     }
 
     // MARK: - Chunk Settings

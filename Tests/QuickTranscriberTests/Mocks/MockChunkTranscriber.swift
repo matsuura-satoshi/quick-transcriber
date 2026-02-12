@@ -4,7 +4,9 @@ import Foundation
 final class MockChunkTranscriber: ChunkTranscriber {
     var setupCalled = false
     var setupError: Error?
-    var transcribeResults: [String] = ["mock transcription"]
+    var transcribeResults: [TranscribedSegment] = [
+        TranscribedSegment(text: "mock transcription", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+    ]
     var transcribeError: Error?
     var transcribeCallCount = 0
     var lastAudioArray: [Float]?
@@ -15,7 +17,7 @@ final class MockChunkTranscriber: ChunkTranscriber {
         if let error = setupError { throw error }
     }
 
-    func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [String] {
+    func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [TranscribedSegment] {
         transcribeCallCount += 1
         lastAudioArray = audioArray
         lastLanguage = language

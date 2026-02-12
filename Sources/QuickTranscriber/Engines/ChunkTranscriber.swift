@@ -5,7 +5,7 @@ import WhisperKit
 /// Abstracts WhisperKit.transcribe(audioArray:) for testability.
 public protocol ChunkTranscriber: AnyObject {
     func setup(model: String) async throws
-    func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [String]
+    func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [TranscribedSegment]
 }
 
 /// Production implementation backed by WhisperKit.
@@ -18,7 +18,7 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
         self.whisperKit = try await WhisperKitModelLoader.createWhisperKit(model: model)
     }
 
-    public func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [String] {
+    public func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [TranscribedSegment] {
         guard let whisperKit else {
             throw TranscriptionEngineError.notInitialized
         }
@@ -42,7 +42,16 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
 
         let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: options)
         return results.flatMap { result in
-            result.segments.map { TranscriptionUtils.cleanSegmentText($0.text) }
-        }.filter { !$0.isEmpty }
+            result.segments.compactMap { segment -> TranscribedSegment? in
+                let cleanedText = TranscriptionUtils.cleanSegmentText(segment.text)
+                guard !cleanedText.isEmpty else { return nil }
+                return TranscribedSegment(
+                    text: cleanedText,
+                    avgLogprob: segment.avgLogprob,
+                    compressionRatio: segment.compressionRatio,
+                    noSpeechProb: segment.noSpeechProb
+                )
+            }
+        }
     }
 }
