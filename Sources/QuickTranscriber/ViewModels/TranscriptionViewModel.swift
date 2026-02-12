@@ -15,7 +15,13 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var confirmedText: String = ""
     @Published public var unconfirmedText: String = ""
     @Published public var isRecording: Bool = false
-    @Published public var currentLanguage: Language = .english
+    @Published public var currentLanguage: Language = {
+        if let raw = UserDefaults.standard.string(forKey: "selectedLanguage"),
+           let lang = Language(rawValue: raw) {
+            return lang
+        }
+        return .english
+    }()
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
 
@@ -84,6 +90,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         currentLanguage = language
+        UserDefaults.standard.set(language.rawValue, forKey: "selectedLanguage")
 
         if wasRecording {
             Task {

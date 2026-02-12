@@ -4,6 +4,11 @@ import XCTest
 @MainActor
 final class TranscriptionViewModelTests: XCTestCase {
 
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: "selectedLanguage")
+    }
+
     private func makeViewModel() -> (TranscriptionViewModel, MockTranscriptionEngine) {
         let engine = MockTranscriptionEngine()
         let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
