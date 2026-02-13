@@ -37,10 +37,13 @@ public final class TranscriptionViewModel: ObservableObject {
         engine: TranscriptionEngine? = nil,
         modelName: String = "large-v3-v20240930_turbo",
         parametersStore: ParametersStore? = nil,
-        fileWriter: TranscriptFileWriter? = nil
+        fileWriter: TranscriptFileWriter? = nil,
+        diarizer: SpeakerDiarizer? = nil
     ) {
         let resolvedStore = parametersStore ?? ParametersStore.shared
-        let resolvedEngine = engine ?? ChunkedWhisperEngine()
+        // Always create diarizer so it's available when the user enables it at runtime.
+        // The enableSpeakerDiarization parameter controls whether it's actually used.
+        let resolvedEngine = engine ?? ChunkedWhisperEngine(diarizer: diarizer ?? FluidAudioSpeakerDiarizer())
         self.service = TranscriptionService(engine: resolvedEngine)
         self.modelName = modelName
         self.parametersStore = resolvedStore

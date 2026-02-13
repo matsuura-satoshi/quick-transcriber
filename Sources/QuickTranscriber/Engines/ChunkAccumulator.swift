@@ -1,5 +1,11 @@
 import Foundation
 
+/// Result of a chunk cut, containing audio samples and trailing silence info.
+public struct ChunkResult: Sendable {
+    public let samples: [Float]
+    public let trailingSilenceDuration: TimeInterval
+}
+
 /// Accumulates audio buffers and emits chunks based on silence detection or max duration.
 /// Pure logic with no external dependencies — easy to unit test.
 public struct ChunkAccumulator {
@@ -30,8 +36,8 @@ public struct ChunkAccumulator {
     }
 
     /// Append a buffer of 16kHz Float32 samples.
-    /// Returns a chunk if cut conditions are met, otherwise nil.
-    public mutating func appendBuffer(_ samples: [Float]) -> [Float]? {
+    /// Returns a ChunkResult if cut conditions are met, otherwise nil.
+    public mutating func appendBuffer(_ samples: [Float]) -> ChunkResult? {
         guard !samples.isEmpty else { return nil }
 
         buffer.append(contentsOf: samples)
@@ -62,7 +68,7 @@ public struct ChunkAccumulator {
 
     /// Flush any remaining audio (e.g., when stopping recording).
     /// Returns the remaining buffer if it has enough content, otherwise nil.
-    public mutating func flush() -> [Float]? {
+    public mutating func flush() -> ChunkResult? {
         guard !buffer.isEmpty else { return nil }
         let totalDuration = TimeInterval(buffer.count) / sampleRate
         // Only flush if there's meaningful audio (at least 0.5s)
@@ -89,10 +95,11 @@ public struct ChunkAccumulator {
 
     // MARK: - Private
 
-    private mutating func cutChunk() -> [Float] {
+    private mutating func cutChunk() -> ChunkResult {
         let chunk = buffer
+        let silence = trailingSilenceDuration
         buffer.removeAll(keepingCapacity: true)
         trailingSilenceDuration = 0
-        return chunk
+        return ChunkResult(samples: chunk, trailingSilenceDuration: silence)
     }
 }
