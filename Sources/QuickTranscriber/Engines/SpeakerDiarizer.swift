@@ -8,11 +8,11 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
-/// Uses a rolling buffer (10-second window) to accumulate audio and diarize
+/// Uses a rolling buffer (30-second window) to accumulate audio and diarize
 /// the window, returning the last speaker as the current speaker.
 public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     private let sampleRate: Int = 16000
-    private let windowDuration: TimeInterval = 10.0
+    private let windowDuration: TimeInterval = 30.0
     private var rollingBuffer: [Float] = []
     private var diarizer: OfflineDiarizerManager?
     private var speakerMapping: [String: String] = [:]
