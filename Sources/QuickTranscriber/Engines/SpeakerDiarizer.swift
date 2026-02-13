@@ -33,13 +33,13 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         guard let diarizer else { return nil }
 
         let windowSamples = Int(windowDuration * Double(sampleRate))
-        lock.lock()
-        rollingBuffer.append(contentsOf: audioChunk)
-        if rollingBuffer.count > windowSamples {
-            rollingBuffer.removeFirst(rollingBuffer.count - windowSamples)
+        let currentBuffer = lock.withLock {
+            rollingBuffer.append(contentsOf: audioChunk)
+            if rollingBuffer.count > windowSamples {
+                rollingBuffer.removeFirst(rollingBuffer.count - windowSamples)
+            }
+            return rollingBuffer
         }
-        let currentBuffer = rollingBuffer
-        lock.unlock()
 
         // Need at least 1 second of audio for meaningful diarization
         guard currentBuffer.count >= sampleRate else { return nil }
