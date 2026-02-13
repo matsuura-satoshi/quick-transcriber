@@ -113,4 +113,79 @@ final class SpeakerLabelTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.processLabel("A"), "A")
         XCTAssertEqual(tracker.processLabel("B"), "B")  // immediate change
     }
+
+    // MARK: - Integration: smoothing pipeline with retroactive updates
+
+    func testSpeakerLabelSmoothing() {
+        let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
+
+        // Simulate the engine's logic
+        var segments: [ConfirmedSegment] = []
+        var pendingStart: Int?
+
+        // Chunk 1: diarizer says "A" (first speaker, confirmed immediately)
+        let speaker1 = tracker.processLabel("A")
+        XCTAssertEqual(speaker1, "A")
+        segments.append(ConfirmedSegment(text: "Hello", speaker: speaker1))
+
+        // Chunk 2: diarizer says "B" (pending, not yet confirmed)
+        let speaker2 = tracker.processLabel("B")
+        XCTAssertNil(speaker2)
+        segments.append(ConfirmedSegment(text: "New topic", speaker: speaker2))
+        pendingStart = 1
+
+        // At this point, joinSegments should show text without speaker change
+        let textDuringPending = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        XCTAssertEqual(textDuringPending, "A: Hello New topic")
+
+        // Chunk 3: diarizer says "B" again (now confirmed!)
+        let speaker3 = tracker.processLabel("B")
+        XCTAssertEqual(speaker3, "B")
+
+        // Retroactive update
+        if let start = pendingStart {
+            for i in start..<segments.count {
+                segments[i].speaker = speaker3
+            }
+            pendingStart = nil
+        }
+        segments.append(ConfirmedSegment(text: "More talk", speaker: speaker3))
+
+        // After retroactive update, output should show speaker change
+        let textAfterConfirm = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        XCTAssertEqual(textAfterConfirm, "A: Hello\nB: New topic More talk")
+    }
+
+    func testSpeakerLabelFalseAlarm() {
+        let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
+
+        var segments: [ConfirmedSegment] = []
+        var pendingStart: Int?
+
+        // Chunk 1: A confirmed
+        segments.append(ConfirmedSegment(text: "Hello", speaker: tracker.processLabel("A")))
+
+        // Chunk 2: B pending
+        let s2 = tracker.processLabel("B")
+        XCTAssertNil(s2)
+        segments.append(ConfirmedSegment(text: "glitch", speaker: s2))
+        pendingStart = 1
+
+        // Chunk 3: Back to A (false alarm)
+        let s3 = tracker.processLabel("A")
+        XCTAssertEqual(s3, "A")
+
+        // Retroactive update: pending segments get A (not B)
+        if let start = pendingStart {
+            for i in start..<segments.count {
+                segments[i].speaker = s3
+            }
+            pendingStart = nil
+        }
+        segments.append(ConfirmedSegment(text: "continuing", speaker: s3))
+
+        let text = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        // All segments are speaker A, no speaker change line
+        XCTAssertEqual(text, "A: Hello glitch continuing")
+    }
 }
