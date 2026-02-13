@@ -112,6 +112,28 @@ public enum TranscriptionUtils {
         return false
     }
 
+    // MARK: - Segment Joining
+
+    /// Join transcribed segments with language-aware separators.
+    /// Inserts newline after sentence-ending punctuation, otherwise uses space (en) or empty (ja).
+    public static func joinSegments(_ segments: [String], language: String) -> String {
+        guard !segments.isEmpty else { return "" }
+        let sentenceEnders: Set<Character> = (language == "ja")
+            ? ["。", "！", "？"] : [".", "!", "?"]
+        let separator = (language == "ja") ? "" : " "
+        var result = segments[0]
+        for i in 1..<segments.count {
+            let segment = segments[i]
+            guard !segment.isEmpty else { continue }
+            if let last = result.last, sentenceEnders.contains(last) {
+                result += "\n" + segment
+            } else {
+                result += separator + segment
+            }
+        }
+        return result
+    }
+
     // MARK: - Private Helpers
 
     private static func hasConsecutiveCharRepetition(_ text: String, threshold: Int) -> Bool {

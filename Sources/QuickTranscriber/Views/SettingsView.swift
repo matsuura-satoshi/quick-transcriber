@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 public struct SettingsView: View {
     @ObservedObject private var store = ParametersStore.shared
@@ -10,6 +11,10 @@ public struct SettingsView: View {
             TranscriptionSettingsTab(store: store)
                 .tabItem {
                     Label("Transcription", systemImage: "waveform")
+                }
+            OutputSettingsTab()
+                .tabItem {
+                    Label("Output", systemImage: "folder")
                 }
         }
         .frame(width: 480, height: 400)
@@ -97,6 +102,72 @@ private struct TranscriptionSettingsTab: View {
                 value: $store.parameters.concurrentWorkerCount,
                 range: 1...8
             )
+        }
+    }
+}
+
+// MARK: - Output Settings
+
+private struct OutputSettingsTab: View {
+    @AppStorage("transcriptsDirectory") private var transcriptsDirectory: String = ""
+    @AppStorage("isRecording") private var isRecording: Bool = false
+
+    private var displayPath: String {
+        let path = transcriptsDirectory.isEmpty
+            ? TranscriptFileWriter.defaultDirectory.path
+            : transcriptsDirectory
+        return path.replacingOccurrences(
+            of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+    }
+
+    var body: some View {
+        Form {
+            Section("Transcript Output") {
+                HStack {
+                    Text("Output Folder")
+                    Spacer()
+                    Text(displayPath)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                HStack {
+                    Button("Choose Folder...") {
+                        chooseFolder()
+                    }
+                    .disabled(isRecording)
+                    if !transcriptsDirectory.isEmpty {
+                        Button("Reset to Default") {
+                            transcriptsDirectory = ""
+                        }
+                        .disabled(isRecording)
+                    }
+                }
+                if isRecording {
+                    Text("Stop recording to change the output folder.")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+            }
+            Section {
+                Text("Transcripts are saved as **YYYY-MM-DD_HHmm_qt_transcript.md** with a **qt_transcript.md** symlink pointing to the latest file.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Select"
+        panel.message = "Choose a folder for transcript output"
+        if panel.runModal() == .OK, let url = panel.url {
+            transcriptsDirectory = url.path
         }
     }
 }

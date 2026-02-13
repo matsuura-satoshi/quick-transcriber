@@ -213,7 +213,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         // confirmedText should contain both segments joined by newline
         let lastState = states.last
-        XCTAssertEqual(lastState?.confirmedText, "segment\nsegment")
+        XCTAssertEqual(lastState?.confirmedText, "segment segment")
 
         await engine.stopStreaming()
     }

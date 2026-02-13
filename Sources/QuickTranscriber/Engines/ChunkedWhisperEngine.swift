@@ -133,7 +133,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text)")
             }
 
-            let confirmedText = confirmedSegments.joined(separator: "\n")
+            let confirmedText = TranscriptionUtils.joinSegments(confirmedSegments, language: currentLanguage)
             onStateChange(TranscriptionState(
                 confirmedText: confirmedText,
                 unconfirmedText: "",

@@ -4,14 +4,28 @@ import XCTest
 @MainActor
 final class TranscriptionViewModelTests: XCTestCase {
 
+    private var tmpDir: URL!
+
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "selectedLanguage")
+        UserDefaults.standard.removeObject(forKey: "isRecording")
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
     }
 
-    private func makeViewModel() -> (TranscriptionViewModel, MockTranscriptionEngine) {
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tmpDir)
+        super.tearDown()
+    }
+
+    private func makeViewModel(
+        withFileWriter: Bool = false
+    ) -> (TranscriptionViewModel, MockTranscriptionEngine) {
         let engine = MockTranscriptionEngine()
-        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
+        let fileWriter = withFileWriter ? TranscriptFileWriter(transcriptsDirectory: tmpDir) : nil
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", fileWriter: fileWriter)
         return (vm, engine)
     }
 
@@ -296,5 +310,168 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.modelState, .notLoaded)
         await vm.loadModel()
         XCTAssertEqual(vm.modelState, .ready)
+    }
+
+    // MARK: - File output integration
+
+    private func transcriptFiles() -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(
+            at: tmpDir, includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent != "qt_transcript.md" }) ?? []
+    }
+
+    private func currentFileContent() -> String? {
+        let url = tmpDir.appendingPathComponent("qt_transcript.md")
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    func testRecordingStartCreatesTranscriptFile() async {
+        let (vm, _) = makeViewModel(withFileWriter: true)
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let files = transcriptFiles()
+        XCTAssertEqual(files.count, 1, "Should create one transcript file")
+
+        let content = currentFileContent()
+        XCTAssertNotNil(content)
+        XCTAssertTrue(content!.contains("language: English"))
+    }
+
+    func testStateCallbackUpdatesTranscriptFile() async {
+        let (vm, engine) = makeViewModel(withFileWriter: true)
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello world",
+            unconfirmedText: "",
+            isRecording: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let content = currentFileContent()!
+        XCTAssertTrue(content.contains("Hello world"))
+    }
+
+    func testStopRecordingEndsFileSession() async {
+        let (vm, engine) = makeViewModel(withFileWriter: true)
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Before stop",
+            unconfirmedText: "",
+            isRecording: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        vm.toggleRecording() // stop
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let content = currentFileContent()!
+        XCTAssertTrue(content.contains("Before stop"))
+    }
+
+    func testClearTextCreatesNewFile() async {
+        let (vm, engine) = makeViewModel(withFileWriter: true)
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Old text",
+            unconfirmedText: "",
+            isRecording: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        vm.clearText()
+        // clearText: stop + 100ms sleep + startRecording → new file session
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // The file should have been re-created (same minute = same filename, fresh content)
+        let content = currentFileContent()!
+        XCTAssertFalse(content.contains("Old text"),
+                       "After clear, file should not contain old text")
+    }
+
+    func testLanguageSwitchContinuesSameFile() async {
+        let (vm, engine) = makeViewModel(withFileWriter: true)
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "English text",
+            unconfirmedText: "",
+            isRecording: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        vm.switchLanguage(.japanese)
+        // switchLanguage: stop + 100ms sleep + startRecording (same file session)
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        // Same file should still have the original text + divider
+        let files = transcriptFiles()
+        XCTAssertEqual(files.count, 1, "Language switch should not create a new file")
+    }
+
+    func testDirectoryChangeCreatesNewFileWithExistingText() async {
+        // Use UserDefaults-based writer (no explicit directory)
+        let dir1 = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDir1-\(UUID().uuidString)")
+        let dir2 = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDir2-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir1, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: dir2, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: dir1)
+            try? FileManager.default.removeItem(at: dir2)
+            UserDefaults.standard.removeObject(forKey: "transcriptsDirectory")
+        }
+
+        UserDefaults.standard.set(dir1.path, forKey: "transcriptsDirectory")
+
+        let engine = MockTranscriptionEngine()
+        let writer = TranscriptFileWriter()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", fileWriter: writer)
+        await vm.loadModel()
+
+        // Start recording in dir1
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Text from dir1",
+            unconfirmedText: "",
+            isRecording: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Stop, change directory, restart
+        vm.toggleRecording() // stop
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        UserDefaults.standard.set(dir2.path, forKey: "transcriptsDirectory")
+
+        vm.toggleRecording() // start → should detect directory change
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        // dir2 should have a file with the existing text
+        let dir2Symlink = dir2.appendingPathComponent("qt_transcript.md")
+        let content = try? String(contentsOf: dir2Symlink, encoding: .utf8)
+        XCTAssertNotNil(content, "New directory should have a transcript file")
+        XCTAssertTrue(content?.contains("Text from dir1") ?? false,
+                      "New file should contain existing text as initial content")
     }
 }
