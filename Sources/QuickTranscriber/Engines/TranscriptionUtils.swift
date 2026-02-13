@@ -3,7 +3,7 @@ import Foundation
 public struct ConfirmedSegment: Sendable, Equatable {
     public let text: String
     public let precedingSilence: TimeInterval
-    public let speaker: String?
+    public var speaker: String?
 
     public init(text: String, precedingSilence: TimeInterval = 0, speaker: String? = nil) {
         self.text = text
