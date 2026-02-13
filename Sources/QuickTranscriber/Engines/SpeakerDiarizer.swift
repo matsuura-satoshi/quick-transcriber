@@ -9,14 +9,29 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
 /// Uses a rolling buffer (30-second window) to accumulate audio and diarize
-/// the window, returning the last speaker as the current speaker.
+/// the window. Identifies the speaker of the latest chunk using time-range
+/// filtering and embedding-based cosine similarity tracking.
 public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
+    /// Lightweight struct for testable segment info.
+    public struct TimedSegmentInfo {
+        public let speakerId: String
+        public let embedding: [Float]
+        public let startTime: Float
+        public let endTime: Float
+
+        public init(speakerId: String, embedding: [Float], startTime: Float, endTime: Float) {
+            self.speakerId = speakerId
+            self.embedding = embedding
+            self.startTime = startTime
+            self.endTime = endTime
+        }
+    }
+
     private let sampleRate: Int = 16000
     private let windowDuration: TimeInterval = 30.0
     private var rollingBuffer: [Float] = []
     private var diarizer: OfflineDiarizerManager?
-    private var speakerMapping: [String: String] = [:]
-    private var nextSpeakerIndex: Int = 0
+    private let speakerTracker = EmbeddingBasedSpeakerTracker()
     private let lock = NSLock()
 
     public init() {}
@@ -46,24 +61,59 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
 
         do {
             let result = try await diarizer.process(audio: currentBuffer)
-            guard let lastSegment = result.segments.last else { return nil }
-            return mapSpeakerId(lastSegment.speakerId)
+
+            let segments = result.segments.map { seg in
+                TimedSegmentInfo(
+                    speakerId: seg.speakerId,
+                    embedding: seg.embedding,
+                    startTime: seg.startTimeSeconds,
+                    endTime: seg.endTimeSeconds
+                )
+            }
+
+            let bufferDuration = Float(currentBuffer.count) / Float(sampleRate)
+            let chunkDuration = Float(audioChunk.count) / Float(sampleRate)
+
+            guard let relevant = Self.findRelevantSegment(
+                segments: segments,
+                bufferDuration: bufferDuration,
+                chunkDuration: chunkDuration
+            ) else {
+                return nil
+            }
+
+            let label = speakerTracker.identify(embedding: relevant.embedding)
+            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(label) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s)")
+            return label
         } catch {
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
             return nil
         }
     }
 
-    /// Map internal speaker IDs to human-readable labels (A, B, C, ...).
-    private func mapSpeakerId(_ internalId: String) -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        if let mapped = speakerMapping[internalId] {
-            return mapped
+    /// Find the segment with the most overlap with the latest chunk's time range.
+    public static func findRelevantSegment(
+        segments: [TimedSegmentInfo],
+        bufferDuration: Float,
+        chunkDuration: Float
+    ) -> TimedSegmentInfo? {
+        let chunkStart = bufferDuration - chunkDuration
+        let chunkEnd = bufferDuration
+
+        var bestSegment: TimedSegmentInfo?
+        var bestOverlap: Float = 0
+
+        for segment in segments {
+            let overlapStart = max(segment.startTime, chunkStart)
+            let overlapEnd = min(segment.endTime, chunkEnd)
+            let overlap = max(0, overlapEnd - overlapStart)
+
+            if overlap > bestOverlap {
+                bestOverlap = overlap
+                bestSegment = segment
+            }
         }
-        let label = String(UnicodeScalar(UInt8(65 + nextSpeakerIndex % 26)))  // A, B, C, ...
-        speakerMapping[internalId] = label
-        nextSpeakerIndex += 1
-        return label
+
+        return bestSegment
     }
 }
