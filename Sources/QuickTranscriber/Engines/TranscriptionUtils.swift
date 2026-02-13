@@ -1,5 +1,17 @@
 import Foundation
 
+public struct ConfirmedSegment: Sendable, Equatable {
+    public let text: String
+    public let precedingSilence: TimeInterval
+    public let speaker: String?
+
+    public init(text: String, precedingSilence: TimeInterval = 0, speaker: String? = nil) {
+        self.text = text
+        self.precedingSilence = precedingSilence
+        self.speaker = speaker
+    }
+}
+
 public struct TranscribedSegment: Sendable {
     public let text: String
     public let avgLogprob: Float
@@ -114,24 +126,64 @@ public enum TranscriptionUtils {
 
     // MARK: - Segment Joining
 
-    /// Join transcribed segments with language-aware separators.
-    /// Inserts newline after sentence-ending punctuation, otherwise uses space (en) or empty (ja).
-    public static func joinSegments(_ segments: [String], language: String) -> String {
+    /// Join confirmed segments with speaker labels, silence-based, and punctuation-based line breaks.
+    /// Priority: 1) Speaker change → labeled newline  2) Silence threshold → newline  3) Sentence end → newline  4) Inline
+    public static func joinSegments(
+        _ segments: [ConfirmedSegment],
+        language: String,
+        silenceThreshold: TimeInterval = 1.0
+    ) -> String {
         guard !segments.isEmpty else { return "" }
+        let hasSpeakers = segments.contains { $0.speaker != nil }
         let sentenceEnders: Set<Character> = (language == "ja")
             ? ["。", "！", "？"] : [".", "!", "?"]
         let separator = (language == "ja") ? "" : " "
-        var result = segments[0]
-        for i in 1..<segments.count {
-            let segment = segments[i]
-            guard !segment.isEmpty else { continue }
-            if let last = result.last, sentenceEnders.contains(last) {
-                result += "\n" + segment
-            } else {
-                result += separator + segment
+
+        var result = ""
+        var currentSpeaker: String? = nil
+
+        for (index, segment) in segments.enumerated() {
+            guard !segment.text.isEmpty else { continue }
+
+            if index == 0 {
+                if hasSpeakers, let speaker = segment.speaker {
+                    result = "\(speaker): \(segment.text)"
+                    currentSpeaker = speaker
+                } else {
+                    result = segment.text
+                }
+                continue
             }
+
+            // Priority 1: Speaker change
+            if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
+                result += "\n\(speaker): \(segment.text)"
+                currentSpeaker = speaker
+                continue
+            }
+
+            // Priority 2: Silence threshold
+            if segment.precedingSilence >= silenceThreshold {
+                result += "\n" + segment.text
+                continue
+            }
+
+            // Priority 3: Sentence end
+            if let last = result.last, sentenceEnders.contains(last) {
+                result += "\n" + segment.text
+                continue
+            }
+
+            // Priority 4: Inline
+            result += separator + segment.text
         }
         return result
+    }
+
+    /// Join string segments with language-aware separators (backward compatibility).
+    public static func joinSegments(_ segments: [String], language: String) -> String {
+        let confirmed = segments.map { ConfirmedSegment(text: $0) }
+        return joinSegments(confirmed, language: language)
     }
 
     // MARK: - Private Helpers

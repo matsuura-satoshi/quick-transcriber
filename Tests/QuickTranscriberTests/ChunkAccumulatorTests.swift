@@ -18,7 +18,7 @@ final class ChunkAccumulatorTests: XCTestCase {
         // Feed remaining 1.0s to reach 3.0s — should cut
         let chunk = acc.appendBuffer(buffer1s)
         XCTAssertNotNil(chunk, "Should cut at max duration")
-        XCTAssertEqual(chunk!.count, samplesPerSecond * 3)
+        XCTAssertEqual(chunk!.samples.count, samplesPerSecond * 3)
     }
 
     // MARK: - Silence Detection
@@ -39,7 +39,7 @@ final class ChunkAccumulatorTests: XCTestCase {
         let chunk = acc.appendBuffer(silenceBuffer)
         XCTAssertNotNil(chunk, "Should cut after silence threshold")
         let expectedCount = Int(1.2 * sampleRate) + Int(0.5 * sampleRate)
-        XCTAssertEqual(chunk!.count, expectedCount)
+        XCTAssertEqual(chunk!.samples.count, expectedCount)
     }
 
     // MARK: - Minimum Chunk Length
@@ -105,7 +105,7 @@ final class ChunkAccumulatorTests: XCTestCase {
         // Flush should return the buffered audio
         let chunk = acc.flush()
         XCTAssertNotNil(chunk)
-        XCTAssertEqual(chunk!.count, Int(sampleRate))
+        XCTAssertEqual(chunk!.samples.count, Int(sampleRate))
     }
 
     func testFlushDiscardsTooShortAudio() {
@@ -144,6 +144,54 @@ final class ChunkAccumulatorTests: XCTestCase {
         }
 
         XCTAssertEqual(chunkCount, 2, "Should produce 2 full chunks from 5s of audio at 2s max")
+    }
+
+    // MARK: - ChunkResult trailing silence
+
+    func testChunkResultContainsTrailingSilenceDuration() {
+        var acc = ChunkAccumulator(
+            chunkDuration: 3.0,
+            silenceCutoffDuration: 0.5,
+            silenceEnergyThreshold: 0.01,
+            minimumChunkDuration: 1.0
+        )
+        // Feed 1.2s speech + 0.5s silence → triggers cut
+        let speech = [Float](repeating: 0.1, count: Int(1.2 * sampleRate))
+        XCTAssertNil(acc.appendBuffer(speech))
+        let silence = [Float](repeating: 0.0, count: Int(0.5 * sampleRate))
+        let result = acc.appendBuffer(silence)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result!.samples.count, Int(1.2 * sampleRate) + Int(0.5 * sampleRate))
+        XCTAssertEqual(result!.trailingSilenceDuration, 0.5, accuracy: 0.01)
+    }
+
+    func testChunkResultAtMaxDurationCapturesTrailingSilence() {
+        var acc = ChunkAccumulator(chunkDuration: 2.0)
+        // Feed 1.5s speech + 0.5s silence = 2.0s → forced cut
+        let speech = [Float](repeating: 0.1, count: Int(1.5 * sampleRate))
+        XCTAssertNil(acc.appendBuffer(speech))
+        let silence = [Float](repeating: 0.0, count: Int(0.5 * sampleRate))
+        let result = acc.appendBuffer(silence)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result!.trailingSilenceDuration, 0.5, accuracy: 0.01)
+    }
+
+    func testChunkResultWithNoTrailingSilence() {
+        var acc = ChunkAccumulator(chunkDuration: 2.0)
+        // Feed 2.0s speech → forced cut, no trailing silence
+        let speech = [Float](repeating: 0.1, count: Int(2.0 * sampleRate))
+        let result = acc.appendBuffer(speech)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result!.trailingSilenceDuration, 0.0, accuracy: 0.001)
+    }
+
+    func testFlushReturnsChunkResult() {
+        var acc = ChunkAccumulator(chunkDuration: 3.0)
+        let speech = [Float](repeating: 0.1, count: Int(sampleRate))
+        XCTAssertNil(acc.appendBuffer(speech))
+        let result = acc.flush()
+        XCTAssertNotNil(result)
+        XCTAssertEqual(result!.samples.count, Int(sampleRate))
     }
 
     // MARK: - Silence Resets After Speech

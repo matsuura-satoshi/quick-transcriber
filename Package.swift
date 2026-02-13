@@ -9,12 +9,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.12.1"),
     ],
     targets: [
         .target(
             name: "QuickTranscriberLib",
             dependencies: [
                 .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Sources/QuickTranscriber"
         ),

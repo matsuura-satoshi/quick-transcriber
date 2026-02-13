@@ -27,6 +27,7 @@ private struct TranscriptionSettingsTab: View {
     var body: some View {
         Form {
             chunkSection
+            speakerSection
             decodingSection
             resetSection
         }
@@ -70,6 +71,22 @@ private struct TranscriptionSettingsTab: View {
                 step: 0.001,
                 format: "%.3f"
             )
+
+            DoubleSliderRow(
+                label: "Line Break Silence",
+                value: $store.parameters.silenceLineBreakThreshold,
+                range: 0.5...3.0,
+                step: 0.1,
+                format: "%.1f s"
+            )
+        }
+    }
+
+    // MARK: - Speaker Detection
+
+    private var speakerSection: some View {
+        Section("Speaker Detection") {
+            Toggle("Enable Speaker Diarization", isOn: $store.parameters.enableSpeakerDiarization)
         }
     }
 

@@ -3,20 +3,25 @@ import Foundation
 public final class ChunkedWhisperEngine: TranscriptionEngine {
     private let audioCaptureService: AudioCaptureService
     private let transcriber: ChunkTranscriber
+    private let diarizer: SpeakerDiarizer?
     private var accumulator: ChunkAccumulator
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
-    private var confirmedSegments: [String] = []
+    private var confirmedSegments: [ConfirmedSegment] = []
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
     private var currentParameters: TranscriptionParameters = .default
+    /// Accumulated silence since last confirmed segment (seconds).
+    private var silenceSinceLastSegment: TimeInterval = 0
 
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
-        transcriber: ChunkTranscriber = WhisperKitChunkTranscriber()
+        transcriber: ChunkTranscriber = WhisperKitChunkTranscriber(),
+        diarizer: SpeakerDiarizer? = nil
     ) {
         self.audioCaptureService = audioCaptureService
         self.transcriber = transcriber
+        self.diarizer = diarizer
         self.accumulator = ChunkAccumulator()
     }
 
@@ -25,7 +30,20 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     }
 
     public func setup(model: String) async throws {
-        try await transcriber.setup(model: model)
+        // Initialize WhisperKit and FluidAudio in parallel
+        if let diarizer {
+            async let whisperSetup: Void = transcriber.setup(model: model)
+            async let diarizerSetup: Void = diarizer.setup()
+            try await whisperSetup
+            do {
+                try await diarizerSetup
+                NSLog("[ChunkedWhisperEngine] Speaker diarizer ready")
+            } catch {
+                NSLog("[ChunkedWhisperEngine] Speaker diarizer failed to initialize: \(error). Continuing without diarization.")
+            }
+        } else {
+            try await transcriber.setup(model: model)
+        }
     }
 
     public func startStreaming(
@@ -39,6 +57,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             silenceEnergyThreshold: parameters.silenceEnergyThreshold
         )
         confirmedSegments = []
+        silenceSinceLastSegment = 0
         currentLanguage = language
         currentParameters = parameters
         _isStreaming = true
@@ -54,8 +73,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             for await samples in bufferStream {
                 guard let self, self._isStreaming else { break }
 
-                if let chunk = self.accumulator.appendBuffer(samples) {
-                    await self.processChunk(chunk, onStateChange: onStateChange)
+                if let chunkResult = self.accumulator.appendBuffer(samples) {
+                    await self.processChunk(chunkResult, onStateChange: onStateChange)
                 }
             }
         }
@@ -77,8 +96,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         streamingTask = nil
 
         // Now safe to access accumulator — streaming task is fully stopped
-        if let remainingChunk = accumulator.flush() {
-            await processChunk(remainingChunk, onStateChange: { _ in })
+        if let remainingResult = accumulator.flush() {
+            await processChunk(remainingResult, onStateChange: { _ in })
         }
 
         accumulator.reset()
@@ -98,25 +117,43 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private static let silenceSkipThreshold: Float = 0.005
 
     private func processChunk(
-        _ chunk: [Float],
+        _ chunkResult: ChunkResult,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async {
+        let chunk = chunkResult.samples
         let chunkDuration = Double(chunk.count) / 16000.0
         let energy = ChunkAccumulator.rmsEnergy(of: chunk)
 
         if energy < Self.silenceSkipThreshold {
-            NSLog("[ChunkedWhisperEngine] Skipping silent chunk: \(String(format: "%.1f", chunkDuration))s, energy=\(String(format: "%.6f", energy))")
+            // Silent chunk: accumulate its full duration as silence
+            silenceSinceLastSegment += chunkDuration
+            NSLog("[ChunkedWhisperEngine] Skipping silent chunk: \(String(format: "%.1f", chunkDuration))s, energy=\(String(format: "%.6f", energy)), totalSilence=\(String(format: "%.1f", silenceSinceLastSegment))s")
             return
         }
 
         NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, energy=\(String(format: "%.6f", energy))")
 
         do {
-            let segments = try await transcriber.transcribe(
-                audioArray: chunk,
-                language: currentLanguage,
-                parameters: currentParameters
-            )
+            // Run transcription and diarization in parallel when diarizer is available
+            let segments: [TranscribedSegment]
+            let speakerLabel: String?
+            if let diarizer, currentParameters.enableSpeakerDiarization {
+                async let transcription = transcriber.transcribe(
+                    audioArray: chunk,
+                    language: currentLanguage,
+                    parameters: currentParameters
+                )
+                async let speakerId = diarizer.identifySpeaker(audioChunk: chunk)
+                segments = try await transcription
+                speakerLabel = await speakerId
+            } else {
+                segments = try await transcriber.transcribe(
+                    audioArray: chunk,
+                    language: currentLanguage,
+                    parameters: currentParameters
+                )
+                speakerLabel = nil
+            }
             let filtered = segments.filter { segment in
                 if TranscriptionUtils.shouldFilterByMetadata(segment) {
                     NSLog("[ChunkedWhisperEngine] Filtered (metadata): \(segment.text) [noSpeech=\(String(format: "%.2f", segment.noSpeechProb)), logprob=\(String(format: "%.2f", segment.avgLogprob))]")
@@ -128,12 +165,33 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 }
                 return true
             }
-            confirmedSegments.append(contentsOf: filtered.map(\.text))
-            for segment in filtered {
-                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text)")
+
+            for (index, segment) in filtered.enumerated() {
+                let precedingSilence: TimeInterval
+                if index == 0 {
+                    // Only use accumulated silence from previous chunks/skipped chunks.
+                    // trailingSilenceDuration of the current chunk is AFTER this chunk's speech,
+                    // not before it, so it should not be added here.
+                    precedingSilence = silenceSinceLastSegment
+                } else {
+                    precedingSilence = 0
+                }
+                confirmedSegments.append(ConfirmedSegment(
+                    text: segment.text,
+                    precedingSilence: precedingSilence,
+                    speaker: speakerLabel
+                ))
+                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(speakerLabel ?? "nil"))")
             }
 
-            let confirmedText = TranscriptionUtils.joinSegments(confirmedSegments, language: currentLanguage)
+            // Reset silence tracker: start with trailing silence from this chunk
+            silenceSinceLastSegment = chunkResult.trailingSilenceDuration
+
+            let confirmedText = TranscriptionUtils.joinSegments(
+                confirmedSegments,
+                language: currentLanguage,
+                silenceThreshold: currentParameters.silenceLineBreakThreshold
+            )
             onStateChange(TranscriptionState(
                 confirmedText: confirmedText,
                 unconfirmedText: "",
