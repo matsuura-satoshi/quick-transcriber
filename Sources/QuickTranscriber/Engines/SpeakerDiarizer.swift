@@ -28,13 +28,23 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
     }
 
     private let sampleRate: Int = 16000
-    private let windowDuration: TimeInterval = 30.0
+    private let windowDuration: TimeInterval
     private var rollingBuffer: [Float] = []
     private var diarizer: OfflineDiarizerManager?
-    private let speakerTracker = EmbeddingBasedSpeakerTracker()
+    private let speakerTracker: EmbeddingBasedSpeakerTracker
     private let lock = NSLock()
 
-    public init() {}
+    public init(
+        similarityThreshold: Float = 0.5,
+        updateAlpha: Float = 0.3,
+        windowDuration: TimeInterval = 30.0
+    ) {
+        self.windowDuration = windowDuration
+        self.speakerTracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: similarityThreshold,
+            updateAlpha: updateAlpha
+        )
+    }
 
     public func setup() async throws {
         let config = OfflineDiarizerConfig()
