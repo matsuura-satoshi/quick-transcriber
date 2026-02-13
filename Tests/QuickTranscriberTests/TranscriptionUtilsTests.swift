@@ -262,6 +262,27 @@ final class TranscriptionUtilsTests: XCTestCase {
         XCTAssertEqual(result, "A: Hello\ncontinued")
     }
 
+    func testRetroactiveSpeakerUpdate() {
+        // Simulate: segments created without speaker, then retroactively updated
+        var segments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+            ConfirmedSegment(text: "new speaker", precedingSilence: 0.5, speaker: nil),  // pending
+            ConfirmedSegment(text: "still talking", precedingSilence: 0.3, speaker: nil), // pending
+        ]
+
+        // Before update: pending segments have no label
+        let beforeUpdate = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        XCTAssertEqual(beforeUpdate, "A: Hello new speaker still talking")
+
+        // Retroactive update: confirm speaker B
+        for i in 1..<segments.count {
+            segments[i].speaker = "B"
+        }
+
+        let afterUpdate = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        XCTAssertEqual(afterUpdate, "A: Hello\nB: new speaker still talking")
+    }
+
     func testJoinConfirmedSegmentsJapaneseSpeakerChange() {
         let segments = [
             ConfirmedSegment(text: "おはようございます", precedingSilence: 0, speaker: "A"),
