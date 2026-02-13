@@ -36,16 +36,20 @@ struct ControlBar: View {
     }
 
     private var languagePicker: some View {
-        Picker("Language", selection: Binding(
-            get: { currentLanguage },
-            set: { onSwitchLanguage($0) }
-        )) {
-            ForEach(Language.allCases) { lang in
-                Text(lang.displayName).tag(lang)
+        HStack(spacing: 4) {
+            Image(systemName: "globe")
+                .font(.title2)
+            Picker("", selection: Binding(
+                get: { currentLanguage },
+                set: { onSwitchLanguage($0) }
+            )) {
+                ForEach(Language.allCases) { lang in
+                    Text(lang.displayName).tag(lang)
+                }
             }
+            .pickerStyle(.segmented)
+            .frame(width: 200)
         }
-        .pickerStyle(.segmented)
-        .frame(width: 200)
     }
 
     private var copyAllButton: some View {

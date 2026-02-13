@@ -15,26 +15,36 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var confirmedText: String = ""
     @Published public var unconfirmedText: String = ""
     @Published public var isRecording: Bool = false
-    @Published public var currentLanguage: Language = .english
+    @Published public var currentLanguage: Language = {
+        if let raw = UserDefaults.standard.string(forKey: "selectedLanguage"),
+           let lang = Language(rawValue: raw) {
+            return lang
+        }
+        return .english
+    }()
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
 
     private var service: TranscriptionService
     private let modelName: String
     private let parametersStore: ParametersStore
+    private let fileWriter: TranscriptFileWriter
+    private var fileSessionActive: Bool = false
     private var previousSessionText: String = ""
     private var cancellables: Set<AnyCancellable> = []
 
     public init(
         engine: TranscriptionEngine? = nil,
         modelName: String = "large-v3-v20240930_turbo",
-        parametersStore: ParametersStore? = nil
+        parametersStore: ParametersStore? = nil,
+        fileWriter: TranscriptFileWriter? = nil
     ) {
         let resolvedStore = parametersStore ?? ParametersStore.shared
         let resolvedEngine = engine ?? ChunkedWhisperEngine()
         self.service = TranscriptionService(engine: resolvedEngine)
         self.modelName = modelName
         self.parametersStore = resolvedStore
+        self.fileWriter = fileWriter ?? TranscriptFileWriter()
 
         resolvedStore.$parameters
             .dropFirst()
@@ -45,6 +55,10 @@ public final class TranscriptionViewModel: ObservableObject {
                 NSLog("[QuickTranscriber] Parameters changed, restarting recording")
                 self.restartRecording()
             }
+            .store(in: &cancellables)
+
+        $isRecording
+            .sink { UserDefaults.standard.set($0, forKey: "isRecording") }
             .store(in: &cancellables)
     }
 
@@ -81,9 +95,11 @@ public final class TranscriptionViewModel: ObservableObject {
             let newLang = language.displayName
             previousSessionText += "\n--- \(previousLang) → \(newLang) ---\n"
             confirmedText = previousSessionText
+            fileWriter.updateText(confirmedText)
         }
 
         currentLanguage = language
+        UserDefaults.standard.set(language.rawValue, forKey: "selectedLanguage")
 
         if wasRecording {
             Task {
@@ -99,6 +115,8 @@ public final class TranscriptionViewModel: ObservableObject {
         if wasRecording {
             isRecording = false
         }
+        fileWriter.endSession()
+        fileSessionActive = false
         previousSessionText = ""
         confirmedText = ""
         unconfirmedText = ""
@@ -175,6 +193,14 @@ public final class TranscriptionViewModel: ObservableObject {
         let params = parametersStore.parameters
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
+        if !fileSessionActive {
+            fileWriter.startSession(language: currentLanguage, initialText: confirmedText)
+            fileSessionActive = true
+        } else if fileWriter.hasDirectoryChanged {
+            fileWriter.endSession()
+            fileWriter.startSession(language: currentLanguage, initialText: confirmedText)
+        }
+
         let sessionPrefix = self.previousSessionText
         Task {
             do {
@@ -193,6 +219,7 @@ public final class TranscriptionViewModel: ObservableObject {
                             self.confirmedText = sessionPrefix + "\n" + state.confirmedText
                         }
                         self.unconfirmedText = state.unconfirmedText
+                        self.fileWriter.updateText(self.confirmedText)
                     }
                 }
             } catch {
@@ -216,6 +243,7 @@ public final class TranscriptionViewModel: ObservableObject {
     private func stopRecording() {
         isRecording = false
         saveUnconfirmedText()
+        fileWriter.updateText(confirmedText)
         Task { await service.stopTranscription() }
     }
 }

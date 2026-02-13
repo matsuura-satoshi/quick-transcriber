@@ -43,10 +43,13 @@ struct TranscriptionTextView: NSViewRepresentable {
         let coordinator = context.coordinator
         let newConfirmed = confirmedText
         let newUnconfirmed = unconfirmedText
+        let oldConfirmed = coordinator.lastConfirmedText
+        let oldUnconfirmed = coordinator.lastUnconfirmedText
+        let oldFontSize = coordinator.lastFontSize
 
-        guard newConfirmed != coordinator.lastConfirmedText
-            || newUnconfirmed != coordinator.lastUnconfirmedText
-            || fontSize != coordinator.lastFontSize else {
+        guard newConfirmed != oldConfirmed
+            || newUnconfirmed != oldUnconfirmed
+            || fontSize != oldFontSize else {
             return
         }
 
@@ -54,25 +57,51 @@ struct TranscriptionTextView: NSViewRepresentable {
         coordinator.lastUnconfirmedText = newUnconfirmed
         coordinator.lastFontSize = fontSize
 
-        guard let textView = coordinator.textView else { return }
+        guard let textView = coordinator.textView,
+              let textStorage = textView.textStorage else { return }
 
-        // Check if user is scrolled to bottom before updating
         let isAtBottom = coordinator.isScrolledToBottom()
 
-        let attributed = Self.buildAttributedString(
-            confirmed: newConfirmed,
-            unconfirmed: newUnconfirmed,
-            fontSize: fontSize
-        )
+        // Differential append: only append new text when confirmed text grows at the end
+        let canDiffAppend = fontSize == oldFontSize
+            && newUnconfirmed.isEmpty
+            && oldUnconfirmed.isEmpty
+            && newConfirmed.hasPrefix(oldConfirmed)
+            && newConfirmed != oldConfirmed
 
-        textView.textStorage?.setAttributedString(attributed)
+        if canDiffAppend {
+            let delta = String(newConfirmed.dropFirst(oldConfirmed.count))
+            let attrs = Self.confirmedAttributes(fontSize: fontSize)
+            textStorage.append(NSAttributedString(string: delta, attributes: attrs))
+        } else {
+            let attributed = Self.buildAttributedString(
+                confirmed: newConfirmed,
+                unconfirmed: newUnconfirmed,
+                fontSize: fontSize
+            )
+            textStorage.setAttributedString(attributed)
+        }
 
-        // Only auto-scroll if user was at the bottom
         if isAtBottom {
             DispatchQueue.main.async {
                 textView.scrollToEndOfDocument(nil)
             }
         }
+    }
+
+    private static func makeParagraphStyle() -> NSMutableParagraphStyle {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 2
+        paragraphStyle.paragraphSpacing = 4
+        return paragraphStyle
+    }
+
+    private static func confirmedAttributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: fontSize),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: makeParagraphStyle()
+        ]
     }
 
     private static func buildAttributedString(
@@ -82,17 +111,8 @@ struct TranscriptionTextView: NSViewRepresentable {
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
 
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 6
-        paragraphStyle.paragraphSpacing = 8
-
         if !confirmed.isEmpty {
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: fontSize),
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: paragraphStyle
-            ]
-            result.append(NSAttributedString(string: confirmed, attributes: attrs))
+            result.append(NSAttributedString(string: confirmed, attributes: confirmedAttributes(fontSize: fontSize)))
         }
 
         if !unconfirmed.isEmpty {
@@ -109,7 +129,7 @@ struct TranscriptionTextView: NSViewRepresentable {
                 .font: italicFont,
                 .foregroundColor: NSColor.secondaryLabelColor,
                 .backgroundColor: NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.3),
-                .paragraphStyle: paragraphStyle
+                .paragraphStyle: makeParagraphStyle()
             ]
             result.append(NSAttributedString(string: unconfirmed, attributes: attrs))
         }

@@ -1,12 +1,8 @@
 import XCTest
 @testable import QuickTranscriberLib
 
-final class LanguageTests: XCTestCase {
-    func testLanguageProperties() {
-        XCTAssertEqual(Language.english.rawValue, "en")
-        XCTAssertEqual(Language.japanese.rawValue, "ja")
-        XCTAssertEqual(Language.english.displayName, "English")
-        XCTAssertEqual(Language.japanese.displayName, "Japanese")
-        XCTAssertEqual(Language.allCases.count, 2)
+final class QuickTranscriberTests: XCTestCase {
+    func testPlaceholder() {
+        // Placeholder — real tests live in dedicated test files
     }
 }

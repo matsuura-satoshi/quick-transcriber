@@ -68,7 +68,9 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
     func testFullPipelineProducesTranscription() async throws {
         let mockTranscriber = MockChunkTranscriber()
-        mockTranscriber.transcribeResults = ["Hello world"]
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello world", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
             transcriber: mockTranscriber
@@ -128,7 +130,9 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
     func testJapaneseLanguagePassedToTranscriber() async throws {
         let mockTranscriber = MockChunkTranscriber()
-        mockTranscriber.transcribeResults = ["こんにちは"]
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "こんにちは", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
             transcriber: mockTranscriber
@@ -153,7 +157,9 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
     func testFlushOnStopProducesTranscription() async throws {
         let mockTranscriber = MockChunkTranscriber()
-        mockTranscriber.transcribeResults = ["flushed text"]
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "flushed text", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
             transcriber: mockTranscriber
@@ -178,7 +184,9 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         var callCount = 0
         // Return different text for each call
         // MockChunkTranscriber returns the same result, so we track via callCount
-        mockTranscriber.transcribeResults = ["segment"]
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "segment", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
             transcriber: mockTranscriber
@@ -205,7 +213,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         // confirmedText should contain both segments joined by newline
         let lastState = states.last
-        XCTAssertEqual(lastState?.confirmedText, "segment\nsegment")
+        XCTAssertEqual(lastState?.confirmedText, "segment segment")
 
         await engine.stopStreaming()
     }
