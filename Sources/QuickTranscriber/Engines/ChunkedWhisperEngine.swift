@@ -4,6 +4,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private let audioCaptureService: AudioCaptureService
     private let transcriber: ChunkTranscriber
     private let diarizer: SpeakerDiarizer?
+    private let speakerProfileStore: SpeakerProfileStore?
     private var accumulator: ChunkAccumulator
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
@@ -19,11 +20,13 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
         transcriber: ChunkTranscriber = WhisperKitChunkTranscriber(),
-        diarizer: SpeakerDiarizer? = nil
+        diarizer: SpeakerDiarizer? = nil,
+        speakerProfileStore: SpeakerProfileStore? = nil
     ) {
         self.audioCaptureService = audioCaptureService
         self.transcriber = transcriber
         self.diarizer = diarizer
+        self.speakerProfileStore = speakerProfileStore
         self.accumulator = ChunkAccumulator()
     }
 
@@ -61,6 +64,13 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments = []
         speakerTracker.reset()
         diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
+        if let diarizer, parameters.enableSpeakerDiarization, let store = speakerProfileStore {
+            let profiles = store.profiles.map { ($0.label, $0.embedding) }
+            if !profiles.isEmpty {
+                diarizer.loadSpeakerProfiles(profiles)
+                NSLog("[ChunkedWhisperEngine] Loaded \(profiles.count) speaker profiles from store")
+            }
+        }
         pendingSegmentStartIndex = nil
         silenceSinceLastSegment = 0
         currentLanguage = language
@@ -106,6 +116,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
 
         accumulator.reset()
+        if let diarizer, currentParameters.enableSpeakerDiarization, let store = speakerProfileStore {
+            let sessionProfiles = diarizer.exportSpeakerProfiles()
+            if !sessionProfiles.isEmpty {
+                store.mergeSessionProfiles(sessionProfiles)
+                try? store.save()
+                NSLog("[ChunkedWhisperEngine] Saved \(sessionProfiles.count) speaker profiles to store")
+            }
+        }
         NSLog("[ChunkedWhisperEngine] Streaming stopped. Total segments: \(confirmedSegments.count)")
     }
 

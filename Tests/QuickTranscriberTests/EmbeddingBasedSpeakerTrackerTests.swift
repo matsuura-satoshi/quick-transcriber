@@ -152,4 +152,57 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
         XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 3)), "D")
     }
+
+    // MARK: - Export / Load Profiles
+
+    func testExportProfilesReturnsRegisteredSpeakers() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        _ = tracker.identify(embedding: embA)
+        _ = tracker.identify(embedding: embB)
+
+        let exported = tracker.exportProfiles()
+        XCTAssertEqual(exported.count, 2)
+        XCTAssertEqual(exported[0].label, "A")
+        XCTAssertEqual(exported[1].label, "B")
+    }
+
+    func testLoadProfilesInitializesTracker() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        tracker.loadProfiles([
+            (label: "A", embedding: embA),
+            (label: "B", embedding: embB)
+        ])
+
+        let label = tracker.identify(embedding: embA)
+        XCTAssertEqual(label, "A")
+    }
+
+    func testLoadProfilesNextLabelContinuesFromLoaded() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        tracker.loadProfiles([
+            (label: "A", embedding: makeEmbedding(dominant: 0)),
+            (label: "B", embedding: makeEmbedding(dominant: 1))
+        ])
+
+        let label = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertEqual(label, "C", "New speaker should get next label after loaded profiles")
+    }
+
+    func testLoadProfilesClearsExistingState() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))
+
+        tracker.loadProfiles([
+            (label: "X", embedding: makeEmbedding(dominant: 2))
+        ])
+
+        let exported = tracker.exportProfiles()
+        XCTAssertEqual(exported.count, 1)
+        XCTAssertEqual(exported[0].label, "X")
+    }
 }

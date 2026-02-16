@@ -28,6 +28,7 @@ public final class TranscriptionViewModel: ObservableObject {
     private var service: TranscriptionService
     private let modelName: String
     private let parametersStore: ParametersStore
+    private let speakerProfileStore: SpeakerProfileStore
     private let fileWriter: TranscriptFileWriter
     private var fileSessionActive: Bool = false
     private var previousSessionText: String = ""
@@ -41,9 +42,15 @@ public final class TranscriptionViewModel: ObservableObject {
         diarizer: SpeakerDiarizer? = nil
     ) {
         let resolvedStore = parametersStore ?? ParametersStore.shared
+        let profileStore = SpeakerProfileStore()
+        try? profileStore.load()
+        self.speakerProfileStore = profileStore
         // Always create diarizer so it's available when the user enables it at runtime.
         // The enableSpeakerDiarization parameter controls whether it's actually used.
-        let resolvedEngine = engine ?? ChunkedWhisperEngine(diarizer: diarizer ?? FluidAudioSpeakerDiarizer())
+        let resolvedEngine = engine ?? ChunkedWhisperEngine(
+            diarizer: diarizer ?? FluidAudioSpeakerDiarizer(),
+            speakerProfileStore: profileStore
+        )
         self.service = TranscriptionService(engine: resolvedEngine)
         self.modelName = modelName
         self.parametersStore = resolvedStore

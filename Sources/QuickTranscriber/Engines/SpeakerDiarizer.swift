@@ -6,6 +6,8 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
     func identifySpeaker(audioChunk: [Float]) async -> String?
     func updateExpectedSpeakerCount(_ count: Int?)
+    func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
+    func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -127,6 +129,21 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
             lock.withLock { pacer.reset() }
             return lock.withLock { pacer.lastLabel }
+        }
+    }
+
+    public func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
+        speakerTracker.exportProfiles()
+    }
+
+    public func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {
+        speakerTracker.loadProfiles(profiles)
+        lock.withLock {
+            rollingBuffer = []
+            pacer = DiarizationPacer(
+                diarizationChunkDuration: pacer.diarizationChunkDuration,
+                sampleRate: sampleRate
+            )
         }
     }
 

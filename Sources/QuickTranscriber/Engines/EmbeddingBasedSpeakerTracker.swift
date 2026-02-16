@@ -74,6 +74,15 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         nextLabelIndex = 0
     }
 
+    public func exportProfiles() -> [(label: String, embedding: [Float])] {
+        profiles.map { ($0.label, $0.embedding) }
+    }
+
+    public func loadProfiles(_ loadedProfiles: [(label: String, embedding: [Float])]) {
+        profiles = loadedProfiles.map { SpeakerProfile(label: $0.label, embedding: $0.embedding) }
+        nextLabelIndex = loadedProfiles.count
+    }
+
     /// Cosine similarity between two vectors.
     public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
