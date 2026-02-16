@@ -414,4 +414,25 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
             label: "accum_5s_window_15s"
         )
     }
+
+    // MARK: - 5s transcription chunk + 7s diarization accumulation
+    // Simulates user setting chunkDuration=5s in Settings (diarizationChunkDuration=7s is hardcoded)
+
+    func testCallHome_en_chunk5s_accum7s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_en", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            label: "chunk_5s_accum_7s"
+        )
+    }
+
+    func testCallHome_ja_chunk5s_accum7s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_ja", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            label: "chunk_5s_accum_7s"
+        )
+    }
 }
