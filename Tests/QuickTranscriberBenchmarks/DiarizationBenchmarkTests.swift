@@ -92,6 +92,11 @@ class DiarizationBenchmarkTestBase: XCTestCase {
     }
 
     /// Run diarization benchmark on a dataset.
+    ///
+    /// - Parameters:
+    ///   - chunkDuration: Size of audio chunks fed to the diarizer (simulates transcription chunk size).
+    ///   - diarizationChunkDuration: Internal accumulation threshold before running diarization.
+    ///     Pass `nil` to use `chunkDuration` (no internal accumulation, backward-compatible).
     func runDiarizationBenchmark(
         dataset: String,
         maxConversations: Int = 50,
@@ -99,11 +104,13 @@ class DiarizationBenchmarkTestBase: XCTestCase {
         similarityThreshold: Float = 0.5,
         updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 30.0,
+        diarizationChunkDuration: Double? = nil,
         label: String = "default"
     ) async throws -> DiarizationBenchmarkResult {
         let refs = try loadDiarizationReferences(name: dataset)
         let dir = datasetDir(name: dataset)
         let sampleRate = 16000
+        let effectiveDiarizationChunkDuration = diarizationChunkDuration ?? chunkDuration
 
         let keys = Array(refs.keys.sorted().prefix(maxConversations))
         guard !keys.isEmpty else {
@@ -123,7 +130,8 @@ class DiarizationBenchmarkTestBase: XCTestCase {
             let diarizer = FluidAudioSpeakerDiarizer(
                 similarityThreshold: similarityThreshold,
                 updateAlpha: updateAlpha,
-                windowDuration: windowDuration
+                windowDuration: windowDuration,
+                diarizationChunkDuration: effectiveDiarizationChunkDuration
             )
             try await diarizer.setup()
 
@@ -347,6 +355,63 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
         let _ = try await runDiarizationBenchmark(
             dataset: "callhome_en", maxConversations: 5,
             windowDuration: 60.0, label: "window_60s"
+        )
+    }
+
+    // MARK: - Combined parameter tests (chunk accumulation)
+    // These simulate real usage: 3s transcription chunks with internal accumulation
+
+    func testCallHome_en_accum7s_window15s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_en", maxConversations: 5,
+            chunkDuration: 3.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            label: "accum_7s_window_15s"
+        )
+    }
+
+    func testCallHome_ja_accum7s_window15s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_ja", maxConversations: 5,
+            chunkDuration: 3.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            label: "accum_7s_window_15s"
+        )
+    }
+
+    func testCallHome_en_accum7s_window30s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_en", maxConversations: 5,
+            chunkDuration: 3.0, windowDuration: 30.0,
+            diarizationChunkDuration: 7.0,
+            label: "accum_7s_window_30s"
+        )
+    }
+
+    func testCallHome_ja_accum7s_window30s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_ja", maxConversations: 5,
+            chunkDuration: 3.0, windowDuration: 30.0,
+            diarizationChunkDuration: 7.0,
+            label: "accum_7s_window_30s"
+        )
+    }
+
+    func testCallHome_en_accum5s_window15s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_en", maxConversations: 5,
+            chunkDuration: 3.0, windowDuration: 15.0,
+            diarizationChunkDuration: 5.0,
+            label: "accum_5s_window_15s"
+        )
+    }
+
+    func testCallHome_ja_accum5s_window15s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_ja", maxConversations: 5,
+            chunkDuration: 3.0, windowDuration: 15.0,
+            diarizationChunkDuration: 5.0,
+            label: "accum_5s_window_15s"
         )
     }
 }
