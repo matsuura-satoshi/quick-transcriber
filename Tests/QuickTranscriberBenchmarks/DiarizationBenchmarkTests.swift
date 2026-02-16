@@ -105,6 +105,7 @@ class DiarizationBenchmarkTestBase: XCTestCase {
         updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 30.0,
         diarizationChunkDuration: Double? = nil,
+        expectedSpeakerCount: Int? = nil,
         label: String = "default"
     ) async throws -> DiarizationBenchmarkResult {
         let refs = try loadDiarizationReferences(name: dataset)
@@ -127,11 +128,18 @@ class DiarizationBenchmarkTestBase: XCTestCase {
             let samples = try loadAudioSamples(from: wavPath)
 
             // Create fresh diarizer for each conversation
+            // Use per-conversation ground truth speaker count if expectedSpeakerCount is -1 (sentinel)
+            let effectiveExpectedCount: Int? = if expectedSpeakerCount == -1 {
+                ref.speakers
+            } else {
+                expectedSpeakerCount
+            }
             let diarizer = FluidAudioSpeakerDiarizer(
                 similarityThreshold: similarityThreshold,
                 updateAlpha: updateAlpha,
                 windowDuration: windowDuration,
-                diarizationChunkDuration: effectiveDiarizationChunkDuration
+                diarizationChunkDuration: effectiveDiarizationChunkDuration,
+                expectedSpeakerCount: effectiveExpectedCount
             )
             try await diarizer.setup()
 
@@ -153,11 +161,13 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                     chunkEnd: chunkEndTime,
                     segments: ref.segments
                 ) {
-                    groundTruthLabels.append(gtLabel)
-
                     // Prediction
                     let speakerLabel = await diarizer.identifySpeaker(audioChunk: chunk)
-                    predictedLabels.append(speakerLabel ?? "__nil__")
+                    // Skip chunks where diarizer returns nil (accumulation period)
+                    if let speakerLabel {
+                        groundTruthLabels.append(gtLabel)
+                        predictedLabels.append(speakerLabel)
+                    }
                 }
                 // Skip chunks with no ground-truth speaker (silence/unannotated)
 
@@ -435,6 +445,29 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
             label: "chunk_5s_accum_7s"
         )
     }
+
+    // MARK: - expectedSpeakerCount (Phase 1)
+    // CALLHOME is always 2 speakers, so we pass expectedSpeakerCount=2
+
+    func testCallHome_en_chunk5s_accum7s_speakers2() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_en", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            expectedSpeakerCount: 2,
+            label: "chunk_5s_accum_7s_speakers_2"
+        )
+    }
+
+    func testCallHome_ja_chunk5s_accum7s_speakers2() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "callhome_ja", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            expectedSpeakerCount: 2,
+            label: "chunk_5s_accum_7s_speakers_2"
+        )
+    }
 }
 
 // MARK: - AMI Meeting Corpus Diarization Benchmarks
@@ -481,6 +514,19 @@ final class AMIDiarizationTests: DiarizationBenchmarkTestBase {
             chunkDuration: 5.0, windowDuration: 30.0,
             diarizationChunkDuration: 7.0,
             label: "chunk_5s_accum_7s_window_30s"
+        )
+    }
+
+    // MARK: - expectedSpeakerCount (Phase 1)
+    // Use -1 sentinel to pass per-conversation ground truth speaker count
+
+    func testAMI_chunk5s_accum7s_window15s_speakersGT() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "ami", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            expectedSpeakerCount: -1,
+            label: "chunk_5s_accum_7s_window_15s_speakers_gt"
         )
     }
 }

@@ -87,6 +87,16 @@ private struct TranscriptionSettingsTab: View {
     private var speakerSection: some View {
         Section("Speaker Detection") {
             Toggle("Enable Speaker Diarization", isOn: $store.parameters.enableSpeakerDiarization)
+            Picker("Number of Speakers", selection: Binding(
+                get: { store.parameters.expectedSpeakerCount ?? 0 },
+                set: { store.parameters.expectedSpeakerCount = $0 == 0 ? nil : $0 }
+            )) {
+                Text("Auto").tag(0)
+                ForEach(2...5, id: \.self) { n in
+                    Text("\(n)").tag(n)
+                }
+            }
+            .disabled(!store.parameters.enableSpeakerDiarization)
         }
     }
 

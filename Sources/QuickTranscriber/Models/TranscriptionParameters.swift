@@ -17,6 +17,8 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
 
     // Speaker diarization
     public var enableSpeakerDiarization: Bool
+    /// Expected number of speakers (nil = auto-detect, unlimited)
+    public var expectedSpeakerCount: Int?
 
     public init(
         temperature: Float = 0.0,
@@ -27,7 +29,8 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceCutoffDuration: TimeInterval = 0.8,
         silenceEnergyThreshold: Float = 0.01,
         silenceLineBreakThreshold: TimeInterval = 1.0,
-        enableSpeakerDiarization: Bool = false
+        enableSpeakerDiarization: Bool = false,
+        expectedSpeakerCount: Int? = nil
     ) {
         self.temperature = temperature
         self.temperatureFallbackCount = temperatureFallbackCount
@@ -38,6 +41,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         self.silenceEnergyThreshold = silenceEnergyThreshold
         self.silenceLineBreakThreshold = silenceLineBreakThreshold
         self.enableSpeakerDiarization = enableSpeakerDiarization
+        self.expectedSpeakerCount = expectedSpeakerCount
     }
 
     public init(from decoder: Decoder) throws {
@@ -51,6 +55,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceEnergyThreshold = try container.decode(Float.self, forKey: .silenceEnergyThreshold)
         silenceLineBreakThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .silenceLineBreakThreshold) ?? 1.0
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
+        expectedSpeakerCount = try container.decodeIfPresent(Int.self, forKey: .expectedSpeakerCount)
     }
 
     public static let `default` = TranscriptionParameters()

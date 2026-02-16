@@ -120,4 +120,36 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let similarity = EmbeddingBasedSpeakerTracker.cosineSimilarity(a, b)
         XCTAssertEqual(similarity, 0.0, accuracy: 0.001)
     }
+
+    // MARK: - Expected Speaker Count
+
+    func testExpectedSpeakerCountLimitsNewSpeakers() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
+        // Third distinct voice should NOT create "C" — should assign to closest existing
+        let label = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertNotEqual(label, "C", "Should not create a third speaker when limit is 2")
+        XCTAssertTrue(label == "A" || label == "B", "Should assign to existing speaker")
+    }
+
+    func testExpectedSpeakerCountAssignsToBestMatch() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))  // A
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))  // B
+
+        // Create embedding closer to speaker A (dominant dim 0, with small contribution from dim 2)
+        var closerToA = makeEmbedding(dominant: 2)
+        closerToA[0] = 0.5  // Add similarity to A
+        let label = tracker.identify(embedding: closerToA)
+        XCTAssertEqual(label, "A", "Should assign to most similar existing speaker (A)")
+    }
+
+    func testNilExpectedSpeakerCountAllowsUnlimited() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: nil)
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 3)), "D")
+    }
 }

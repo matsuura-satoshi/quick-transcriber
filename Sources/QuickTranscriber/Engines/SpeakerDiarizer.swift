@@ -5,6 +5,7 @@ import FluidAudio
 public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
     func identifySpeaker(audioChunk: [Float]) async -> String?
+    func updateExpectedSpeakerCount(_ count: Int?)
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -43,17 +44,23 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         similarityThreshold: Float = 0.5,
         updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 15.0,
-        diarizationChunkDuration: TimeInterval = 7.0
+        diarizationChunkDuration: TimeInterval = 7.0,
+        expectedSpeakerCount: Int? = nil
     ) {
         self.windowDuration = windowDuration
         self.speakerTracker = EmbeddingBasedSpeakerTracker(
             similarityThreshold: similarityThreshold,
-            updateAlpha: updateAlpha
+            updateAlpha: updateAlpha,
+            expectedSpeakerCount: expectedSpeakerCount
         )
         self.pacer = DiarizationPacer(
             diarizationChunkDuration: diarizationChunkDuration,
             sampleRate: 16000
         )
+    }
+
+    public func updateExpectedSpeakerCount(_ count: Int?) {
+        speakerTracker.expectedSpeakerCount = count
     }
 
     public func setup() async throws {
