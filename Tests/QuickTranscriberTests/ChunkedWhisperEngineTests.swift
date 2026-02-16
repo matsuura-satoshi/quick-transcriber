@@ -215,4 +215,67 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         await engine.stopStreaming()
     }
+
+    // MARK: - Speaker Profile Store Integration
+
+    private func makeTempDirectory() -> URL {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ChunkedWhisperEngineTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        return tmp
+    }
+
+    func testStopStreamingExportsSpeakerProfiles() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        mockDiarizer.exportedProfiles = [("A", [Float](repeating: 0.1, count: 256))]
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SpeakerProfileStore(directory: dir)
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer,
+            speakerProfileStore: store
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+        try await engine.startStreaming(language: "en", parameters: params, onStateChange: { _ in })
+        await engine.stopStreaming()
+
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].label, "A")
+    }
+
+    func testStartStreamingLoadsSpeakerProfiles() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        try store.save()
+
+        // Create new store instance (simulating app restart)
+        let store2 = SpeakerProfileStore(directory: dir)
+        try store2.load()
+
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer,
+            speakerProfileStore: store2
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+        try await engine.startStreaming(language: "en", parameters: params, onStateChange: { _ in })
+
+        XCTAssertNotNil(mockDiarizer.loadedProfiles)
+        XCTAssertEqual(mockDiarizer.loadedProfiles?.count, 1)
+        XCTAssertEqual(mockDiarizer.loadedProfiles?.first?.label, "A")
+
+        await engine.stopStreaming()
+    }
 }
