@@ -161,11 +161,13 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                     chunkEnd: chunkEndTime,
                     segments: ref.segments
                 ) {
-                    groundTruthLabels.append(gtLabel)
-
                     // Prediction
                     let speakerLabel = await diarizer.identifySpeaker(audioChunk: chunk)
-                    predictedLabels.append(speakerLabel ?? "__nil__")
+                    // Skip chunks where diarizer returns nil (accumulation period)
+                    if let speakerLabel {
+                        groundTruthLabels.append(gtLabel)
+                        predictedLabels.append(speakerLabel)
+                    }
                 }
                 // Skip chunks with no ground-truth speaker (silence/unannotated)
 
