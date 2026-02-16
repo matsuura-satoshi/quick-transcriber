@@ -18,4 +18,6 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
         callIndex += 1
         return result
     }
+
+    func updateExpectedSpeakerCount(_ count: Int?) {}
 }

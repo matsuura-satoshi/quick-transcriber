@@ -60,6 +60,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         )
         confirmedSegments = []
         speakerTracker.reset()
+        diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
         pendingSegmentStartIndex = nil
         silenceSinceLastSegment = 0
         currentLanguage = language

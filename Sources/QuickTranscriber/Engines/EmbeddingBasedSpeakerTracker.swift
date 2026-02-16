@@ -17,13 +17,16 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     private var nextLabelIndex: Int = 0
     private let similarityThreshold: Float
     private let updateAlpha: Float
+    public var expectedSpeakerCount: Int?
 
     /// - Parameters:
     ///   - similarityThreshold: Minimum cosine similarity to match a known speaker (default: 0.5)
     ///   - updateAlpha: Weight for new embedding in moving average update (default: 0.3)
-    public init(similarityThreshold: Float = 0.5, updateAlpha: Float = 0.3) {
+    ///   - expectedSpeakerCount: Maximum number of speakers to track (nil = unlimited)
+    public init(similarityThreshold: Float = 0.5, updateAlpha: Float = 0.3, expectedSpeakerCount: Int? = nil) {
         self.similarityThreshold = similarityThreshold
         self.updateAlpha = updateAlpha
+        self.expectedSpeakerCount = expectedSpeakerCount
     }
 
     /// Identify a speaker from their embedding vector.
@@ -43,6 +46,15 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
         if bestIndex >= 0 && bestSimilarity >= similarityThreshold {
             // Update profile with moving average
+            let alpha = updateAlpha
+            profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
+                (1 - alpha) * old + alpha * new
+            }
+            return profiles[bestIndex].label
+        }
+
+        // At capacity: assign to most similar existing speaker instead of creating new
+        if let limit = expectedSpeakerCount, profiles.count >= limit, bestIndex >= 0 {
             let alpha = updateAlpha
             profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                 (1 - alpha) * old + alpha * new
