@@ -5,6 +5,7 @@ Datasets:
   - FLEURS en_us + ja_jp (minimal, ~350 utterances each)
   - LibriSpeech test-other (standard, ~200 utterances subset)
   - ReazonSpeech test (standard, ~200 utterances subset)
+  - CALLHOME en + ja (diarization, ~50 conversations each)
 
 Output: ~/Documents/QuickTranscriber/test-audio/<dataset_name>/
   Each directory contains WAV files + references.json
@@ -24,6 +25,8 @@ def main():
         ("fleurs_ja", download_fleurs_ja),
         ("librispeech_test_other", download_librispeech_test_other),
         ("reazonspeech_test", download_reazonspeech_test),
+        ("callhome_en", download_callhome_en),
+        ("callhome_ja", download_callhome_ja),
     ]
 
     # Allow selecting specific datasets via command line
@@ -78,6 +81,51 @@ def save_audio_and_refs(samples, out_dir, lang, name_prefix=""):
 
     total_dur = sum(r["duration_seconds"] for r in references.values())
     print(f"  Saved {len(references)} files, total {total_dur:.1f}s ({total_dur/60:.1f}min)")
+    print(f"  Output: {out_dir}")
+
+
+def save_diarization_data(ds, indices, out_dir, lang):
+    """Save diarization audio and speaker-annotated references."""
+    import soundfile as sf
+    os.makedirs(out_dir, exist_ok=True)
+    references = {}
+    prefix = f"{lang}_"
+
+    for i, idx in enumerate(indices):
+        item = ds[idx]
+        audio = item["audio"]
+        fname = f"{prefix}{i:04d}"
+        wav_path = os.path.join(out_dir, f"{fname}.wav")
+
+        sf.write(wav_path, audio["array"], audio["sampling_rate"])
+
+        duration = len(audio["array"]) / audio["sampling_rate"]
+        segments = []
+        for start, end, speaker in zip(
+            item["timestamps_start"],
+            item["timestamps_end"],
+            item["speakers"],
+        ):
+            segments.append({
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "speaker": speaker,
+            })
+
+        speakers = list(set(item["speakers"]))
+        references[fname] = {
+            "language": lang,
+            "duration_seconds": round(duration, 2),
+            "speakers": len(speakers),
+            "segments": segments,
+        }
+
+    refs_path = os.path.join(out_dir, "references.json")
+    with open(refs_path, "w", encoding="utf-8") as f:
+        json.dump(references, f, ensure_ascii=False, indent=2)
+
+    total_dur = sum(r["duration_seconds"] for r in references.values())
+    print(f"  Saved {len(references)} conversations, total {total_dur:.1f}s ({total_dur/60:.1f}min)")
     print(f"  Output: {out_dir}")
 
 
@@ -148,6 +196,32 @@ def download_reazonspeech_test(out_dir):
             item["text"] = item["transcription"]
         samples.append(item)
     save_audio_and_refs(samples, out_dir, "ja", "ja_")
+
+
+def download_callhome_en(out_dir):
+    """CALLHOME English diarization dataset (50 conversations)."""
+    from datasets import load_dataset
+    print("  Loading CALLHOME English (talkbank/callhome eng)...")
+    ds = load_dataset("talkbank/callhome", "eng", split="data", trust_remote_code=True)
+    print(f"  Loaded {len(ds)} conversations")
+
+    random.seed(42)
+    indices = random.sample(range(len(ds)), min(50, len(ds)))
+
+    save_diarization_data(ds, sorted(indices), out_dir, "en")
+
+
+def download_callhome_ja(out_dir):
+    """CALLHOME Japanese diarization dataset (50 conversations)."""
+    from datasets import load_dataset
+    print("  Loading CALLHOME Japanese (talkbank/callhome jpn)...")
+    ds = load_dataset("talkbank/callhome", "jpn", split="data", trust_remote_code=True)
+    print(f"  Loaded {len(ds)} conversations")
+
+    random.seed(42)
+    indices = random.sample(range(len(ds)), min(50, len(ds)))
+
+    save_diarization_data(ds, sorted(indices), out_dir, "ja")
 
 
 if __name__ == "__main__":

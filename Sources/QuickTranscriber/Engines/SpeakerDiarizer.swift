@@ -8,9 +8,13 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
-/// Uses a rolling buffer (30-second window) to accumulate audio and diarize
-/// the window. Identifies the speaker of the latest chunk using time-range
-/// filtering and embedding-based cosine similarity tracking.
+/// Uses a rolling buffer to accumulate audio and diarize the window.
+/// Identifies the speaker of the latest chunk using time-range filtering
+/// and embedding-based cosine similarity tracking.
+///
+/// To reduce label flips, diarization only runs when enough audio has been
+/// accumulated (controlled by `diarizationChunkDuration`). Between runs,
+/// the last known speaker label is returned.
 public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     /// Lightweight struct for testable segment info.
     public struct TimedSegmentInfo {
@@ -28,13 +32,29 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
     }
 
     private let sampleRate: Int = 16000
-    private let windowDuration: TimeInterval = 30.0
+    private let windowDuration: TimeInterval
     private var rollingBuffer: [Float] = []
     private var diarizer: OfflineDiarizerManager?
-    private let speakerTracker = EmbeddingBasedSpeakerTracker()
+    private let speakerTracker: EmbeddingBasedSpeakerTracker
+    private var pacer: DiarizationPacer
     private let lock = NSLock()
 
-    public init() {}
+    public init(
+        similarityThreshold: Float = 0.5,
+        updateAlpha: Float = 0.3,
+        windowDuration: TimeInterval = 15.0,
+        diarizationChunkDuration: TimeInterval = 7.0
+    ) {
+        self.windowDuration = windowDuration
+        self.speakerTracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: similarityThreshold,
+            updateAlpha: updateAlpha
+        )
+        self.pacer = DiarizationPacer(
+            diarizationChunkDuration: diarizationChunkDuration,
+            sampleRate: 16000
+        )
+    }
 
     public func setup() async throws {
         let config = OfflineDiarizerConfig()
@@ -48,12 +68,19 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         guard let diarizer else { return nil }
 
         let windowSamples = Int(windowDuration * Double(sampleRate))
-        let currentBuffer = lock.withLock {
+        let (currentBuffer, shouldRunDiarization, accumulatedDuration) = lock.withLock {
             rollingBuffer.append(contentsOf: audioChunk)
             if rollingBuffer.count > windowSamples {
                 rollingBuffer.removeFirst(rollingBuffer.count - windowSamples)
             }
-            return rollingBuffer
+            let shouldRun = pacer.accumulate(chunkSamples: audioChunk.count)
+            let accumulated = Float(pacer.samplesSinceLastDiarization) / Float(sampleRate)
+            return (rollingBuffer, shouldRun, accumulated)
+        }
+
+        // Return cached label while accumulating
+        guard shouldRunDiarization else {
+            return lock.withLock { pacer.lastLabel }
         }
 
         // Need at least 1 second of audio for meaningful diarization
@@ -72,22 +99,27 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
             }
 
             let bufferDuration = Float(currentBuffer.count) / Float(sampleRate)
-            let chunkDuration = Float(audioChunk.count) / Float(sampleRate)
 
             guard let relevant = Self.findRelevantSegment(
                 segments: segments,
                 bufferDuration: bufferDuration,
-                chunkDuration: chunkDuration
+                chunkDuration: accumulatedDuration
             ) else {
-                return nil
+                lock.withLock { pacer.reset() }
+                return lock.withLock { pacer.lastLabel }
             }
 
             let label = speakerTracker.identify(embedding: relevant.embedding)
-            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(label) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s)")
+            lock.withLock {
+                pacer.lastLabel = label
+                pacer.reset()
+            }
+            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(label) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
             return label
         } catch {
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
-            return nil
+            lock.withLock { pacer.reset() }
+            return lock.withLock { pacer.lastLabel }
         }
     }
 
