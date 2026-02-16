@@ -23,7 +23,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         temperatureFallbackCount: Int = 0,
         sampleLength: Int = 224,
         concurrentWorkerCount: Int = 4,
-        chunkDuration: TimeInterval = 3.0,
+        chunkDuration: TimeInterval = 5.0,
         silenceCutoffDuration: TimeInterval = 0.8,
         silenceEnergyThreshold: Float = 0.01,
         silenceLineBreakThreshold: TimeInterval = 1.0,

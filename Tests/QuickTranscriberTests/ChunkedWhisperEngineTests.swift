@@ -87,13 +87,11 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // Feed 3 seconds of audio (16kHz) to trigger chunk cut
-        let speechBuffer = [Float](repeating: 0.1, count: 16000)
-        mockCapture.simulateBuffer(speechBuffer)
-        mockCapture.simulateBuffer(speechBuffer)
+        // Feed 5 seconds of audio (16kHz) to trigger chunk cut
+        let speechBuffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(speechBuffer)
 
-        await fulfillment(of: [expectation], timeout: 3.0)
+        await fulfillment(of: [expectation], timeout: 6.0)
 
         XCTAssertEqual(lastState?.confirmedText, "Hello world")
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 1)
@@ -113,8 +111,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         try await engine.startStreaming(language: "en") { _ in }
 
-        // Feed 3 seconds to trigger chunk — transcription will fail
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        // Feed 5 seconds to trigger chunk — transcription will fail
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
         // Wait for processing
@@ -146,10 +144,10 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
-        await fulfillment(of: [expectation], timeout: 3.0)
+        await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(mockTranscriber.lastLanguage, "ja")
 
         await engine.stopStreaming()
@@ -200,8 +198,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // Feed 6 seconds of audio → 2 chunks at 3s each
-        for _ in 0..<6 {
+        // Feed 10 seconds of audio → 2 chunks at 5s each
+        for _ in 0..<10 {
             let buffer = [Float](repeating: 0.1, count: 16000)
             mockCapture.simulateBuffer(buffer)
         }

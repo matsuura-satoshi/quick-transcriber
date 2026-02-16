@@ -188,8 +188,8 @@ final class QualityFilterTests: XCTestCase {
             lastState = state
         }
 
-        // Feed 3 seconds of audio to trigger chunk
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        // Feed 5 seconds of audio to trigger chunk
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -221,10 +221,10 @@ final class QualityFilterTests: XCTestCase {
             }
         }
 
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
-        await fulfillment(of: [expectation], timeout: 3.0)
+        await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(lastState?.confirmedText, "今日はいい天気ですね")
 
         await engine.stopStreaming()
@@ -244,8 +244,8 @@ final class QualityFilterTests: XCTestCase {
 
         try await engine.startStreaming(language: "en") { _ in }
 
-        // Feed 3 seconds of silence (all zeros) → should skip transcription
-        let silentBuffer = [Float](repeating: 0.0, count: 48000)
+        // Feed 5 seconds of silence (all zeros) → should skip transcription
+        let silentBuffer = [Float](repeating: 0.0, count: 80000)
         mockCapture.simulateBuffer(silentBuffer)
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -275,11 +275,11 @@ final class QualityFilterTests: XCTestCase {
             }
         }
 
-        // Feed 3 seconds of non-silent audio
-        let loudBuffer = [Float](repeating: 0.1, count: 48000)
+        // Feed 5 seconds of non-silent audio
+        let loudBuffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(loudBuffer)
 
-        await fulfillment(of: [expectation], timeout: 3.0)
+        await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 1)
 
         await engine.stopStreaming()
@@ -302,7 +302,7 @@ final class QualityFilterTests: XCTestCase {
             lastState = state
         }
 
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -332,7 +332,7 @@ final class QualityFilterTests: XCTestCase {
             lastState = state
         }
 
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -364,10 +364,10 @@ final class QualityFilterTests: XCTestCase {
             }
         }
 
-        let buffer = [Float](repeating: 0.1, count: 48000)
+        let buffer = [Float](repeating: 0.1, count: 80000)
         mockCapture.simulateBuffer(buffer)
 
-        await fulfillment(of: [expectation], timeout: 3.0)
+        await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(lastState?.confirmedText, "Hello world")
 
         await engine.stopStreaming()
