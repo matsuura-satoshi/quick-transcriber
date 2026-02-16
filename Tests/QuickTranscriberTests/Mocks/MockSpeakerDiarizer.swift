@@ -20,4 +20,15 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     }
 
     func updateExpectedSpeakerCount(_ count: Int?) {}
+
+    var exportedProfiles: [(label: String, embedding: [Float])] = []
+    var loadedProfiles: [(label: String, embedding: [Float])]?
+
+    func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
+        exportedProfiles
+    }
+
+    func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {
+        loadedProfiles = profiles
+    }
 }
