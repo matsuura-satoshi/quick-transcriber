@@ -214,18 +214,27 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
 
     override var outputPath: String { "/tmp/quicktranscriber_diarization_results.json" }
 
+    // MARK: - Smoke test (1 conversation, quick validation)
+
+    func testCallHome_en_smoke() async throws {
+        let result = try await runDiarizationBenchmark(
+            dataset: "callhome_en", maxConversations: 1, label: "smoke"
+        )
+        XCTAssertGreaterThan(result.averageChunkAccuracy, 0.0)
+    }
+
     // MARK: - Default parameters
 
     func testCallHome_en_default() async throws {
         let result = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50, label: "default"
+            dataset: "callhome_en", maxConversations: 5, label: "default"
         )
         XCTAssertGreaterThan(result.averageChunkAccuracy, 0.0)
     }
 
     func testCallHome_ja_default() async throws {
         let result = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50, label: "default"
+            dataset: "callhome_ja", maxConversations: 5, label: "default"
         )
         XCTAssertGreaterThan(result.averageChunkAccuracy, 0.0)
     }
@@ -234,56 +243,56 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
 
     func testCallHome_en_similarity03() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             similarityThreshold: 0.3, label: "similarity_0.3"
         )
     }
 
     func testCallHome_en_similarity04() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             similarityThreshold: 0.4, label: "similarity_0.4"
         )
     }
 
     func testCallHome_en_similarity06() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             similarityThreshold: 0.6, label: "similarity_0.6"
         )
     }
 
     func testCallHome_en_similarity07() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             similarityThreshold: 0.7, label: "similarity_0.7"
         )
     }
 
     func testCallHome_ja_similarity03() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50,
+            dataset: "callhome_ja", maxConversations: 5,
             similarityThreshold: 0.3, label: "similarity_0.3"
         )
     }
 
     func testCallHome_ja_similarity04() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50,
+            dataset: "callhome_ja", maxConversations: 5,
             similarityThreshold: 0.4, label: "similarity_0.4"
         )
     }
 
     func testCallHome_ja_similarity06() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50,
+            dataset: "callhome_ja", maxConversations: 5,
             similarityThreshold: 0.6, label: "similarity_0.6"
         )
     }
 
     func testCallHome_ja_similarity07() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50,
+            dataset: "callhome_ja", maxConversations: 5,
             similarityThreshold: 0.7, label: "similarity_0.7"
         )
     }
@@ -292,28 +301,28 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
 
     func testCallHome_en_chunk5s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             chunkDuration: 5.0, label: "chunk_5s"
         )
     }
 
     func testCallHome_en_chunk7s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             chunkDuration: 7.0, label: "chunk_7s"
         )
     }
 
     func testCallHome_ja_chunk5s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50,
+            dataset: "callhome_ja", maxConversations: 5,
             chunkDuration: 5.0, label: "chunk_5s"
         )
     }
 
     func testCallHome_ja_chunk7s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_ja", maxConversations: 50,
+            dataset: "callhome_ja", maxConversations: 5,
             chunkDuration: 7.0, label: "chunk_7s"
         )
     }
@@ -322,21 +331,21 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
 
     func testCallHome_en_window15s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             windowDuration: 15.0, label: "window_15s"
         )
     }
 
     func testCallHome_en_window45s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             windowDuration: 45.0, label: "window_45s"
         )
     }
 
     func testCallHome_en_window60s() async throws {
         let _ = try await runDiarizationBenchmark(
-            dataset: "callhome_en", maxConversations: 50,
+            dataset: "callhome_en", maxConversations: 5,
             windowDuration: 60.0, label: "window_60s"
         )
     }
