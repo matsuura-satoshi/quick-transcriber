@@ -6,6 +6,7 @@ Datasets:
   - LibriSpeech test-other (standard, ~200 utterances subset)
   - ReazonSpeech test (standard, ~200 utterances subset)
   - CALLHOME en + ja (diarization, ~50 conversations each)
+  - AMI Meeting Corpus (diarization, 16 test meetings, 3-5 speakers)
 
 Output: ~/Documents/QuickTranscriber/test-audio/<dataset_name>/
   Each directory contains WAV files + references.json
@@ -27,6 +28,7 @@ def main():
         ("reazonspeech_test", download_reazonspeech_test),
         ("callhome_en", download_callhome_en),
         ("callhome_ja", download_callhome_ja),
+        ("ami", download_ami),
     ]
 
     # Allow selecting specific datasets via command line
@@ -222,6 +224,18 @@ def download_callhome_ja(out_dir):
     indices = random.sample(range(len(ds)), min(50, len(ds)))
 
     save_diarization_data(ds, sorted(indices), out_dir, "ja")
+
+
+def download_ami(out_dir):
+    """AMI Meeting Corpus test set (16 meetings, 3-5 speakers, ihm mix)."""
+    from datasets import load_dataset
+    print("  Loading AMI Meeting Corpus (diarizers-community/ami ihm test)...")
+    ds = load_dataset("diarizers-community/ami", "ihm", split="test",
+                       trust_remote_code=True)
+    print(f"  Loaded {len(ds)} meetings")
+
+    indices = list(range(len(ds)))
+    save_diarization_data(ds, indices, out_dir, "ami")
 
 
 if __name__ == "__main__":
