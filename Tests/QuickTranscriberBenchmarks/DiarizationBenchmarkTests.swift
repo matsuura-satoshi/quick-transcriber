@@ -436,3 +436,51 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
         )
     }
 }
+
+// MARK: - AMI Meeting Corpus Diarization Benchmarks
+
+final class AMIDiarizationTests: DiarizationBenchmarkTestBase {
+
+    override var outputPath: String { "/tmp/quicktranscriber_ami_diarization_results.json" }
+
+    // MARK: - Smoke test
+
+    func testAMI_smoke() async throws {
+        let result = try await runDiarizationBenchmark(
+            dataset: "ami", maxConversations: 1,
+            chunkDuration: 5.0,
+            label: "smoke"
+        )
+        XCTAssertGreaterThan(result.averageChunkAccuracy, 0.0)
+    }
+
+    // MARK: - Direct 5s chunks (default transcription settings)
+
+    func testAMI_chunk5s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "ami", maxConversations: 5,
+            chunkDuration: 5.0,
+            label: "chunk_5s"
+        )
+    }
+
+    // MARK: - 5s transcription chunk + 7s diarization accumulation (app default)
+
+    func testAMI_chunk5s_accum7s_window15s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "ami", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            label: "chunk_5s_accum_7s_window_15s"
+        )
+    }
+
+    func testAMI_chunk5s_accum7s_window30s() async throws {
+        let _ = try await runDiarizationBenchmark(
+            dataset: "ami", maxConversations: 5,
+            chunkDuration: 5.0, windowDuration: 30.0,
+            diarizationChunkDuration: 7.0,
+            label: "chunk_5s_accum_7s_window_30s"
+        )
+    }
+}
