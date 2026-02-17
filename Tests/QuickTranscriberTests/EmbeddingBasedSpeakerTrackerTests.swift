@@ -274,4 +274,38 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // Before merge: 3 profiles (A, B, C). After merge: A+B merged -> 2 profiles
         XCTAssertEqual(profiles.count, 2, "Similar profiles A and B should have merged")
     }
+
+    // MARK: - Registration Gate Strategy
+
+    func testRegistrationGateBlocksSimilarNewSpeaker() {
+        // similarityThreshold=0.5: only match if sim >= 0.5
+        // minSeparation=0.3: gate registration if best sim >= 0.3
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.5,
+            strategy: .registrationGate(minSeparation: 0.3)
+        )
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))  // Register A
+
+        // This embedding has sim~0.39 with A: below 0.5 (no match) but above 0.3 (gated)
+        var embSomewhatSimilar = makeEmbedding(dominant: 3)
+        embSomewhatSimilar[0] = 0.4
+        let label = tracker.identify(embedding: embSomewhatSimilar)
+
+        XCTAssertEqual(label, "A", "Should be gated to existing speaker A")
+        XCTAssertEqual(tracker.exportProfiles().count, 1)
+    }
+
+    func testRegistrationGateAllowsTrulyDifferentSpeaker() {
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.5,
+            strategy: .registrationGate(minSeparation: 0.3)
+        )
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))   // Register A
+        // dim 100 has sim~0.044 with dim 0, well below minSeparation=0.3
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100)) // Truly different, should register B
+
+        XCTAssertEqual(tracker.exportProfiles().count, 2)
+    }
 }

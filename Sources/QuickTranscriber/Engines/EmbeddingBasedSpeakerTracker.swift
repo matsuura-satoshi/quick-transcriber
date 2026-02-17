@@ -81,6 +81,18 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             return profiles[bestIndex].label
         }
 
+        // Registration gate: only register if sufficiently different from all existing profiles
+        if case .registrationGate(let minSeparation) = strategy, bestIndex >= 0 {
+            if bestSimilarity >= minSeparation {
+                profiles[bestIndex].hitCount += 1
+                let alpha = updateAlpha
+                profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
+                    (1 - alpha) * old + alpha * new
+                }
+                return profiles[bestIndex].label
+            }
+        }
+
         // Register new speaker
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
         profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1))
