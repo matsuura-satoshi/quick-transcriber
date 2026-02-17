@@ -47,13 +47,15 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 15.0,
         diarizationChunkDuration: TimeInterval = 7.0,
-        expectedSpeakerCount: Int? = nil
+        expectedSpeakerCount: Int? = nil,
+        profileStrategy: ProfileStrategy = .none
     ) {
         self.windowDuration = windowDuration
         self.speakerTracker = EmbeddingBasedSpeakerTracker(
             similarityThreshold: similarityThreshold,
             updateAlpha: updateAlpha,
-            expectedSpeakerCount: expectedSpeakerCount
+            expectedSpeakerCount: expectedSpeakerCount,
+            strategy: profileStrategy
         )
         self.pacer = DiarizationPacer(
             diarizationChunkDuration: diarizationChunkDuration,
