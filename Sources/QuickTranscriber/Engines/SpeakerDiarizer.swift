@@ -120,7 +120,8 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
                 return lock.withLock { pacer.lastLabel }
             }
 
-            let label = speakerTracker.identify(embedding: relevant.embedding)
+            let identification = speakerTracker.identify(embedding: relevant.embedding)
+            let label = identification.label
             lock.withLock {
                 pacer.lastLabel = label
                 pacer.reset()

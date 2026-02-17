@@ -15,8 +15,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
     func testFirstSpeakerGetsLabelA() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let emb = makeEmbedding(dominant: 0)
-        let label = tracker.identify(embedding: emb)
-        XCTAssertEqual(label, "A")
+        let result = tracker.identify(embedding: emb)
+        XCTAssertEqual(result.label, "A")
     }
 
     // MARK: - Same speaker returns same label
@@ -25,8 +25,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let tracker = EmbeddingBasedSpeakerTracker()
         let emb = makeEmbedding(dominant: 0)
         _ = tracker.identify(embedding: emb)
-        let label = tracker.identify(embedding: emb)
-        XCTAssertEqual(label, "A")
+        let result = tracker.identify(embedding: emb)
+        XCTAssertEqual(result.label, "A")
     }
 
     // MARK: - Different speaker gets new label
@@ -34,17 +34,17 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
     func testDifferentSpeakerGetsNewLabel() {
         let tracker = EmbeddingBasedSpeakerTracker()
         _ = tracker.identify(embedding: makeEmbedding(dominant: 0))
-        let label = tracker.identify(embedding: makeEmbedding(dominant: 1))
-        XCTAssertEqual(label, "B")
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 1))
+        XCTAssertEqual(result.label, "B")
     }
 
     // MARK: - Three distinct speakers
 
     func testThreeDistinctSpeakers() {
         let tracker = EmbeddingBasedSpeakerTracker()
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)).label, "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)).label, "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)).label, "C")
     }
 
     // MARK: - Return to first speaker
@@ -55,8 +55,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let embB = makeEmbedding(dominant: 1)
         _ = tracker.identify(embedding: embA)
         _ = tracker.identify(embedding: embB)
-        let label = tracker.identify(embedding: embA)
-        XCTAssertEqual(label, "A")
+        let result = tracker.identify(embedding: embA)
+        XCTAssertEqual(result.label, "A")
     }
 
     // MARK: - Similar embeddings match (slight variation)
@@ -70,8 +70,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         var emb2 = emb1
         emb2[1] = 0.15
         emb2[2] = 0.1
-        let label = tracker.identify(embedding: emb2)
-        XCTAssertEqual(label, "A")
+        let result = tracker.identify(embedding: emb2)
+        XCTAssertEqual(result.label, "A")
     }
 
     // MARK: - Profile update (moving average)
@@ -85,12 +85,12 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         var drifted = makeEmbedding(dominant: 0)
         drifted[3] = 0.3
         for _ in 0..<5 {
-            let label = tracker.identify(embedding: drifted)
-            XCTAssertEqual(label, "A")
+            let result = tracker.identify(embedding: drifted)
+            XCTAssertEqual(result.label, "A")
         }
         // Profile should have adapted toward drifted embedding
         // Verify by checking the profile still matches drifted
-        XCTAssertEqual(tracker.identify(embedding: drifted), "A")
+        XCTAssertEqual(tracker.identify(embedding: drifted).label, "A")
     }
 
     // MARK: - Reset clears all profiles
@@ -101,7 +101,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         _ = tracker.identify(embedding: makeEmbedding(dominant: 1))
         tracker.reset()
         // After reset, next speaker starts from A again
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)).label, "A")
     }
 
     // MARK: - Cosine similarity helper
@@ -125,12 +125,12 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
     func testExpectedSpeakerCountLimitsNewSpeakers() {
         let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)).label, "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)).label, "B")
         // Third distinct voice should NOT create "C" — should assign to closest existing
-        let label = tracker.identify(embedding: makeEmbedding(dominant: 2))
-        XCTAssertNotEqual(label, "C", "Should not create a third speaker when limit is 2")
-        XCTAssertTrue(label == "A" || label == "B", "Should assign to existing speaker")
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertNotEqual(result.label, "C", "Should not create a third speaker when limit is 2")
+        XCTAssertTrue(result.label == "A" || result.label == "B", "Should assign to existing speaker")
     }
 
     func testExpectedSpeakerCountAssignsToBestMatch() {
@@ -141,16 +141,16 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // Create embedding closer to speaker A (dominant dim 0, with small contribution from dim 2)
         var closerToA = makeEmbedding(dominant: 2)
         closerToA[0] = 0.5  // Add similarity to A
-        let label = tracker.identify(embedding: closerToA)
-        XCTAssertEqual(label, "A", "Should assign to most similar existing speaker (A)")
+        let result = tracker.identify(embedding: closerToA)
+        XCTAssertEqual(result.label, "A", "Should assign to most similar existing speaker (A)")
     }
 
     func testNilExpectedSpeakerCountAllowsUnlimited() {
         let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: nil)
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 3)), "D")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)).label, "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)).label, "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)).label, "C")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 3)).label, "D")
     }
 
     // MARK: - Export / Load Profiles
@@ -177,8 +177,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
             (label: "B", embedding: embB)
         ])
 
-        let label = tracker.identify(embedding: embA)
-        XCTAssertEqual(label, "A")
+        let result = tracker.identify(embedding: embA)
+        XCTAssertEqual(result.label, "A")
     }
 
     func testLoadProfilesNextLabelContinuesFromLoaded() {
@@ -188,8 +188,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
             (label: "B", embedding: makeEmbedding(dominant: 1))
         ])
 
-        let label = tracker.identify(embedding: makeEmbedding(dominant: 2))
-        XCTAssertEqual(label, "C", "New speaker should get next label after loaded profiles")
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertEqual(result.label, "C", "New speaker should get next label after loaded profiles")
     }
 
     func testLoadProfilesClearsExistingState() {
@@ -211,9 +211,9 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
     func testProfileStrategyNoneIsDefault() {
         let tracker = EmbeddingBasedSpeakerTracker()
         // Default strategy should behave identically to current behavior
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
-        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)).label, "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)).label, "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)).label, "C")
     }
 
     func testHitCountIncrementsOnMatch() {
@@ -290,9 +290,9 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // This embedding has sim~0.39 with A: below 0.5 (no match) but above 0.3 (gated)
         var embSomewhatSimilar = makeEmbedding(dominant: 3)
         embSomewhatSimilar[0] = 0.4
-        let label = tracker.identify(embedding: embSomewhatSimilar)
+        let result = tracker.identify(embedding: embSomewhatSimilar)
 
-        XCTAssertEqual(label, "A", "Should be gated to existing speaker A")
+        XCTAssertEqual(result.label, "A", "Should be gated to existing speaker A")
         XCTAssertEqual(tracker.exportProfiles().count, 1)
     }
 
@@ -329,5 +329,34 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let profiles = tracker.exportProfiles()
         XCTAssertEqual(profiles.count, 1, "B should have been culled")
         XCTAssertEqual(profiles[0].label, "A")
+    }
+
+    // MARK: - Confidence Score
+
+    func testIdentifyReturnsConfidenceForNewSpeaker() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 0))
+        XCTAssertEqual(result.label, "A")
+        XCTAssertEqual(result.confidence, 1.0, accuracy: 0.001)
+    }
+
+    func testIdentifyReturnsConfidenceForMatchedSpeaker() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))
+        var similar = makeEmbedding(dominant: 0)
+        similar[1] = 0.15
+        let result = tracker.identify(embedding: similar)
+        XCTAssertEqual(result.label, "A")
+        XCTAssertGreaterThan(result.confidence, 0.5)
+        XCTAssertLessThan(result.confidence, 1.0)
+    }
+
+    func testIdentifyReturnsLowConfidenceForForcedAssignment() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertTrue(result.label == "A" || result.label == "B")
+        XCTAssertLessThan(result.confidence, 0.5)
     }
 }
