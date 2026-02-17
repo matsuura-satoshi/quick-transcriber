@@ -190,20 +190,21 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             }
 
             // Speaker label smoothing: require consecutive confirmation before accepting change
-            let smoothedSpeaker: String?
+            let smoothedResult: SpeakerIdentification?
             if currentParameters.enableSpeakerDiarization {
-                smoothedSpeaker = speakerTracker.processLabel(rawSpeakerResult?.label)
+                smoothedResult = speakerTracker.processLabel(rawSpeakerResult)
 
-                // Retroactively update pending segments when speaker is confirmed
-                if let speaker = smoothedSpeaker, let startIdx = pendingSegmentStartIndex {
+                // Retroactively update pending segments with confidence
+                if let result = smoothedResult, let startIdx = pendingSegmentStartIndex {
                     for i in startIdx..<confirmedSegments.count {
-                        confirmedSegments[i].speaker = speaker
+                        confirmedSegments[i].speaker = result.label
+                        confirmedSegments[i].speakerConfidence = result.confidence
                     }
                     pendingSegmentStartIndex = nil
-                    NSLog("[ChunkedWhisperEngine] Retroactively assigned speaker \(speaker) to \(confirmedSegments.count - startIdx) pending segments")
+                    NSLog("[ChunkedWhisperEngine] Retroactively assigned speaker \(result.label) to \(confirmedSegments.count - startIdx) pending segments")
                 }
             } else {
-                smoothedSpeaker = nil
+                smoothedResult = nil
             }
 
             for (index, segment) in filtered.enumerated() {
@@ -216,13 +217,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 confirmedSegments.append(ConfirmedSegment(
                     text: segment.text,
                     precedingSilence: precedingSilence,
-                    speaker: smoothedSpeaker
+                    speaker: smoothedResult?.label,
+                    speakerConfidence: smoothedResult?.confidence
                 ))
-                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedSpeaker ?? "pending"))")
+                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.label ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }
 
             // Track where pending segments start
-            if currentParameters.enableSpeakerDiarization && smoothedSpeaker == nil
+            if currentParameters.enableSpeakerDiarization && smoothedResult == nil
                 && pendingSegmentStartIndex == nil && !filtered.isEmpty {
                 pendingSegmentStartIndex = confirmedSegments.count - filtered.count
             }

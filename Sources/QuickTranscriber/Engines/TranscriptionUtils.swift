@@ -4,11 +4,13 @@ public struct ConfirmedSegment: Sendable, Equatable {
     public let text: String
     public let precedingSilence: TimeInterval
     public var speaker: String?
+    public var speakerConfidence: Float?
 
-    public init(text: String, precedingSilence: TimeInterval = 0, speaker: String? = nil) {
+    public init(text: String, precedingSilence: TimeInterval = 0, speaker: String? = nil, speakerConfidence: Float? = nil) {
         self.text = text
         self.precedingSilence = precedingSilence
         self.speaker = speaker
+        self.speakerConfidence = speakerConfidence
     }
 }
 
