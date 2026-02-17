@@ -24,6 +24,11 @@ public final class TranscriptionViewModel: ObservableObject {
     }()
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
+    @Published public var confirmedSegments: [ConfirmedSegment] = []
+
+    public var silenceLineBreakThreshold: TimeInterval {
+        parametersStore.parameters.silenceLineBreakThreshold
+    }
 
     private var service: TranscriptionService
     private let modelName: String
@@ -229,6 +234,7 @@ public final class TranscriptionViewModel: ObservableObject {
                             self.confirmedText = sessionPrefix + "\n" + state.confirmedText
                         }
                         self.unconfirmedText = state.unconfirmedText
+                        self.confirmedSegments = state.confirmedSegments
                         self.fileWriter.updateText(self.confirmedText)
                     }
                 }

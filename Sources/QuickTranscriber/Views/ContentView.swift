@@ -108,7 +108,10 @@ public struct ContentView: View {
         TranscriptionTextView(
             confirmedText: viewModel.confirmedText,
             unconfirmedText: viewModel.unconfirmedText,
-            fontSize: viewModel.fontSize
+            fontSize: viewModel.fontSize,
+            confirmedSegments: viewModel.confirmedSegments,
+            language: viewModel.currentLanguage.rawValue,
+            silenceThreshold: viewModel.silenceLineBreakThreshold
         )
         .frame(maxHeight: .infinity)
     }

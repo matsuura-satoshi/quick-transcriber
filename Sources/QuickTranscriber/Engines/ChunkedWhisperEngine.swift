@@ -240,7 +240,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             onStateChange(TranscriptionState(
                 confirmedText: confirmedText,
                 unconfirmedText: "",
-                isRecording: true
+                isRecording: true,
+                confirmedSegments: confirmedSegments
             ))
         } catch {
             NSLog("[ChunkedWhisperEngine] Chunk transcription failed: \(error). Continuing...")
