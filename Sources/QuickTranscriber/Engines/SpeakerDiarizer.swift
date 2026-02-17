@@ -4,7 +4,7 @@ import FluidAudio
 /// Protocol for identifying the current speaker from an audio chunk.
 public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
-    func identifySpeaker(audioChunk: [Float]) async -> String?
+    func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification?
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
     func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
@@ -17,7 +17,7 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
 ///
 /// To reduce label flips, diarization only runs when enough audio has been
 /// accumulated (controlled by `diarizationChunkDuration`). Between runs,
-/// the last known speaker label is returned.
+/// the last known speaker identification result is returned.
 public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     /// Lightweight struct for testable segment info.
     public struct TimedSegmentInfo {
@@ -75,7 +75,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         NSLog("[SpeakerDiarizer] FluidAudio models prepared")
     }
 
-    public func identifySpeaker(audioChunk: [Float]) async -> String? {
+    public func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
         guard let diarizer else { return nil }
 
         let windowSamples = Int(windowDuration * Double(sampleRate))
@@ -89,9 +89,9 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
             return (rollingBuffer, shouldRun, accumulated)
         }
 
-        // Return cached label while accumulating
+        // Return cached result while accumulating
         guard shouldRunDiarization else {
-            return lock.withLock { pacer.lastLabel }
+            return lock.withLock { pacer.lastResult }
         }
 
         // Need at least 1 second of audio for meaningful diarization
@@ -117,21 +117,20 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
                 chunkDuration: accumulatedDuration
             ) else {
                 lock.withLock { pacer.reset() }
-                return lock.withLock { pacer.lastLabel }
+                return lock.withLock { pacer.lastResult }
             }
 
             let identification = speakerTracker.identify(embedding: relevant.embedding)
-            let label = identification.label
             lock.withLock {
-                pacer.lastLabel = label
+                pacer.lastResult = identification
                 pacer.reset()
             }
-            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(label) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
-            return label
+            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(identification.label) conf=\(String(format: "%.3f", identification.confidence)) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
+            return identification
         } catch {
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
             lock.withLock { pacer.reset() }
-            return lock.withLock { pacer.lastLabel }
+            return lock.withLock { pacer.lastResult }
         }
     }
 

@@ -159,7 +159,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         do {
             // Run transcription and diarization in parallel when diarizer is available
             let segments: [TranscribedSegment]
-            let rawSpeakerLabel: String?
+            let rawSpeakerResult: SpeakerIdentification?
             if let diarizer, currentParameters.enableSpeakerDiarization {
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
@@ -168,14 +168,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 )
                 async let speakerId = diarizer.identifySpeaker(audioChunk: chunk)
                 segments = try await transcription
-                rawSpeakerLabel = await speakerId
+                rawSpeakerResult = await speakerId
             } else {
                 segments = try await transcriber.transcribe(
                     audioArray: chunk,
                     language: currentLanguage,
                     parameters: currentParameters
                 )
-                rawSpeakerLabel = nil
+                rawSpeakerResult = nil
             }
             let filtered = segments.filter { segment in
                 if TranscriptionUtils.shouldFilterByMetadata(segment) {
@@ -192,7 +192,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedSpeaker: String?
             if currentParameters.enableSpeakerDiarization {
-                smoothedSpeaker = speakerTracker.processLabel(rawSpeakerLabel)
+                smoothedSpeaker = speakerTracker.processLabel(rawSpeakerResult?.label)
 
                 // Retroactively update pending segments when speaker is confirmed
                 if let speaker = smoothedSpeaker, let startIdx = pendingSegmentStartIndex {
