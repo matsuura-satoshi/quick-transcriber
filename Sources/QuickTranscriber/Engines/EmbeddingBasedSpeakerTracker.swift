@@ -8,6 +8,11 @@ public enum ProfileStrategy: Sendable {
     case combined(cullInterval: Int, minHits: Int, mergeThreshold: Float)
 }
 
+public struct SpeakerIdentification: Sendable, Equatable {
+    public let label: String
+    public let confidence: Float
+}
+
 /// Tracks speakers across diarization calls using embedding cosine similarity.
 ///
 /// FluidAudio reassigns internal speaker IDs on each `process()` call,
@@ -45,8 +50,8 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     /// Identify a speaker from their embedding vector.
     ///
-    /// - Returns: A stable speaker label (A, B, C, ...)
-    public func identify(embedding: [Float]) -> String {
+    /// - Returns: A `SpeakerIdentification` with the stable speaker label and confidence score
+    public func identify(embedding: [Float]) -> SpeakerIdentification {
         identifyCount += 1
         maintainProfiles()
 
@@ -68,7 +73,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                 (1 - alpha) * old + alpha * new
             }
-            return profiles[bestIndex].label
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
         }
 
         // At capacity: assign to most similar existing speaker instead of creating new
@@ -78,7 +83,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                 (1 - alpha) * old + alpha * new
             }
-            return profiles[bestIndex].label
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
         }
 
         // Registration gate: only register if sufficiently different from all existing profiles
@@ -89,7 +94,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                     (1 - alpha) * old + alpha * new
                 }
-                return profiles[bestIndex].label
+                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
             }
         }
 
@@ -97,7 +102,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
         profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1))
         nextLabelIndex += 1
-        return label
+        return SpeakerIdentification(label: label, confidence: 1.0)
     }
 
     private func maintainProfiles() {

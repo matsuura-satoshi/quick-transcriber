@@ -10,7 +10,7 @@ public struct DiarizationPacer {
     public let diarizationChunkDuration: TimeInterval
     public let sampleRate: Int
     public private(set) var samplesSinceLastDiarization: Int = 0
-    public var lastLabel: String?
+    public var lastResult: SpeakerIdentification?
 
     public init(diarizationChunkDuration: TimeInterval, sampleRate: Int) {
         self.diarizationChunkDuration = diarizationChunkDuration

@@ -10,7 +10,7 @@ import Foundation
 /// Based on the temporal smoothing pattern from diart (Coria et al., 2021).
 public final class SpeakerLabelTracker: @unchecked Sendable {
     private let confirmationThreshold: Int
-    private var confirmedSpeaker: String?
+    private var confirmedResult: SpeakerIdentification?
     private var pendingLabel: String?
     private var pendingCount: Int = 0
 
@@ -18,50 +18,51 @@ public final class SpeakerLabelTracker: @unchecked Sendable {
         self.confirmationThreshold = max(1, confirmationThreshold)
     }
 
-    /// Process a raw speaker label from the diarizer.
+    /// Process a raw speaker identification from the diarizer.
     ///
-    /// - Returns: The confirmed speaker label, or nil if a potential speaker
-    ///   change is still being evaluated (pending).
-    public func processLabel(_ rawLabel: String?) -> String? {
-        guard let label = rawLabel else {
-            return confirmedSpeaker
+    /// - Returns: The confirmed speaker identification (with confidence), or nil
+    ///   if a potential speaker change is still being evaluated (pending).
+    public func processLabel(_ identification: SpeakerIdentification?) -> SpeakerIdentification? {
+        guard let id = identification else {
+            return confirmedResult
         }
 
         // First speaker: confirm immediately
-        if confirmedSpeaker == nil {
-            confirmedSpeaker = label
+        if confirmedResult == nil {
+            confirmedResult = id
             pendingLabel = nil
             pendingCount = 0
-            return label
+            return id
         }
 
-        // Same as confirmed: reset pending state
-        if label == confirmedSpeaker {
+        // Same as confirmed: update with latest confidence, reset pending state
+        if id.label == confirmedResult?.label {
+            confirmedResult = id
             pendingLabel = nil
             pendingCount = 0
-            return label
+            return id
         }
 
         // Different from confirmed: evaluate
-        if label == pendingLabel {
+        if id.label == pendingLabel {
             pendingCount += 1
         } else {
-            pendingLabel = label
+            pendingLabel = id.label
             pendingCount = 1
         }
 
         if pendingCount >= confirmationThreshold {
-            confirmedSpeaker = label
+            confirmedResult = id
             pendingLabel = nil
             pendingCount = 0
-            return label
+            return id
         }
 
         return nil  // Still evaluating
     }
 
     public func reset() {
-        confirmedSpeaker = nil
+        confirmedResult = nil
         pendingLabel = nil
         pendingCount = 0
     }

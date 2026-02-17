@@ -40,11 +40,12 @@ final class DiarizationChunkAccumulationTests: XCTestCase {
         XCTAssertTrue(shouldRun)
     }
 
-    func testPacerLastLabelCaching() {
+    func testPacerLastResultCaching() {
         var pacer = DiarizationPacer(diarizationChunkDuration: 6.0, sampleRate: 16000)
-        XCTAssertNil(pacer.lastLabel)
-        pacer.lastLabel = "A"
-        XCTAssertEqual(pacer.lastLabel, "A")
+        XCTAssertNil(pacer.lastResult)
+        pacer.lastResult = SpeakerIdentification(label: "A", confidence: 0.85)
+        XCTAssertEqual(pacer.lastResult?.label, "A")
+        XCTAssertEqual(pacer.lastResult?.confidence, 0.85)
     }
 
     // MARK: - findRelevantSegment with wider chunk duration
