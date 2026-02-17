@@ -37,6 +37,7 @@ public final class TranscriptionViewModel: ObservableObject {
     private let fileWriter: TranscriptFileWriter
     private var fileSessionActive: Bool = false
     private var previousSessionText: String = ""
+    private var previousSessionSegments: [ConfirmedSegment] = []
     private var cancellables: Set<AnyCancellable> = []
 
     public init(
@@ -110,6 +111,11 @@ public final class TranscriptionViewModel: ObservableObject {
             let newLang = language.displayName
             previousSessionText += "\n--- \(previousLang) → \(newLang) ---\n"
             confirmedText = previousSessionText
+            previousSessionSegments.append(ConfirmedSegment(
+                text: "--- \(previousLang) → \(newLang) ---",
+                precedingSilence: 1.0
+            ))
+            confirmedSegments = previousSessionSegments
             fileWriter.updateText(confirmedText)
         }
 
@@ -133,7 +139,9 @@ public final class TranscriptionViewModel: ObservableObject {
         fileWriter.endSession()
         fileSessionActive = false
         previousSessionText = ""
+        previousSessionSegments = []
         confirmedText = ""
+        confirmedSegments = []
         unconfirmedText = ""
         if wasRecording {
             Task {
@@ -217,6 +225,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         let sessionPrefix = self.previousSessionText
+        let sessionSegments = self.previousSessionSegments
         Task {
             do {
                 try await service.startTranscription(
@@ -234,7 +243,13 @@ public final class TranscriptionViewModel: ObservableObject {
                             self.confirmedText = sessionPrefix + "\n" + state.confirmedText
                         }
                         self.unconfirmedText = state.unconfirmedText
-                        self.confirmedSegments = state.confirmedSegments
+                        if sessionSegments.isEmpty {
+                            self.confirmedSegments = state.confirmedSegments
+                        } else if state.confirmedSegments.isEmpty {
+                            self.confirmedSegments = sessionSegments
+                        } else {
+                            self.confirmedSegments = sessionSegments + state.confirmedSegments
+                        }
                         self.fileWriter.updateText(self.confirmedText)
                     }
                 }
@@ -254,6 +269,7 @@ public final class TranscriptionViewModel: ObservableObject {
             unconfirmedText = ""
         }
         previousSessionText = confirmedText
+        previousSessionSegments = confirmedSegments
     }
 
     private func stopRecording() {

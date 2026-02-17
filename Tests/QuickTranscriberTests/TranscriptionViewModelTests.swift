@@ -426,6 +426,113 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(files.count, 1, "Language switch should not create a new file")
     }
 
+    // MARK: - Segment persistence across restarts
+
+    func testRestartRecordingPreservesConfirmedSegments() async {
+        let (vm, engine) = makeViewModel()
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let segments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+            ConfirmedSegment(text: "world", precedingSilence: 0.5, speaker: "B", speakerConfidence: 0.6),
+        ]
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello world",
+            unconfirmedText: "partial",
+            isRecording: true,
+            confirmedSegments: segments
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.confirmedSegments.count, 2)
+
+        // Simulate parameter change triggering restart
+        // restartRecording: saveUnconfirmedText → stop → startRecording
+        vm.toggleRecording() // stop (saves previousSessionText)
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        vm.toggleRecording() // start again
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // New engine session has no segments yet
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "new text",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "new text", precedingSilence: 0)]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Previous segments should be preserved and prepended
+        XCTAssertEqual(vm.confirmedSegments.count, 3,
+                       "Should have 2 previous + 1 new segments")
+        XCTAssertEqual(vm.confirmedSegments[0].text, "Hello")
+        XCTAssertEqual(vm.confirmedSegments[1].text, "world")
+        XCTAssertEqual(vm.confirmedSegments[2].text, "new text")
+    }
+
+    func testClearTextClearsConfirmedSegments() async {
+        let (vm, engine) = makeViewModel()
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Some text",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Some text", precedingSilence: 0, speaker: "A", speakerConfidence: 0.9),
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.confirmedSegments.count, 1)
+
+        vm.clearText()
+        // clearText: stop + 100ms sleep + startRecording
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(vm.confirmedSegments, [],
+                       "clearText should clear confirmedSegments")
+    }
+
+    func testSwitchLanguageAddsSeparatorSegment() async {
+        let (vm, engine) = makeViewModel()
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "English text",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "English text", precedingSilence: 0),
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        vm.toggleRecording() // stop to set previousSessionText
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        vm.switchLanguage(.japanese)
+        // switchLanguage: stop + 100ms sleep + startRecording
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        // Should have original segment + separator segment
+        XCTAssertGreaterThanOrEqual(vm.confirmedSegments.count, 2,
+                                    "Should have original segment + separator")
+        let separatorSegment = vm.confirmedSegments.last(where: {
+            $0.text.contains("English → Japanese")
+        })
+        XCTAssertNotNil(separatorSegment, "Should contain language separator segment")
+    }
+
     func testDirectoryChangeCreatesNewFileWithExistingText() async {
         // Use UserDefaults-based writer (no explicit directory)
         let dir1 = FileManager.default.temporaryDirectory
