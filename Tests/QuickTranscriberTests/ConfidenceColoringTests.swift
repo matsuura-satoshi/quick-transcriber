@@ -272,6 +272,61 @@ final class ConfidenceColoringTests: XCTestCase {
         XCTAssertGreaterThan(threshold, 0)
     }
 
+    // MARK: - Selection preservation on segment updates
+
+    func testSegmentAppendPreservesSelection() {
+        let coordinator = TranscriptionTextView.Coordinator()
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        coordinator.textView = textView
+
+        // Initial segments
+        let segments1 = [
+            ConfirmedSegment(text: "Hello world", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+        coordinator.applySegmentUpdate(
+            segments: segments1, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: ""
+        )
+        // "A: Hello world" → select "Hello" (position 3, length 5)
+        textView.setSelectedRange(NSRange(location: 3, length: 5))
+
+        // New segment appended
+        let segments2 = segments1 + [
+            ConfirmedSegment(text: "How are you", precedingSilence: 0.5),
+        ]
+        coordinator.applySegmentUpdate(
+            segments: segments2, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: ""
+        )
+
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 5),
+                       "Selection should be preserved when segments are appended")
+    }
+
+    func testSegmentFullRebuildPreservesSelection() {
+        let coordinator = TranscriptionTextView.Coordinator()
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        coordinator.textView = textView
+
+        let segments = [
+            ConfirmedSegment(text: "Hello world", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+        coordinator.applySegmentUpdate(
+            segments: segments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: ""
+        )
+        textView.setSelectedRange(NSRange(location: 3, length: 5))
+
+        // Unconfirmed text change triggers full rebuild
+        coordinator.applySegmentUpdate(
+            segments: segments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "typing...", oldFontSize: 15, oldUnconfirmed: ""
+        )
+
+        XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 5),
+                       "Selection should be preserved during full rebuild with unconfirmed text")
+    }
+
     // MARK: - ChunkedWhisperEngine emits segments
 
     func testEngineEmitsConfirmedSegments() async throws {

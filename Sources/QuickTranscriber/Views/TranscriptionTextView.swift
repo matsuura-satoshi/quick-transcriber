@@ -68,15 +68,15 @@ struct TranscriptionTextView: NSViewRepresentable {
         let hasSpeakerConfidence = confirmedSegments.contains { $0.speakerConfidence != nil }
 
         if hasSpeakerConfidence {
-            // Use segment-based rendering for confidence coloring
-            let attributed = Self.buildAttributedStringFromSegments(
-                confirmedSegments,
+            coordinator.applySegmentUpdate(
+                segments: confirmedSegments,
                 language: language,
                 silenceThreshold: silenceThreshold,
                 fontSize: fontSize,
-                unconfirmed: newUnconfirmed
+                unconfirmed: newUnconfirmed,
+                oldFontSize: oldFontSize,
+                oldUnconfirmed: oldUnconfirmed
             )
-            textStorage.setAttributedString(attributed)
         } else {
             // No confidence data: use efficient diff-append path
             let canDiffAppend = fontSize == oldFontSize
@@ -90,12 +90,17 @@ struct TranscriptionTextView: NSViewRepresentable {
                 let attrs = Self.confirmedAttributes(fontSize: fontSize)
                 textStorage.append(NSAttributedString(string: delta, attributes: attrs))
             } else {
+                let savedRange = textView.selectedRange()
+                let hadSelection = savedRange.length > 0
                 let attributed = Self.buildAttributedString(
                     confirmed: newConfirmed,
                     unconfirmed: newUnconfirmed,
                     fontSize: fontSize
                 )
                 textStorage.setAttributedString(attributed)
+                if hadSelection && NSMaxRange(savedRange) <= textStorage.length {
+                    textView.setSelectedRange(savedRange)
+                }
             }
         }
 
@@ -265,6 +270,46 @@ struct TranscriptionTextView: NSViewRepresentable {
         var lastConfirmedText: String = ""
         var lastUnconfirmedText: String = ""
         var lastFontSize: CGFloat = 0
+
+        func applySegmentUpdate(
+            segments: [ConfirmedSegment],
+            language: String,
+            silenceThreshold: TimeInterval,
+            fontSize: CGFloat,
+            unconfirmed: String,
+            oldFontSize: CGFloat,
+            oldUnconfirmed: String
+        ) {
+            guard let textView, let textStorage = textView.textStorage else { return }
+
+            let attributed = TranscriptionTextView.buildAttributedStringFromSegments(
+                segments, language: language, silenceThreshold: silenceThreshold,
+                fontSize: fontSize, unconfirmed: unconfirmed
+            )
+
+            let newText = attributed.string
+            let currentText = textStorage.string
+
+            let canDiffAppend = fontSize == oldFontSize
+                && unconfirmed.isEmpty
+                && oldUnconfirmed.isEmpty
+                && !currentText.isEmpty
+                && newText.hasPrefix(currentText)
+                && newText.count > currentText.count
+
+            if canDiffAppend {
+                let deltaStart = (currentText as NSString).length
+                let deltaRange = NSRange(location: deltaStart, length: attributed.length - deltaStart)
+                textStorage.append(attributed.attributedSubstring(from: deltaRange))
+            } else {
+                let savedRange = textView.selectedRange()
+                let hadSelection = savedRange.length > 0
+                textStorage.setAttributedString(attributed)
+                if hadSelection && NSMaxRange(savedRange) <= textStorage.length {
+                    textView.setSelectedRange(savedRange)
+                }
+            }
+        }
 
         func isScrolledToBottom() -> Bool {
             guard let scrollView = scrollView,
