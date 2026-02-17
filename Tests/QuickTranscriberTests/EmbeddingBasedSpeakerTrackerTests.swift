@@ -205,4 +205,129 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(exported.count, 1)
         XCTAssertEqual(exported[0].label, "X")
     }
+
+    // MARK: - Profile Strategy
+
+    func testProfileStrategyNoneIsDefault() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        // Default strategy should behave identically to current behavior
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
+    }
+
+    func testHitCountIncrementsOnMatch() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: emb)  // Register A
+        _ = tracker.identify(embedding: emb)  // Match A
+        _ = tracker.identify(embedding: emb)  // Match A
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].hitCount, 3)
+    }
+
+    // MARK: - Culling Strategy
+
+    func testCullingRemovesLowHitProfiles() {
+        let tracker = EmbeddingBasedSpeakerTracker(strategy: .culling(interval: 5, minHits: 2))
+
+        let embA = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: embA)  // Register A, hit=1
+        _ = tracker.identify(embedding: embA)  // Match A, hit=2
+        _ = tracker.identify(embedding: embA)  // Match A, hit=3
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))  // Register B, hit=1
+
+        // 5th call triggers maintenance: B has hitCount=1 < minHits=2, should be culled
+        _ = tracker.identify(embedding: embA)  // identifyCount=5, triggers maintenance
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1, "B should have been culled")
+        XCTAssertEqual(profiles[0].label, "A")
+    }
+
+    // MARK: - Merging Strategy
+
+    func testMergingCombinesSimilarProfiles() {
+        // similarityThreshold=0.99 so embSimilar (sim~0.983) registers separately
+        // mergeThreshold=0.95 so they get merged back (0.983 > 0.95)
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.99,
+            strategy: .merging(interval: 5, threshold: 0.95)
+        )
+
+        let embA = makeEmbedding(dominant: 0)          // Speaker A
+        _ = tracker.identify(embedding: embA)           // 1: Register A
+
+        var embSimilar = makeEmbedding(dominant: 0)
+        embSimilar[1] = 0.2                             // sim~0.983 with A, below 0.99
+        _ = tracker.identify(embedding: embSimilar)     // 2: Register B
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100))  // 3: Register C (different)
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100))  // 4: Match C
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100))  // 5: Triggers merge
+
+        let profiles = tracker.exportProfiles()
+        // Before merge: 3 profiles (A, B, C). After merge: A+B merged -> 2 profiles
+        XCTAssertEqual(profiles.count, 2, "Similar profiles A and B should have merged")
+    }
+
+    // MARK: - Registration Gate Strategy
+
+    func testRegistrationGateBlocksSimilarNewSpeaker() {
+        // similarityThreshold=0.5: only match if sim >= 0.5
+        // minSeparation=0.3: gate registration if best sim >= 0.3
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.5,
+            strategy: .registrationGate(minSeparation: 0.3)
+        )
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))  // Register A
+
+        // This embedding has sim~0.39 with A: below 0.5 (no match) but above 0.3 (gated)
+        var embSomewhatSimilar = makeEmbedding(dominant: 3)
+        embSomewhatSimilar[0] = 0.4
+        let label = tracker.identify(embedding: embSomewhatSimilar)
+
+        XCTAssertEqual(label, "A", "Should be gated to existing speaker A")
+        XCTAssertEqual(tracker.exportProfiles().count, 1)
+    }
+
+    func testRegistrationGateAllowsTrulyDifferentSpeaker() {
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.5,
+            strategy: .registrationGate(minSeparation: 0.3)
+        )
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))   // Register A
+        // dim 100 has sim~0.044 with dim 0, well below minSeparation=0.3
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100)) // Truly different, should register B
+
+        XCTAssertEqual(tracker.exportProfiles().count, 2)
+    }
+
+    // MARK: - Combined Strategy
+
+    func testCombinedStrategyCullsThenMerges() {
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.3,
+            strategy: .combined(cullInterval: 5, minHits: 2, mergeThreshold: 0.7)
+        )
+
+        let embA = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: embA)  // 1: Register A, hit=1
+        _ = tracker.identify(embedding: embA)  // 2: Match A, hit=2
+        _ = tracker.identify(embedding: embA)  // 3: Match A, hit=3
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))  // 4: Register B, hit=1
+
+        _ = tracker.identify(embedding: embA)  // 5: Triggers maintenance, B has hit=1 < minHits=2, culled
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1, "B should have been culled")
+        XCTAssertEqual(profiles[0].label, "A")
+    }
 }

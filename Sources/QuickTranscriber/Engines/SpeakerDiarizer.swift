@@ -47,13 +47,15 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 15.0,
         diarizationChunkDuration: TimeInterval = 7.0,
-        expectedSpeakerCount: Int? = nil
+        expectedSpeakerCount: Int? = nil,
+        profileStrategy: ProfileStrategy = .none
     ) {
         self.windowDuration = windowDuration
         self.speakerTracker = EmbeddingBasedSpeakerTracker(
             similarityThreshold: similarityThreshold,
             updateAlpha: updateAlpha,
-            expectedSpeakerCount: expectedSpeakerCount
+            expectedSpeakerCount: expectedSpeakerCount,
+            strategy: profileStrategy
         )
         self.pacer = DiarizationPacer(
             diarizationChunkDuration: diarizationChunkDuration,
@@ -133,7 +135,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
     }
 
     public func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
-        speakerTracker.exportProfiles()
+        speakerTracker.exportProfiles().map { ($0.label, $0.embedding) }
     }
 
     public func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {
