@@ -308,4 +308,26 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
         XCTAssertEqual(tracker.exportProfiles().count, 2)
     }
+
+    // MARK: - Combined Strategy
+
+    func testCombinedStrategyCullsThenMerges() {
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.3,
+            strategy: .combined(cullInterval: 5, minHits: 2, mergeThreshold: 0.7)
+        )
+
+        let embA = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: embA)  // 1: Register A, hit=1
+        _ = tracker.identify(embedding: embA)  // 2: Match A, hit=2
+        _ = tracker.identify(embedding: embA)  // 3: Match A, hit=3
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))  // 4: Register B, hit=1
+
+        _ = tracker.identify(embedding: embA)  // 5: Triggers maintenance, B has hit=1 < minHits=2, culled
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1, "B should have been culled")
+        XCTAssertEqual(profiles[0].label, "A")
+    }
 }

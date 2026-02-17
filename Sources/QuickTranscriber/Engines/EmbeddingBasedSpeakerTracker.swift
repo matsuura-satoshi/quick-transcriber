@@ -110,8 +110,10 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         case .merging(let interval, let threshold):
             guard identifyCount % interval == 0 else { return }
             mergeProfiles(threshold: threshold)
-        case .combined:
-            break
+        case .combined(let cullInterval, let minHits, let mergeThreshold):
+            guard identifyCount % cullInterval == 0 else { return }
+            profiles.removeAll { $0.hitCount < minHits }
+            mergeProfiles(threshold: mergeThreshold)
         }
     }
 
