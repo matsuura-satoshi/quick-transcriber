@@ -133,7 +133,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
     }
 
     public func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
-        speakerTracker.exportProfiles()
+        speakerTracker.exportProfiles().map { ($0.label, $0.embedding) }
     }
 
     public func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {

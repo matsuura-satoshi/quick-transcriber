@@ -205,4 +205,26 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(exported.count, 1)
         XCTAssertEqual(exported[0].label, "X")
     }
+
+    // MARK: - Profile Strategy
+
+    func testProfileStrategyNoneIsDefault() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        // Default strategy should behave identically to current behavior
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 0)), "A")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 1)), "B")
+        XCTAssertEqual(tracker.identify(embedding: makeEmbedding(dominant: 2)), "C")
+    }
+
+    func testHitCountIncrementsOnMatch() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: emb)  // Register A
+        _ = tracker.identify(embedding: emb)  // Match A
+        _ = tracker.identify(embedding: emb)  // Match A
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].hitCount, 3)
+    }
 }
