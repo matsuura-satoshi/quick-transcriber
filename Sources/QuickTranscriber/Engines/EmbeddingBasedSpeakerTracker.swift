@@ -48,6 +48,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     /// - Returns: A stable speaker label (A, B, C, ...)
     public func identify(embedding: [Float]) -> String {
         identifyCount += 1
+        maintainProfiles()
 
         var bestIndex = -1
         var bestSimilarity: Float = -1
@@ -85,6 +86,18 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1))
         nextLabelIndex += 1
         return label
+    }
+
+    private func maintainProfiles() {
+        switch strategy {
+        case .none, .registrationGate:
+            break
+        case .culling(let interval, let minHits):
+            guard identifyCount % interval == 0 else { return }
+            profiles.removeAll { $0.hitCount < minHits }
+        case .merging, .combined:
+            break
+        }
     }
 
     public func reset() {
