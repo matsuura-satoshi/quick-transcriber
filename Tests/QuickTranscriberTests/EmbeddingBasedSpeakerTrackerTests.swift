@@ -247,4 +247,31 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(profiles.count, 1, "B should have been culled")
         XCTAssertEqual(profiles[0].label, "A")
     }
+
+    // MARK: - Merging Strategy
+
+    func testMergingCombinesSimilarProfiles() {
+        // similarityThreshold=0.99 so embSimilar (sim~0.983) registers separately
+        // mergeThreshold=0.95 so they get merged back (0.983 > 0.95)
+        let tracker = EmbeddingBasedSpeakerTracker(
+            similarityThreshold: 0.99,
+            strategy: .merging(interval: 5, threshold: 0.95)
+        )
+
+        let embA = makeEmbedding(dominant: 0)          // Speaker A
+        _ = tracker.identify(embedding: embA)           // 1: Register A
+
+        var embSimilar = makeEmbedding(dominant: 0)
+        embSimilar[1] = 0.2                             // sim~0.983 with A, below 0.99
+        _ = tracker.identify(embedding: embSimilar)     // 2: Register B
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100))  // 3: Register C (different)
+
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100))  // 4: Match C
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 100))  // 5: Triggers merge
+
+        let profiles = tracker.exportProfiles()
+        // Before merge: 3 profiles (A, B, C). After merge: A+B merged -> 2 profiles
+        XCTAssertEqual(profiles.count, 2, "Similar profiles A and B should have merged")
+    }
 }

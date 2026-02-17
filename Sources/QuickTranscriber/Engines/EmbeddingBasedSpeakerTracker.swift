@@ -95,8 +95,35 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         case .culling(let interval, let minHits):
             guard identifyCount % interval == 0 else { return }
             profiles.removeAll { $0.hitCount < minHits }
-        case .merging, .combined:
+        case .merging(let interval, let threshold):
+            guard identifyCount % interval == 0 else { return }
+            mergeProfiles(threshold: threshold)
+        case .combined:
             break
+        }
+    }
+
+    private func mergeProfiles(threshold: Float) {
+        var i = 0
+        while i < profiles.count {
+            var j = i + 1
+            while j < profiles.count {
+                let sim = Self.cosineSimilarity(profiles[i].embedding, profiles[j].embedding)
+                if sim >= threshold {
+                    // Keep the profile with more hits, absorb the other
+                    let (keep, remove) = profiles[i].hitCount >= profiles[j].hitCount ? (i, j) : (j, i)
+                    let alpha = updateAlpha
+                    profiles[keep].embedding = zip(profiles[keep].embedding, profiles[remove].embedding).map { a, b in
+                        (1 - alpha) * a + alpha * b
+                    }
+                    profiles[keep].hitCount += profiles[remove].hitCount
+                    profiles.remove(at: remove)
+                    if remove < keep { i = max(0, i - 1) }
+                } else {
+                    j += 1
+                }
+            }
+            i += 1
         }
     }
 
