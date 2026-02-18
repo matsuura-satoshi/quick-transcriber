@@ -203,6 +203,144 @@ public final class TranscriptionViewModel: ObservableObject {
         return confirmedText + "\n" + unconfirmedText
     }
 
+    // MARK: - Speaker Reassignment
+
+    public struct SpeakerMenuItem: Equatable {
+        public let label: String
+        public let displayName: String?
+    }
+
+    public var availableSpeakers: [SpeakerMenuItem] {
+        var labels = Set<String>()
+        for segment in confirmedSegments {
+            if let speaker = segment.speaker {
+                labels.insert(speaker)
+            }
+        }
+        for key in labelDisplayNames.keys {
+            labels.insert(key)
+        }
+        return labels.sorted().map { label in
+            SpeakerMenuItem(label: label, displayName: labelDisplayNames[label])
+        }
+    }
+
+    public func splitSegment(at index: Int, offset: Int) {
+        guard index < confirmedSegments.count else { return }
+        let segment = confirmedSegments[index]
+        guard offset > 0 && offset < segment.text.count else { return }
+
+        let textStartIndex = segment.text.startIndex
+        let splitIndex = segment.text.index(textStartIndex, offsetBy: offset)
+
+        let firstText = String(segment.text[textStartIndex..<splitIndex])
+        let secondText = String(segment.text[splitIndex...])
+
+        var first = segment
+        first.text = firstText
+
+        var second = segment
+        second.text = secondText
+        second.precedingSilence = 0
+
+        confirmedSegments.replaceSubrange(index...index, with: [first, second])
+    }
+
+    public func reassignSpeakerForBlock(segmentIndex: Int, newSpeaker: String) {
+        guard segmentIndex < confirmedSegments.count else { return }
+        let targetSpeaker = confirmedSegments[segmentIndex].speaker
+
+        // Find consecutive block with same speaker
+        var startIdx = segmentIndex
+        while startIdx > 0 && confirmedSegments[startIdx - 1].speaker == targetSpeaker {
+            startIdx -= 1
+        }
+        var endIdx = segmentIndex
+        while endIdx < confirmedSegments.count - 1 && confirmedSegments[endIdx + 1].speaker == targetSpeaker {
+            endIdx += 1
+        }
+
+        for i in startIdx...endIdx {
+            let originalSpeaker = confirmedSegments[i].speaker
+            confirmedSegments[i].originalSpeaker = originalSpeaker
+            confirmedSegments[i].speaker = newSpeaker
+            confirmedSegments[i].speakerConfidence = 1.0
+            confirmedSegments[i].isUserCorrected = true
+        }
+
+        regenerateText()
+    }
+
+    public func reassignSpeakerForSelection(
+        selectionRange: NSRange,
+        newSpeaker: String,
+        segmentMap: SegmentCharacterMap
+    ) {
+        let indices = segmentMap.segmentIndices(overlapping: selectionRange)
+        guard !indices.isEmpty else { return }
+
+        // Process splits from end to start to avoid index shifting
+        let sortedIndices = indices.sorted(by: >)
+
+        for idx in sortedIndices {
+            guard idx < confirmedSegments.count else { continue }
+            let entry = segmentMap.entries.first { $0.segmentIndex == idx }
+            guard let entry else { continue }
+
+            let charRange = entry.characterRange
+            let overlapStart = max(selectionRange.location, charRange.location)
+            let overlapEnd = min(NSMaxRange(selectionRange), NSMaxRange(charRange))
+
+            if overlapStart <= charRange.location && overlapEnd >= NSMaxRange(charRange) {
+                // Fully selected — just reassign
+                let originalSpeaker = confirmedSegments[idx].speaker
+                confirmedSegments[idx].originalSpeaker = originalSpeaker
+                confirmedSegments[idx].speaker = newSpeaker
+                confirmedSegments[idx].speakerConfidence = 1.0
+                confirmedSegments[idx].isUserCorrected = true
+            } else {
+                // Partially selected — need to split
+                let localStart = overlapStart - charRange.location
+                let localEnd = overlapEnd - charRange.location
+
+                // Split at end first (to preserve indices)
+                if localEnd < charRange.length {
+                    splitSegment(at: idx, offset: localEnd)
+                }
+                // Now split at start
+                let splitIdx = idx
+                if localStart > 0 {
+                    splitSegment(at: splitIdx, offset: localStart)
+                    // The selected portion is now at splitIdx + 1
+                    let targetIdx = splitIdx + 1
+                    let originalSpeaker = confirmedSegments[targetIdx].speaker
+                    confirmedSegments[targetIdx].originalSpeaker = originalSpeaker
+                    confirmedSegments[targetIdx].speaker = newSpeaker
+                    confirmedSegments[targetIdx].speakerConfidence = 1.0
+                    confirmedSegments[targetIdx].isUserCorrected = true
+                } else {
+                    let originalSpeaker = confirmedSegments[splitIdx].speaker
+                    confirmedSegments[splitIdx].originalSpeaker = originalSpeaker
+                    confirmedSegments[splitIdx].speaker = newSpeaker
+                    confirmedSegments[splitIdx].speakerConfidence = 1.0
+                    confirmedSegments[splitIdx].isUserCorrected = true
+                }
+            }
+        }
+
+        regenerateText()
+    }
+
+    public func regenerateText() {
+        confirmedText = TranscriptionUtils.joinSegments(
+            confirmedSegments,
+            language: currentLanguage.rawValue,
+            silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
+            labelDisplayNames: labelDisplayNames
+        )
+        fileWriter.updateText(resolvedFileText())
+    }
+
     // MARK: - Speaker Profile Management
 
     public func renameSpeaker(id: UUID, to name: String) {
@@ -271,13 +409,18 @@ public final class TranscriptionViewModel: ObservableObject {
                             self.confirmedText = sessionPrefix + "\n" + state.confirmedText
                         }
                         self.unconfirmedText = state.unconfirmedText
+                        let newSegments: [ConfirmedSegment]
                         if sessionSegments.isEmpty {
-                            self.confirmedSegments = state.confirmedSegments
+                            newSegments = state.confirmedSegments
                         } else if state.confirmedSegments.isEmpty {
-                            self.confirmedSegments = sessionSegments
+                            newSegments = sessionSegments
                         } else {
-                            self.confirmedSegments = sessionSegments + state.confirmedSegments
+                            newSegments = sessionSegments + state.confirmedSegments
                         }
+                        self.confirmedSegments = Self.mergePreservingUserCorrections(
+                            existing: self.confirmedSegments,
+                            incoming: newSegments
+                        )
                         let fileText = self.resolvedFileText()
                         self.fileWriter.updateText(fileText)
                     }
@@ -299,6 +442,20 @@ public final class TranscriptionViewModel: ObservableObject {
         }
         previousSessionText = confirmedText
         previousSessionSegments = confirmedSegments
+    }
+
+    static func mergePreservingUserCorrections(
+        existing: [ConfirmedSegment],
+        incoming: [ConfirmedSegment]
+    ) -> [ConfirmedSegment] {
+        guard !existing.isEmpty else { return incoming }
+        var merged = incoming
+        // Preserve user-corrected segments at their original indices
+        for (i, segment) in existing.enumerated() {
+            guard segment.isUserCorrected, i < merged.count else { continue }
+            merged[i] = segment
+        }
+        return merged
     }
 
     private func stopRecording() {

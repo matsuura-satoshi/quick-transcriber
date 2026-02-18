@@ -1,16 +1,27 @@
 import Foundation
 
 public struct ConfirmedSegment: Sendable, Equatable {
-    public let text: String
-    public let precedingSilence: TimeInterval
+    public var text: String
+    public var precedingSilence: TimeInterval
     public var speaker: String?
     public var speakerConfidence: Float?
+    public var isUserCorrected: Bool
+    public var originalSpeaker: String?
 
-    public init(text: String, precedingSilence: TimeInterval = 0, speaker: String? = nil, speakerConfidence: Float? = nil) {
+    public init(
+        text: String,
+        precedingSilence: TimeInterval = 0,
+        speaker: String? = nil,
+        speakerConfidence: Float? = nil,
+        isUserCorrected: Bool = false,
+        originalSpeaker: String? = nil
+    ) {
         self.text = text
         self.precedingSilence = precedingSilence
         self.speaker = speaker
         self.speakerConfidence = speakerConfidence
+        self.isUserCorrected = isUserCorrected
+        self.originalSpeaker = originalSpeaker
     }
 }
 
