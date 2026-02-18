@@ -248,6 +248,52 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(store.profiles[0].label, "A")
     }
 
+    private func makeTestEmbedding(dominant dim: Int, dimensions: Int = 256) -> [Float] {
+        var v = [Float](repeating: 0.01, count: dimensions)
+        v[dim] = 1.0
+        return v
+    }
+
+    func testStopStreamingIncludesCorrectedProfilesInMerge() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        // After correctSpeaker(A→B), exported profiles will have swapped labels
+        mockDiarizer.exportedProfiles = [
+            ("B", makeTestEmbedding(dominant: 0)),
+            ("A", makeTestEmbedding(dominant: 1)),
+        ]
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SpeakerProfileStore(directory: dir)
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer,
+            speakerProfileStore: store
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+        try await engine.startStreaming(language: "en", parameters: params, onStateChange: { _ in })
+
+        // Simulate user correction: mark segment as corrected
+        // Feed audio to create a segment
+        let buffer = [Float](repeating: 0.1, count: 80000)
+        mockCapture.simulateBuffer(buffer)
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        engine.markSegmentAsUserCorrected(at: 0, speaker: "B", originalSpeaker: "A")
+
+        await engine.stopStreaming()
+
+        // Both profiles should be saved (previously "A" would have been filtered out)
+        XCTAssertEqual(store.profiles.count, 2, "All profiles should be merged including corrected ones")
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()

@@ -8,6 +8,11 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
     func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
+    func correctSpeaker(from fromLabel: String, to toLabel: String)
+}
+
+extension SpeakerDiarizer {
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) {}
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -120,10 +125,11 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
                 return lock.withLock { pacer.lastResult }
             }
 
-            let identification = speakerTracker.identify(embedding: relevant.embedding)
-            lock.withLock {
-                pacer.lastResult = identification
+            let identification = lock.withLock { () -> SpeakerIdentification in
+                let id = speakerTracker.identify(embedding: relevant.embedding)
+                pacer.lastResult = id
                 pacer.reset()
+                return id
             }
             NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(identification.label) conf=\(String(format: "%.3f", identification.confidence)) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
             return identification
@@ -131,6 +137,18 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
             lock.withLock { pacer.reset() }
             return lock.withLock { pacer.lastResult }
+        }
+    }
+
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) {
+        lock.withLock {
+            _ = speakerTracker.correctSpeaker(from: fromLabel, to: toLabel)
+            // Update cached result in pacer
+            if pacer.lastResult?.label == fromLabel {
+                pacer.lastResult = SpeakerIdentification(label: toLabel, confidence: pacer.lastResult?.confidence ?? 1.0)
+            } else if pacer.lastResult?.label == toLabel {
+                pacer.lastResult = SpeakerIdentification(label: fromLabel, confidence: pacer.lastResult?.confidence ?? 1.0)
+            }
         }
     }
 

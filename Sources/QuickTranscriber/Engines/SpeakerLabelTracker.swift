@@ -13,6 +13,7 @@ public final class SpeakerLabelTracker: @unchecked Sendable {
     private var confirmedResult: SpeakerIdentification?
     private var pendingLabel: String?
     private var pendingCount: Int = 0
+    private let lock = NSLock()
 
     public init(confirmationThreshold: Int = 2) {
         self.confirmationThreshold = max(1, confirmationThreshold)
@@ -23,6 +24,12 @@ public final class SpeakerLabelTracker: @unchecked Sendable {
     /// - Returns: The confirmed speaker identification (with confidence), or nil
     ///   if a potential speaker change is still being evaluated (pending).
     public func processLabel(_ identification: SpeakerIdentification?) -> SpeakerIdentification? {
+        lock.withLock {
+            _processLabel(identification)
+        }
+    }
+
+    private func _processLabel(_ identification: SpeakerIdentification?) -> SpeakerIdentification? {
         guard let id = identification else {
             return confirmedResult
         }
@@ -61,9 +68,28 @@ public final class SpeakerLabelTracker: @unchecked Sendable {
         return nil  // Still evaluating
     }
 
+    /// Update internal state to reflect a user's speaker correction.
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) {
+        lock.withLock {
+            if confirmedResult?.label == fromLabel {
+                confirmedResult = SpeakerIdentification(label: toLabel, confidence: confirmedResult?.confidence ?? 1.0)
+            } else if confirmedResult?.label == toLabel {
+                confirmedResult = SpeakerIdentification(label: fromLabel, confidence: confirmedResult?.confidence ?? 1.0)
+            }
+
+            if pendingLabel == fromLabel {
+                pendingLabel = toLabel
+            } else if pendingLabel == toLabel {
+                pendingLabel = fromLabel
+            }
+        }
+    }
+
     public func reset() {
-        confirmedResult = nil
-        pendingLabel = nil
-        pendingCount = 0
+        lock.withLock {
+            confirmedResult = nil
+            pendingLabel = nil
+            pendingCount = 0
+        }
     }
 }

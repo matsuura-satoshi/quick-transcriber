@@ -34,6 +34,11 @@ public protocol TranscriptionEngine: AnyObject {
     func stopStreaming() async
     func cleanup()
     var isStreaming: Bool { get async }
+    func correctSpeaker(from fromLabel: String, to toLabel: String)
+}
+
+extension TranscriptionEngine {
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) {}
 }
 
 extension TranscriptionEngine {

@@ -234,6 +234,58 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.displayName(for: "Z"), "Z")
     }
 
+    // MARK: - Remap Label
+
+    func testRemapLabelSwapsBothExisting() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: embA, displayName: "Alice"),
+            StoredSpeakerProfile(label: "B", embedding: embB),
+        ]
+
+        store.remapLabel(from: "A", to: "B")
+
+        // Labels swapped, displayNames preserved on their respective profiles
+        XCTAssertEqual(store.profiles[0].label, "B")
+        XCTAssertEqual(store.profiles[0].displayName, "Alice")
+        XCTAssertEqual(store.profiles[1].label, "A")
+    }
+
+    func testRemapLabelRenamesFromOnly() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+
+        store.remapLabel(from: "A", to: "X")
+
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].label, "X")
+    }
+
+    func testRemapLabelNonexistentIsNoOp() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+
+        store.remapLabel(from: "Z", to: "X")
+
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].label, "A")
+    }
+
     func testLabelDisplayNames() {
         let store = SpeakerProfileStore(directory: makeTempDirectory())
         store.profiles = [
