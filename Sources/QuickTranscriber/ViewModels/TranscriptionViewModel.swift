@@ -203,6 +203,41 @@ public final class TranscriptionViewModel: ObservableObject {
         return confirmedText + "\n" + unconfirmedText
     }
 
+    // MARK: - Session Speakers
+
+    public struct SessionSpeakerInfo: Identifiable {
+        public let label: String
+        public let storedProfileId: UUID?
+        public let displayName: String?
+        public var id: String { label }
+    }
+
+    public var sessionSpeakers: [SessionSpeakerInfo] {
+        guard !confirmedSegments.isEmpty else { return [] }
+        var seen = Set<String>()
+        var result: [SessionSpeakerInfo] = []
+        for segment in confirmedSegments {
+            guard let label = segment.speaker, !seen.contains(label) else { continue }
+            seen.insert(label)
+            let storedProfile = speakerProfileStore.profiles.first { $0.label == label }
+            result.append(SessionSpeakerInfo(
+                label: label,
+                storedProfileId: storedProfile?.id,
+                displayName: labelDisplayNames[label]
+            ))
+        }
+        return result
+    }
+
+    public func renameSessionSpeaker(label: String, displayName: String) {
+        labelDisplayNames[label] = displayName.isEmpty ? nil : displayName
+        if let profile = speakerProfileStore.profiles.first(where: { $0.label == label }) {
+            try? speakerProfileStore.rename(id: profile.id, to: displayName)
+            speakerProfiles = speakerProfileStore.profiles
+        }
+        regenerateText()
+    }
+
     // MARK: - Speaker Reassignment
 
     public struct SpeakerMenuItem: Equatable {
@@ -462,8 +497,16 @@ public final class TranscriptionViewModel: ObservableObject {
         isRecording = false
         saveUnconfirmedText()
         fileWriter.updateText(resolvedFileText())
+        let pendingNames = self.labelDisplayNames
         Task {
             await service.stopTranscription()
+            // Apply pending display names to newly merged profiles
+            for (label, name) in pendingNames {
+                if let profile = self.speakerProfileStore.profiles.first(where: { $0.label == label }),
+                   profile.displayName == nil || profile.displayName!.isEmpty {
+                    try? self.speakerProfileStore.rename(id: profile.id, to: name)
+                }
+            }
             self.speakerProfiles = self.speakerProfileStore.profiles
             self.labelDisplayNames = self.speakerProfileStore.labelDisplayNames
         }

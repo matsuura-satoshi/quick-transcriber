@@ -712,4 +712,103 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(content?.contains("Text from dir1") ?? false,
                       "New file should contain existing text as initial content")
     }
+
+    // MARK: - Session Speakers
+
+    func testSessionSpeakersReturnsDetectedSpeakers() async {
+        let (vm, _) = makeViewModel()
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+            ConfirmedSegment(text: "World", precedingSilence: 0, speaker: "B"),
+            ConfirmedSegment(text: "Again", precedingSilence: 0, speaker: "A"),
+        ]
+
+        let speakers = vm.sessionSpeakers
+        XCTAssertEqual(speakers.count, 2)
+        XCTAssertEqual(speakers[0].label, "A")
+        XCTAssertEqual(speakers[1].label, "B")
+    }
+
+    func testSessionSpeakersEmptyWhenNoSegments() async {
+        let (vm, _) = makeViewModel()
+        XCTAssertTrue(vm.sessionSpeakers.isEmpty)
+    }
+
+    func testSessionSpeakersIncludesDisplayName() async {
+        let (vm, _) = makeViewModel()
+        vm.labelDisplayNames = ["A": "Alice"]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+        ]
+
+        let speakers = vm.sessionSpeakers
+        XCTAssertEqual(speakers[0].displayName, "Alice")
+    }
+
+    func testSessionSpeakersIncludesStoredProfileId() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMSessionTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+        ]
+
+        let speakers = vm.sessionSpeakers
+        XCTAssertEqual(speakers[0].storedProfileId, id)
+    }
+
+    // MARK: - Rename Session Speaker
+
+    func testRenameSessionSpeakerUpdatesLabelDisplayNames() async {
+        let (vm, _) = makeViewModel()
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+
+        vm.renameSessionSpeaker(label: "A", displayName: "Alice")
+
+        XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
+    }
+
+    func testRenameSessionSpeakerEmptyNameClearsDisplayName() async {
+        let (vm, _) = makeViewModel()
+        vm.labelDisplayNames = ["A": "Alice"]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+
+        vm.renameSessionSpeaker(label: "A", displayName: "")
+
+        XCTAssertNil(vm.labelDisplayNames["A"])
+    }
+
+    func testRenameSessionSpeakerUpdatesStoreIfProfileExists() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMRenameTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+
+        vm.renameSessionSpeaker(label: "A", displayName: "Alice")
+
+        XCTAssertEqual(vm.speakerProfiles[0].displayName, "Alice")
+    }
 }
