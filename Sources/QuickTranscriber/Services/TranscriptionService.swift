@@ -45,6 +45,10 @@ public final class TranscriptionService {
         await engine.stopStreaming()
     }
 
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) {
+        engine.correctSpeaker(from: fromLabel, to: toLabel)
+    }
+
     public func cleanup() {
         engine.cleanup()
         isReady = false

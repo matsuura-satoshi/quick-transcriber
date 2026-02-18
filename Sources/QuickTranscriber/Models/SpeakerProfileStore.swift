@@ -72,6 +72,25 @@ public final class SpeakerProfileStore {
         return result
     }
 
+    /// Remap a speaker label in persisted profiles.
+    /// If both labels exist, swaps them. If only `from` exists, renames it.
+    public func remapLabel(from fromLabel: String, to toLabel: String) {
+        let fromIndex = profiles.firstIndex(where: { $0.label == fromLabel })
+        let toIndex = profiles.firstIndex(where: { $0.label == toLabel })
+
+        guard let fi = fromIndex else { return }
+
+        if let ti = toIndex {
+            // Both exist: swap labels
+            profiles[fi].label = toLabel
+            profiles[ti].label = fromLabel
+        } else {
+            // Only from: rename
+            profiles[fi].label = toLabel
+        }
+        try? save()
+    }
+
     public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {
         for (label, embedding) in sessionProfiles {
             var bestIndex = -1

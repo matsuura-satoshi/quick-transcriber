@@ -14,6 +14,9 @@ final class MockTranscriptionEngine: TranscriptionEngine {
 
     var stopStreamingCalled = false
     var cleanupCalled = false
+    var correctSpeakerCalled = false
+    var correctSpeakerFrom: String?
+    var correctSpeakerTo: String?
 
     private var _isStreaming = false
     var isStreaming: Bool {
@@ -47,6 +50,12 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         stopStreamingCalled = true
         _isStreaming = false
         stateChangeCallback = nil
+    }
+
+    func correctSpeaker(from fromLabel: String, to toLabel: String) {
+        correctSpeakerCalled = true
+        correctSpeakerFrom = fromLabel
+        correctSpeakerTo = toLabel
     }
 
     func cleanup() {

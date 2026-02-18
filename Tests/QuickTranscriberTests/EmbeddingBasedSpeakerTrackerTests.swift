@@ -359,4 +359,94 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertTrue(result.label == "A" || result.label == "B")
         XCTAssertLessThan(result.confidence, 0.5)
     }
+
+    // MARK: - correctSpeaker
+
+    func testCorrectSpeakerSwapsBothExisting() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        _ = tracker.identify(embedding: embA)  // A
+        _ = tracker.identify(embedding: embB)  // B
+
+        let result = tracker.correctSpeaker(from: "A", to: "B")
+        XCTAssertTrue(result)
+
+        // After swap: embA's profile is now labeled B, embB's profile is now labeled A
+        let profiles = tracker.exportProfiles()
+        let profileA = profiles.first { $0.label == "A" }
+        let profileB = profiles.first { $0.label == "B" }
+        XCTAssertNotNil(profileA)
+        XCTAssertNotNil(profileB)
+
+        // Verify by identifying with original embeddings
+        let resultA = tracker.identify(embedding: embA)
+        XCTAssertEqual(resultA.label, "B", "embA should now match profile B after swap")
+        let resultB = tracker.identify(embedding: embB)
+        XCTAssertEqual(resultB.label, "A", "embB should now match profile A after swap")
+    }
+
+    func testCorrectSpeakerRenamesFromOnly() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: embA)  // A
+
+        let result = tracker.correctSpeaker(from: "A", to: "X")
+        XCTAssertTrue(result)
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].label, "X")
+
+        // Original embedding should now match X
+        let resultX = tracker.identify(embedding: embA)
+        XCTAssertEqual(resultX.label, "X")
+    }
+
+    func testCorrectSpeakerReturnsFalseForNonexistentFrom() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 0))  // A
+
+        let result = tracker.correctSpeaker(from: "Z", to: "A")
+        XCTAssertFalse(result)
+    }
+
+    // MARK: - SpeakerIdentification embedding
+
+    func testIdentifyIncludesEmbedding() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb = makeEmbedding(dominant: 0)
+        let result = tracker.identify(embedding: emb)
+        XCTAssertNotNil(result.embedding)
+        XCTAssertEqual(result.embedding?.count, 256)
+    }
+
+    func testSpeakerIdentificationEqualityIgnoresEmbedding() {
+        let id1 = SpeakerIdentification(label: "A", confidence: 0.9, embedding: [1.0, 2.0])
+        let id2 = SpeakerIdentification(label: "A", confidence: 0.9, embedding: [3.0, 4.0])
+        XCTAssertEqual(id1, id2, "Equality should only compare label and confidence")
+    }
+
+    func testSpeakerIdentificationEqualityWithNilEmbedding() {
+        let id1 = SpeakerIdentification(label: "A", confidence: 0.9, embedding: nil)
+        let id2 = SpeakerIdentification(label: "A", confidence: 0.9, embedding: [1.0])
+        XCTAssertEqual(id1, id2)
+    }
+
+    func testCorrectSpeakerChainedCorrections() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        _ = tracker.identify(embedding: embA)  // A
+        _ = tracker.identify(embedding: embB)  // B
+
+        // First: swap A↔B
+        XCTAssertTrue(tracker.correctSpeaker(from: "A", to: "B"))
+        // Then: swap back A↔B
+        XCTAssertTrue(tracker.correctSpeaker(from: "A", to: "B"))
+
+        // Should be back to original state
+        XCTAssertEqual(tracker.identify(embedding: embA).label, "A")
+        XCTAssertEqual(tracker.identify(embedding: embB).label, "B")
+    }
 }

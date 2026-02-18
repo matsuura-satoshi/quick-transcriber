@@ -664,6 +664,82 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(vm.labelDisplayNames.isEmpty)
     }
 
+    // MARK: - Speaker Correction Feedback
+
+    func testReassignSpeakerForBlockCallsCorrectSpeakerWhenRecording() async {
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "A: Hello",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Reassign speaker A→B
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+
+        // Verify correction was called on engine
+        XCTAssertTrue(engine.correctSpeakerCalled)
+        XCTAssertEqual(engine.correctSpeakerFrom, "A")
+        XCTAssertEqual(engine.correctSpeakerTo, "B")
+    }
+
+    func testReassignSpeakerWhenNotRecordingRemapsProfileStore() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMRemapTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: [Float](repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(label: "B", embedding: [Float](repeating: 0.2, count: 256)),
+        ]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+
+        // Set segments without recording
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+
+        // Should NOT call engine's correctSpeaker (not recording)
+        XCTAssertFalse(engine.correctSpeakerCalled)
+
+        // Should remap in profile store
+        let profileLabels = store.profiles.map { $0.label }
+        // After remap A→B: profile[0] becomes "B", profile[1] becomes "A" (swap)
+        XCTAssertEqual(profileLabels.sorted(), ["A", "B"])
+    }
+
+    func testReassignSpeakerForBlockDoesNotCallCorrectSpeakerWhenNotRecording() async {
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
+        await vm.loadModel()
+
+        // Set segments without recording
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+        ]
+
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+
+        XCTAssertFalse(engine.correctSpeakerCalled)
+    }
+
     func testDirectoryChangeCreatesNewFileWithExistingText() async {
         // Use UserDefaults-based writer (no explicit directory)
         let dir1 = FileManager.default.temporaryDirectory

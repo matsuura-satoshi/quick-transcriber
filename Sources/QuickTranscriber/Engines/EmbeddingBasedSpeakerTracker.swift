@@ -11,6 +11,17 @@ public enum ProfileStrategy: Sendable {
 public struct SpeakerIdentification: Sendable, Equatable {
     public let label: String
     public let confidence: Float
+    public let embedding: [Float]?
+
+    public init(label: String, confidence: Float, embedding: [Float]? = nil) {
+        self.label = label
+        self.confidence = confidence
+        self.embedding = embedding
+    }
+
+    public static func == (lhs: SpeakerIdentification, rhs: SpeakerIdentification) -> Bool {
+        lhs.label == rhs.label && lhs.confidence == rhs.confidence
+    }
 }
 
 /// Tracks speakers across diarization calls using embedding cosine similarity.
@@ -73,7 +84,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                 (1 - alpha) * old + alpha * new
             }
-            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // At capacity: assign to most similar existing speaker instead of creating new
@@ -83,7 +94,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                 (1 - alpha) * old + alpha * new
             }
-            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // Registration gate: only register if sufficiently different from all existing profiles
@@ -94,7 +105,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
                     (1 - alpha) * old + alpha * new
                 }
-                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
             }
         }
 
@@ -102,7 +113,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
         profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1))
         nextLabelIndex += 1
-        return SpeakerIdentification(label: label, confidence: 1.0)
+        return SpeakerIdentification(label: label, confidence: 1.0, embedding: embedding)
     }
 
     private func maintainProfiles() {
@@ -144,6 +155,27 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             }
             i += 1
         }
+    }
+
+    /// Correct a speaker label assignment by swapping or renaming profiles.
+    ///
+    /// - Case 1 (both exist): Swap labels between the two profiles
+    /// - Case 2 (from only): Rename the profile
+    /// - Returns: true if correction was applied
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) -> Bool {
+        guard let fromIndex = profiles.firstIndex(where: { $0.label == fromLabel }) else {
+            return false
+        }
+
+        if let toIndex = profiles.firstIndex(where: { $0.label == toLabel }) {
+            // Both exist: swap labels
+            profiles[fromIndex] = SpeakerProfile(label: toLabel, embedding: profiles[fromIndex].embedding, hitCount: profiles[fromIndex].hitCount)
+            profiles[toIndex] = SpeakerProfile(label: fromLabel, embedding: profiles[toIndex].embedding, hitCount: profiles[toIndex].hitCount)
+        } else {
+            // From only: rename
+            profiles[fromIndex] = SpeakerProfile(label: toLabel, embedding: profiles[fromIndex].embedding, hitCount: profiles[fromIndex].hitCount)
+        }
+        return true
     }
 
     public func reset() {

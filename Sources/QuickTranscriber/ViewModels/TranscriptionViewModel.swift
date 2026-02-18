@@ -268,6 +268,15 @@ public final class TranscriptionViewModel: ObservableObject {
             confirmedSegments[i].isUserCorrected = true
         }
 
+        // Propagate correction
+        if let targetSpeaker {
+            if isRecording {
+                service.correctSpeaker(from: targetSpeaker, to: newSpeaker)
+            } else {
+                propagateCorrectionToStore(from: targetSpeaker, to: newSpeaker)
+            }
+        }
+
         regenerateText()
     }
 
@@ -278,6 +287,15 @@ public final class TranscriptionViewModel: ObservableObject {
     ) {
         let indices = segmentMap.segmentIndices(overlapping: selectionRange)
         guard !indices.isEmpty else { return }
+
+        // Collect original speakers before modification
+        var originalSpeakers = Set<String>()
+        for idx in indices {
+            guard idx < confirmedSegments.count else { continue }
+            if let speaker = confirmedSegments[idx].speaker {
+                originalSpeakers.insert(speaker)
+            }
+        }
 
         // Process splits from end to start to avoid index shifting
         let sortedIndices = indices.sorted(by: >)
@@ -328,6 +346,15 @@ public final class TranscriptionViewModel: ObservableObject {
             }
         }
 
+        // Propagate correction
+        for speaker in originalSpeakers where speaker != newSpeaker {
+            if isRecording {
+                service.correctSpeaker(from: speaker, to: newSpeaker)
+            } else {
+                propagateCorrectionToStore(from: speaker, to: newSpeaker)
+            }
+        }
+
         regenerateText()
     }
 
@@ -362,6 +389,12 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     // MARK: - Private
+
+    private func propagateCorrectionToStore(from fromLabel: String, to toLabel: String) {
+        speakerProfileStore.remapLabel(from: fromLabel, to: toLabel)
+        speakerProfiles = speakerProfileStore.profiles
+        labelDisplayNames = speakerProfileStore.labelDisplayNames
+    }
 
     private func restartRecording() {
         saveUnconfirmedText()

@@ -197,6 +197,64 @@ final class SpeakerLabelTrackerTests: XCTestCase {
         XCTAssertEqual(textAfterConfirm, "A: Hello\nB: New topic More talk")
     }
 
+    // MARK: - correctSpeaker
+
+    func testCorrectSpeakerUpdatesConfirmedResult() {
+        let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
+        _ = tracker.processLabel(id("A"))  // confirm A
+        tracker.correctSpeaker(from: "A", to: "B")
+
+        // After correction, nil input should return B (confirmed result updated)
+        let result = tracker.processLabel(nil)
+        XCTAssertEqual(result?.label, "B")
+    }
+
+    func testCorrectSpeakerUpdatesPendingLabel() {
+        let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
+        _ = tracker.processLabel(id("A"))  // confirm A
+        _ = tracker.processLabel(id("B"))  // pending B (1/2)
+        tracker.correctSpeaker(from: "B", to: "C")
+
+        // Pending was B, now should be C
+        // One more C should confirm it
+        let result = tracker.processLabel(id("C"))
+        XCTAssertEqual(result?.label, "C")
+    }
+
+    func testCorrectSpeakerSwapConfirmedAndPending() {
+        let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
+        _ = tracker.processLabel(id("A"))  // confirm A
+        _ = tracker.processLabel(id("B"))  // pending B (1/2)
+        tracker.correctSpeaker(from: "A", to: "B")
+
+        // Confirmed was A→B, pending was B→A
+        let result = tracker.processLabel(nil)
+        XCTAssertEqual(result?.label, "B")
+    }
+
+    func testCorrectSpeakerThreadSafety() {
+        let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
+        _ = tracker.processLabel(id("A"))
+
+        let expectation = XCTestExpectation(description: "concurrent access")
+        expectation.expectedFulfillmentCount = 100
+
+        let queue = DispatchQueue(label: "test", attributes: .concurrent)
+        for i in 0..<100 {
+            queue.async {
+                if i % 2 == 0 {
+                    _ = tracker.processLabel(self.id("A"))
+                } else {
+                    tracker.correctSpeaker(from: "A", to: "B")
+                    tracker.correctSpeaker(from: "B", to: "A")
+                }
+                expectation.fulfill()
+            }
+        }
+        wait(for: [expectation], timeout: 5.0)
+        // If we got here without a crash, thread safety is working
+    }
+
     func testSpeakerLabelFalseAlarm() {
         let tracker = SpeakerLabelTracker(confirmationThreshold: 2)
 

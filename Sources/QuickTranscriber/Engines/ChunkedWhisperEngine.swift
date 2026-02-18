@@ -119,24 +119,11 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         if let diarizer, currentParameters.enableSpeakerDiarization, let store = speakerProfileStore {
             let sessionProfiles = diarizer.exportSpeakerProfiles()
             if !sessionProfiles.isEmpty {
-                // Filter out profiles for speakers that were user-corrected
-                let correctedOriginalSpeakers = Set(
-                    confirmedSegments
-                        .filter { $0.isUserCorrected }
-                        .compactMap { $0.originalSpeaker }
-                )
-                let filteredProfiles: [(label: String, embedding: [Float])]
-                if correctedOriginalSpeakers.isEmpty {
-                    filteredProfiles = sessionProfiles
-                } else {
-                    filteredProfiles = sessionProfiles.filter { !correctedOriginalSpeakers.contains($0.label) }
-                    NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
-                }
-                if !filteredProfiles.isEmpty {
-                    store.mergeSessionProfiles(filteredProfiles)
-                    try? store.save()
-                    NSLog("[ChunkedWhisperEngine] Saved \(filteredProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - filteredProfiles.count))")
-                }
+                // Phase 1 correctSpeaker() already swapped labels in-place,
+                // so exported profiles have correct labels. Merge all.
+                store.mergeSessionProfiles(sessionProfiles)
+                try? store.save()
+                NSLog("[ChunkedWhisperEngine] Saved \(sessionProfiles.count) speaker profiles to store")
             }
         }
         NSLog("[ChunkedWhisperEngine] Streaming stopped. Total segments: \(confirmedSegments.count)")
@@ -153,6 +140,11 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments[index].speaker = speaker
         confirmedSegments[index].speakerConfidence = 1.0
         confirmedSegments[index].isUserCorrected = true
+    }
+
+    public func correctSpeaker(from fromLabel: String, to toLabel: String) {
+        diarizer?.correctSpeaker(from: fromLabel, to: toLabel)
+        speakerTracker.correctSpeaker(from: fromLabel, to: toLabel)
     }
 
     public func cleanup() {
@@ -228,6 +220,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                         guard !confirmedSegments[i].isUserCorrected else { continue }
                         confirmedSegments[i].speaker = result.label
                         confirmedSegments[i].speakerConfidence = result.confidence
+                        confirmedSegments[i].speakerEmbedding = result.embedding
                     }
                     pendingSegmentStartIndex = nil
                     NSLog("[ChunkedWhisperEngine] Retroactively assigned speaker \(result.label) to \(confirmedSegments.count - startIdx) pending segments")
@@ -247,7 +240,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     text: segment.text,
                     precedingSilence: precedingSilence,
                     speaker: smoothedResult?.label,
-                    speakerConfidence: smoothedResult?.confidence
+                    speakerConfidence: smoothedResult?.confidence,
+                    speakerEmbedding: smoothedResult?.embedding
                 ))
                 NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.label ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }
