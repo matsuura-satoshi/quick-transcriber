@@ -114,7 +114,14 @@ public struct ContentView: View {
             confirmedSegments: viewModel.confirmedSegments,
             language: viewModel.currentLanguage.rawValue,
             silenceThreshold: viewModel.silenceLineBreakThreshold,
-            labelDisplayNames: viewModel.labelDisplayNames
+            labelDisplayNames: viewModel.labelDisplayNames,
+            availableSpeakers: viewModel.availableSpeakers,
+            onReassignBlock: { segmentIndex, newSpeaker in
+                viewModel.reassignSpeakerForBlock(segmentIndex: segmentIndex, newSpeaker: newSpeaker)
+            },
+            onReassignSelection: { range, newSpeaker, map in
+                viewModel.reassignSpeakerForSelection(selectionRange: range, newSpeaker: newSpeaker, segmentMap: map)
+            }
         )
         .frame(maxHeight: .infinity)
     }

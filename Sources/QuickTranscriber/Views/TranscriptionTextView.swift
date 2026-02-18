@@ -1,6 +1,212 @@
 import SwiftUI
 import AppKit
 
+public struct SegmentCharacterMap {
+    public struct Entry {
+        public let segmentIndex: Int
+        public let characterRange: NSRange
+        public let labelRange: NSRange?
+    }
+    public var entries: [Entry] = []
+
+    public func segmentIndices(overlapping range: NSRange) -> [Int] {
+        entries.compactMap { entry in
+            let fullRange = NSUnionRange(
+                entry.labelRange ?? entry.characterRange,
+                entry.characterRange
+            )
+            if NSIntersectionRange(fullRange, range).length > 0 {
+                return entry.segmentIndex
+            }
+            return nil
+        }
+    }
+
+    public func consecutiveBlockIndices(from index: Int, segments: [ConfirmedSegment]) -> [Int] {
+        guard index < segments.count, let speaker = segments[index].speaker else {
+            return [index]
+        }
+        var result = [Int]()
+        // Expand backward
+        var i = index
+        while i >= 0 && segments[i].speaker == speaker { i -= 1 }
+        i += 1
+        // Expand forward
+        while i < segments.count && segments[i].speaker == speaker {
+            result.append(i)
+            i += 1
+        }
+        return result
+    }
+
+    public func labelEntry(at characterIndex: Int) -> Entry? {
+        entries.first { entry in
+            guard let labelRange = entry.labelRange else { return false }
+            return NSLocationInRange(characterIndex, labelRange)
+        }
+    }
+}
+
+private class BlockReassignInfo: NSObject {
+    let segmentIndex: Int
+    let label: String
+    init(segmentIndex: Int, label: String) {
+        self.segmentIndex = segmentIndex
+        self.label = label
+    }
+}
+
+class InteractiveTranscriptionTextView: NSTextView {
+    var segmentMap: SegmentCharacterMap?
+    var confirmedSegments: [ConfirmedSegment] = []
+    var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
+    var onReassignBlock: ((Int, String) -> Void)?
+    var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        guard let map = segmentMap else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let charIndex = characterIndexForInsertion(at: point)
+
+        guard charIndex < (textStorage?.length ?? 0) else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        if let entry = map.labelEntry(at: charIndex) {
+            let blockIndices = map.consecutiveBlockIndices(from: entry.segmentIndex, segments: confirmedSegments)
+            showSpeakerMenu(for: blockIndices, at: event)
+            return
+        }
+
+        super.mouseDown(with: event)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let base = super.menu(for: event) ?? NSMenu()
+        let range = selectedRange()
+
+        guard range.length > 0,
+              let text = textStorage?.string,
+              let map = segmentMap else {
+            return base
+        }
+
+        let selectedText = (text as NSString).substring(with: range)
+        guard !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return base
+        }
+
+        let indices = map.segmentIndices(overlapping: range)
+        guard !indices.isEmpty else { return base }
+
+        let speakerMenu = NSMenu()
+        for speaker in availableSpeakers {
+            let title = speaker.displayName ?? speaker.label
+            let item = NSMenuItem(title: title, action: #selector(reassignSelectionAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = speaker.label
+            speakerMenu.addItem(item)
+        }
+        speakerMenu.addItem(NSMenuItem.separator())
+        let newItem = NSMenuItem(title: "New Speaker...", action: #selector(newSpeakerForSelectionAction(_:)), keyEquivalent: "")
+        newItem.target = self
+        speakerMenu.addItem(newItem)
+
+        base.addItem(NSMenuItem.separator())
+        let assignItem = NSMenuItem(title: "Assign Speaker", action: nil, keyEquivalent: "")
+        assignItem.submenu = speakerMenu
+        base.addItem(assignItem)
+
+        return base
+    }
+
+    private func showSpeakerMenu(for blockIndices: [Int], at event: NSEvent) {
+        guard let firstIdx = blockIndices.first else { return }
+        let menu = NSMenu()
+
+        for speaker in availableSpeakers {
+            let title = speaker.displayName ?? speaker.label
+            let item = NSMenuItem(title: title, action: #selector(reassignBlockAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = BlockReassignInfo(segmentIndex: firstIdx, label: speaker.label)
+            menu.addItem(item)
+        }
+        menu.addItem(NSMenuItem.separator())
+        let newItem = NSMenuItem(title: "New Speaker...", action: #selector(newSpeakerForBlockAction(_:)), keyEquivalent: "")
+        newItem.target = self
+        newItem.representedObject = firstIdx
+        menu.addItem(newItem)
+
+        let point = convert(event.locationInWindow, from: nil)
+        menu.popUp(positioning: nil, at: point, in: self)
+    }
+
+    @objc private func reassignBlockAction(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? BlockReassignInfo else { return }
+        let segmentIndex = info.segmentIndex
+        let label = info.label
+        onReassignBlock?(segmentIndex, label)
+    }
+
+    @objc private func reassignSelectionAction(_ sender: NSMenuItem) {
+        guard let label = sender.representedObject as? String,
+              let map = segmentMap else { return }
+        let range = selectedRange()
+        guard range.length > 0 else { return }
+        onReassignSelection?(range, label, map)
+    }
+
+    @objc private func newSpeakerForBlockAction(_ sender: NSMenuItem) {
+        guard let segmentIndex = sender.representedObject as? Int else { return }
+        promptForNewSpeaker { [weak self] label in
+            self?.onReassignBlock?(segmentIndex, label)
+        }
+    }
+
+    @objc private func newSpeakerForSelectionAction(_ sender: NSMenuItem) {
+        guard let map = segmentMap else { return }
+        let range = selectedRange()
+        guard range.length > 0 else { return }
+        promptForNewSpeaker { [weak self] label in
+            self?.onReassignSelection?(range, label, map)
+        }
+    }
+
+    private func promptForNewSpeaker(completion: @escaping (String) -> Void) {
+        let alert = NSAlert()
+        alert.messageText = "New Speaker Label"
+        alert.informativeText = "Enter a label for the new speaker:"
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        // Suggest next available letter
+        let usedLabels = Set(availableSpeakers.map { $0.label })
+        for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+            if !usedLabels.contains(String(c)) {
+                input.stringValue = String(c)
+                break
+            }
+        }
+        alert.accessoryView = input
+
+        guard let window = self.window else { return }
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn {
+                let label = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !label.isEmpty {
+                    completion(label)
+                }
+            }
+        }
+    }
+}
+
 struct TranscriptionTextView: NSViewRepresentable {
     let confirmedText: String
     let unconfirmedText: String
@@ -9,6 +215,9 @@ struct TranscriptionTextView: NSViewRepresentable {
     var language: String = "en"
     var silenceThreshold: TimeInterval = 1.0
     var labelDisplayNames: [String: String] = [:]
+    var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
+    var onReassignBlock: ((Int, String) -> Void)?
+    var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -21,7 +230,7 @@ struct TranscriptionTextView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        let textView = NSTextView()
+        let textView = InteractiveTranscriptionTextView()
         textView.isEditable = false
         textView.isSelectable = true
         textView.isRichText = true
@@ -45,6 +254,15 @@ struct TranscriptionTextView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coordinator = context.coordinator
+
+        // Update interactive text view properties
+        if let interactiveView = coordinator.textView as? InteractiveTranscriptionTextView {
+            interactiveView.confirmedSegments = confirmedSegments
+            interactiveView.availableSpeakers = availableSpeakers
+            interactiveView.onReassignBlock = onReassignBlock
+            interactiveView.onReassignSelection = onReassignSelection
+        }
+
         let newConfirmed = confirmedText
         let newUnconfirmed = unconfirmedText
         let oldConfirmed = coordinator.lastConfirmedText
@@ -158,6 +376,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
     /// Build an NSAttributedString from segments, coloring speaker labels by confidence.
     /// Mirrors the logic of TranscriptionUtils.joinSegments but produces attributed text.
+    /// Returns a tuple of (attributed string, segment character map).
     static func buildAttributedStringFromSegments(
         _ segments: [ConfirmedSegment],
         language: String,
@@ -165,13 +384,14 @@ struct TranscriptionTextView: NSViewRepresentable {
         fontSize: CGFloat,
         unconfirmed: String,
         labelDisplayNames: [String: String] = [:]
-    ) -> NSAttributedString {
+    ) -> (NSAttributedString, SegmentCharacterMap) {
         let result = NSMutableAttributedString()
+        var map = SegmentCharacterMap()
         guard !segments.isEmpty else {
             if !unconfirmed.isEmpty {
-                return buildUnconfirmedAttributedString(unconfirmed, fontSize: fontSize)
+                return (buildUnconfirmedAttributedString(unconfirmed, fontSize: fontSize), map)
             }
-            return result
+            return (result, map)
         }
 
         let hasSpeakers = segments.contains { $0.speaker != nil }
@@ -182,23 +402,42 @@ struct TranscriptionTextView: NSViewRepresentable {
 
         var currentSpeaker: String? = nil
         var lastChar: Character? = nil
+        var segmentIndex = 0
 
         for segment in segments {
-            guard !segment.text.isEmpty else { continue }
+            guard !segment.text.isEmpty else {
+                segmentIndex += 1
+                continue
+            }
 
             let isFirst = (result.length == 0)
+            var labelRange: NSRange? = nil
 
             if isFirst {
                 if hasSpeakers, let speaker = segment.speaker {
                     let displayName = labelDisplayNames[speaker] ?? speaker
                     let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
-                    result.append(NSAttributedString(string: "\(displayName): ", attributes: labelAttrs))
+                    let labelStart = result.length
+                    let labelStr = "\(displayName): "
+                    result.append(NSAttributedString(string: labelStr, attributes: labelAttrs))
+                    labelRange = NSRange(location: labelStart, length: (labelStr as NSString).length)
+                    let textStart = result.length
                     result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
+                    let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
+                    map.entries.append(SegmentCharacterMap.Entry(
+                        segmentIndex: segmentIndex, characterRange: textRange, labelRange: labelRange
+                    ))
                     currentSpeaker = speaker
                 } else {
+                    let textStart = result.length
                     result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
+                    let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
+                    map.entries.append(SegmentCharacterMap.Entry(
+                        segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
+                    ))
                 }
                 lastChar = segment.text.last
+                segmentIndex += 1
                 continue
             }
 
@@ -207,30 +446,58 @@ struct TranscriptionTextView: NSViewRepresentable {
                 let displayName = labelDisplayNames[speaker] ?? speaker
                 let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
                 result.append(NSAttributedString(string: "\n", attributes: normalAttrs))
-                result.append(NSAttributedString(string: "\(displayName): ", attributes: labelAttrs))
+                let labelStart = result.length
+                let labelStr = "\(displayName): "
+                result.append(NSAttributedString(string: labelStr, attributes: labelAttrs))
+                labelRange = NSRange(location: labelStart, length: (labelStr as NSString).length)
+                let textStart = result.length
                 result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
+                let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
+                map.entries.append(SegmentCharacterMap.Entry(
+                    segmentIndex: segmentIndex, characterRange: textRange, labelRange: labelRange
+                ))
                 currentSpeaker = speaker
                 lastChar = segment.text.last
+                segmentIndex += 1
                 continue
             }
 
             // Priority 2: Silence threshold
             if segment.precedingSilence >= silenceThreshold {
+                let textStart = result.length + 1 // +1 for newline
                 result.append(NSAttributedString(string: "\n" + segment.text, attributes: normalAttrs))
+                let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
+                map.entries.append(SegmentCharacterMap.Entry(
+                    segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
+                ))
                 lastChar = segment.text.last
+                segmentIndex += 1
                 continue
             }
 
             // Priority 3: Sentence end
             if let last = lastChar, sentenceEnders.contains(last) {
+                let textStart = result.length + 1
                 result.append(NSAttributedString(string: "\n" + segment.text, attributes: normalAttrs))
+                let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
+                map.entries.append(SegmentCharacterMap.Entry(
+                    segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
+                ))
                 lastChar = segment.text.last
+                segmentIndex += 1
                 continue
             }
 
             // Priority 4: Inline
+            let prefixLen = (separator as NSString).length
+            let textStart = result.length + prefixLen
             result.append(NSAttributedString(string: separator + segment.text, attributes: normalAttrs))
+            let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
+            map.entries.append(SegmentCharacterMap.Entry(
+                segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
+            ))
             lastChar = segment.text.last
+            segmentIndex += 1
         }
 
         if !unconfirmed.isEmpty {
@@ -238,7 +505,7 @@ struct TranscriptionTextView: NSViewRepresentable {
             result.append(buildUnconfirmedAttributedString(unconfirmed, fontSize: fontSize))
         }
 
-        return result
+        return (result, map)
     }
 
     private static func speakerLabelAttributes(fontSize: CGFloat, confidence: Float?) -> [NSAttributedString.Key: Any] {
@@ -288,10 +555,14 @@ struct TranscriptionTextView: NSViewRepresentable {
         ) {
             guard let textView, let textStorage = textView.textStorage else { return }
 
-            let attributed = TranscriptionTextView.buildAttributedStringFromSegments(
+            let (attributed, map) = TranscriptionTextView.buildAttributedStringFromSegments(
                 segments, language: language, silenceThreshold: silenceThreshold,
                 fontSize: fontSize, unconfirmed: unconfirmed, labelDisplayNames: labelDisplayNames
             )
+
+            if let interactiveView = textView as? InteractiveTranscriptionTextView {
+                interactiveView.segmentMap = map
+            }
 
             let newText = attributed.string
             let currentText = textStorage.string

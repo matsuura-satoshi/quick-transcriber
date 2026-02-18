@@ -328,4 +328,49 @@ final class TranscriptionUtilsTests: XCTestCase {
         )
         XCTAssertEqual(result, "A: Hello\nB: Hi")
     }
+
+    // MARK: - ConfirmedSegment isUserCorrected and originalSpeaker
+
+    func testConfirmedSegmentDefaultsIsUserCorrectedFalse() {
+        let segment = ConfirmedSegment(text: "Hello", speaker: "A")
+        XCTAssertFalse(segment.isUserCorrected)
+        XCTAssertNil(segment.originalSpeaker)
+    }
+
+    func testConfirmedSegmentIsUserCorrectedCanBeSet() {
+        var segment = ConfirmedSegment(text: "Hello", speaker: "A")
+        segment.isUserCorrected = true
+        segment.originalSpeaker = "B"
+        XCTAssertTrue(segment.isUserCorrected)
+        XCTAssertEqual(segment.originalSpeaker, "B")
+    }
+
+    func testConfirmedSegmentTextIsMutable() {
+        var segment = ConfirmedSegment(text: "Hello")
+        segment.text = "World"
+        XCTAssertEqual(segment.text, "World")
+    }
+
+    func testConfirmedSegmentPrecedingSilenceIsMutable() {
+        var segment = ConfirmedSegment(text: "Hello", precedingSilence: 2.0)
+        segment.precedingSilence = 0
+        XCTAssertEqual(segment.precedingSilence, 0)
+    }
+
+    func testConfirmedSegmentInitWithAllParameters() {
+        let segment = ConfirmedSegment(
+            text: "Hello",
+            precedingSilence: 1.0,
+            speaker: "A",
+            speakerConfidence: 0.9,
+            isUserCorrected: true,
+            originalSpeaker: "B"
+        )
+        XCTAssertEqual(segment.text, "Hello")
+        XCTAssertEqual(segment.precedingSilence, 1.0)
+        XCTAssertEqual(segment.speaker, "A")
+        XCTAssertEqual(segment.speakerConfidence, 0.9)
+        XCTAssertTrue(segment.isUserCorrected)
+        XCTAssertEqual(segment.originalSpeaker, "B")
+    }
 }

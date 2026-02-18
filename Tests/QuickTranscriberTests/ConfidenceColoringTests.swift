@@ -33,7 +33,7 @@ final class ConfidenceColoringTests: XCTestCase {
     // MARK: - buildAttributedStringFromSegments
 
     func testBuildAttributedStringEmptySegments() {
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             [],
             language: "en",
             silenceThreshold: 1.0,
@@ -44,7 +44,7 @@ final class ConfidenceColoringTests: XCTestCase {
     }
 
     func testBuildAttributedStringEmptySegmentsWithUnconfirmed() {
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             [],
             language: "en",
             silenceThreshold: 1.0,
@@ -56,7 +56,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testBuildAttributedStringSingleSegmentNoSpeaker() {
         let segments = [ConfirmedSegment(text: "Hello world")]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -68,7 +68,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testBuildAttributedStringSingleSegmentWithSpeaker() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8)]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -83,7 +83,7 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.9),
             ConfirmedSegment(text: "Hi there", speaker: "B", speakerConfidence: 0.7),
         ]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -98,7 +98,7 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "Before pause"),
             ConfirmedSegment(text: "After pause", precedingSilence: 2.0),
         ]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -113,7 +113,7 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "Hello."),
             ConfirmedSegment(text: "World"),
         ]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -128,7 +128,7 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "Hello"),
             ConfirmedSegment(text: "world"),
         ]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -143,7 +143,7 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "こんにちは"),
             ConfirmedSegment(text: "世界"),
         ]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "ja",
             silenceThreshold: 1.0,
@@ -155,7 +155,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testBuildAttributedStringWithUnconfirmedAppended() {
         let segments = [ConfirmedSegment(text: "Hello")]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -169,7 +169,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testHighConfidenceSpeakerLabelUsesLabelColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8)]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -188,7 +188,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testLowConfidenceSpeakerLabelUsesSecondaryColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.3)]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -205,7 +205,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testNilConfidenceSpeakerLabelUsesLabelColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: nil)]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
@@ -221,7 +221,7 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testTextBodyAlwaysUsesLabelColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.3)]
-        let result = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
