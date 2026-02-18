@@ -38,7 +38,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     /// - Parameters:
     ///   - similarityThreshold: Minimum cosine similarity to match a known speaker (default: 0.5)
-    ///   - updateAlpha: Weight for new embedding in moving average update (default: 0.3)
+    ///   - updateAlpha: Unused, kept for backward compatibility (default: 0.3)
     ///   - expectedSpeakerCount: Maximum number of speakers to track (nil = unlimited)
     ///   - strategy: Profile maintenance strategy (default: .none)
     public init(similarityThreshold: Float = 0.5, updateAlpha: Float = 0.3,
