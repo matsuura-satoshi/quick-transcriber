@@ -25,6 +25,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         public let label: String
         public var embedding: [Float]
         public var hitCount: Int
+        public var embeddingHistory: [[Float]]
     }
 
     private var profiles: [SpeakerProfile] = []
@@ -67,42 +68,47 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
 
         if bestIndex >= 0 && bestSimilarity >= similarityThreshold {
-            // Update profile with moving average
-            profiles[bestIndex].hitCount += 1
-            let alpha = updateAlpha
-            profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                (1 - alpha) * old + alpha * new
-            }
+            profiles[bestIndex].embeddingHistory.append(embedding)
+            recalculateEmbedding(at: bestIndex)
             return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
         }
 
         // At capacity: assign to most similar existing speaker instead of creating new
         if let limit = expectedSpeakerCount, profiles.count >= limit, bestIndex >= 0 {
-            profiles[bestIndex].hitCount += 1
-            let alpha = updateAlpha
-            profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                (1 - alpha) * old + alpha * new
-            }
+            profiles[bestIndex].embeddingHistory.append(embedding)
+            recalculateEmbedding(at: bestIndex)
             return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
         }
 
         // Registration gate: only register if sufficiently different from all existing profiles
         if case .registrationGate(let minSeparation) = strategy, bestIndex >= 0 {
             if bestSimilarity >= minSeparation {
-                profiles[bestIndex].hitCount += 1
-                let alpha = updateAlpha
-                profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                    (1 - alpha) * old + alpha * new
-                }
+                profiles[bestIndex].embeddingHistory.append(embedding)
+                recalculateEmbedding(at: bestIndex)
                 return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
             }
         }
 
         // Register new speaker
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
-        profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1))
+        profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1, embeddingHistory: [embedding]))
         nextLabelIndex += 1
         return SpeakerIdentification(label: label, confidence: 1.0)
+    }
+
+    /// Recalculate the centroid embedding as arithmetic mean of all history entries.
+    private func recalculateEmbedding(at index: Int) {
+        let history = profiles[index].embeddingHistory
+        guard let first = history.first else { return }
+        let count = Float(history.count)
+        var sum = [Float](repeating: 0, count: first.count)
+        for entry in history {
+            for i in 0..<entry.count {
+                sum[i] += entry[i]
+            }
+        }
+        profiles[index].embedding = sum.map { $0 / count }
+        profiles[index].hitCount = history.count
     }
 
     private func maintainProfiles() {
@@ -131,11 +137,8 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 if sim >= threshold {
                     // Keep the profile with more hits, absorb the other
                     let (keep, remove) = profiles[i].hitCount >= profiles[j].hitCount ? (i, j) : (j, i)
-                    let alpha = updateAlpha
-                    profiles[keep].embedding = zip(profiles[keep].embedding, profiles[remove].embedding).map { a, b in
-                        (1 - alpha) * a + alpha * b
-                    }
-                    profiles[keep].hitCount += profiles[remove].hitCount
+                    profiles[keep].embeddingHistory.append(contentsOf: profiles[remove].embeddingHistory)
+                    recalculateEmbedding(at: keep)
                     profiles.remove(at: remove)
                     if remove < keep { i = max(0, i - 1) }
                 } else {
@@ -156,7 +159,9 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     }
 
     public func loadProfiles(_ loadedProfiles: [(label: String, embedding: [Float])]) {
-        profiles = loadedProfiles.map { SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 0) }
+        profiles = loadedProfiles.map {
+            SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 1, embeddingHistory: [$0.embedding])
+        }
         nextLabelIndex = loadedProfiles.count
     }
 
