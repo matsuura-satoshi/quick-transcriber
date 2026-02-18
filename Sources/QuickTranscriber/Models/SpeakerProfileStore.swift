@@ -72,6 +72,21 @@ public final class SpeakerProfileStore {
         return result
     }
 
+    private func nextAvailableLabel() -> String {
+        let usedLabels = Set(profiles.map { $0.label })
+        for i in 0..<26 {
+            let label = String(UnicodeScalar(UInt8(65 + i)))
+            if !usedLabels.contains(label) { return label }
+        }
+        for i in 0..<26 {
+            for j in 0..<26 {
+                let label = String(UnicodeScalar(UInt8(65 + i))) + String(UnicodeScalar(UInt8(65 + j)))
+                if !usedLabels.contains(label) { return label }
+            }
+        }
+        return "Z\(profiles.count)"
+    }
+
     public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {
         for (label, embedding) in sessionProfiles {
             var bestIndex = -1
@@ -93,7 +108,10 @@ public final class SpeakerProfileStore {
                 profiles[bestIndex].lastUsed = Date()
                 profiles[bestIndex].sessionCount += 1
             } else {
-                profiles.append(StoredSpeakerProfile(label: label, embedding: embedding))
+                let uniqueLabel = profiles.contains(where: { $0.label == label })
+                    ? nextAvailableLabel()
+                    : label
+                profiles.append(StoredSpeakerProfile(label: uniqueLabel, embedding: embedding))
             }
         }
     }

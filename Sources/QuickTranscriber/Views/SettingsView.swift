@@ -32,6 +32,7 @@ private struct TranscriptionSettingsTab: View {
         Form {
             chunkSection
             speakerSection
+            currentSessionSection
             registeredSpeakersSection
             decodingSection
             resetSection
@@ -102,6 +103,26 @@ private struct TranscriptionSettingsTab: View {
                 }
             }
             .disabled(!store.parameters.enableSpeakerDiarization)
+        }
+    }
+
+    // MARK: - Current Session
+
+    private var currentSessionSection: some View {
+        Section("Current Session") {
+            if viewModel.sessionSpeakers.isEmpty {
+                Text("No speakers detected yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.sessionSpeakers) { speaker in
+                    SessionSpeakerRow(
+                        speaker: speaker,
+                        onRename: { name in
+                            viewModel.renameSessionSpeaker(label: speaker.label, displayName: name)
+                        }
+                    )
+                }
+            }
         }
     }
 
@@ -241,6 +262,51 @@ private struct OutputSettingsTab: View {
     }
 }
 
+// MARK: - Session Speaker Row
+
+private struct SessionSpeakerRow: View {
+    let speaker: TranscriptionViewModel.SessionSpeakerInfo
+    let onRename: (String) -> Void
+
+    @State private var editingName: String
+
+    init(speaker: TranscriptionViewModel.SessionSpeakerInfo, onRename: @escaping (String) -> Void) {
+        self.speaker = speaker
+        self.onRename = onRename
+        self._editingName = State(initialValue: speaker.displayName ?? "")
+    }
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("Speaker \(speaker.label)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if speaker.storedProfileId != nil {
+                        Text("Registered")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.blue.opacity(0.15))
+                            .foregroundStyle(.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                }
+                TextField("Enter name...", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        onRename(editingName)
+                    }
+                    .onChange(of: editingName) { _, newValue in
+                        onRename(newValue)
+                    }
+            }
+            Spacer()
+        }
+    }
+}
+
 // MARK: - Speaker Profile Row
 
 private struct SpeakerProfileRow: View {
@@ -264,6 +330,14 @@ private struct SpeakerProfileRow: View {
         return f
     }()
 
+    private var idPrefix: String {
+        String(profile.id.uuidString.prefix(8).lowercased())
+    }
+
+    private var lastUsedText: String {
+        Self.dateFormatter.string(from: profile.lastUsed)
+    }
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -271,7 +345,19 @@ private struct SpeakerProfileRow: View {
                     Text("Speaker \(profile.label)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text("#\(idPrefix)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                     Text("\(profile.sessionCount) sessions")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("·")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("Last: \(lastUsedText)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

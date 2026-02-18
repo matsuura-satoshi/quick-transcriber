@@ -4,15 +4,26 @@ import XCTest
 @MainActor
 final class SpeakerReassignmentTests: XCTestCase {
 
+    private var tmpDir: URL!
+
     override func setUp() {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "selectedLanguage")
         UserDefaults.standard.removeObject(forKey: "isRecording")
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SpeakerReassignmentTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tmpDir)
+        super.tearDown()
     }
 
     private func makeViewModel() -> (TranscriptionViewModel, MockTranscriptionEngine) {
         let engine = MockTranscriptionEngine()
-        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model")
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
         return (vm, engine)
     }
 

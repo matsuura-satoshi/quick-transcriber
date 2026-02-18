@@ -60,8 +60,8 @@ class InteractiveTranscriptionTextView: NSTextView {
     var segmentMap: SegmentCharacterMap?
     var confirmedSegments: [ConfirmedSegment] = []
     var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
-    var onReassignBlock: ((Int, String) -> Void)?
-    var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
+    var onReassignBlock: ((Int, String, String?) -> Void)?
+    var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         guard let map = segmentMap else {
@@ -106,7 +106,7 @@ class InteractiveTranscriptionTextView: NSTextView {
 
         let speakerMenu = NSMenu()
         for speaker in availableSpeakers {
-            let title = speaker.displayName ?? speaker.label
+            let title = Self.menuTitle(for: speaker)
             let item = NSMenuItem(title: title, action: #selector(reassignSelectionAction(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = speaker.label
@@ -130,7 +130,7 @@ class InteractiveTranscriptionTextView: NSTextView {
         let menu = NSMenu()
 
         for speaker in availableSpeakers {
-            let title = speaker.displayName ?? speaker.label
+            let title = Self.menuTitle(for: speaker)
             let item = NSMenuItem(title: title, action: #selector(reassignBlockAction(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = BlockReassignInfo(segmentIndex: firstIdx, label: speaker.label)
@@ -146,11 +146,18 @@ class InteractiveTranscriptionTextView: NSTextView {
         menu.popUp(positioning: nil, at: point, in: self)
     }
 
+    private static func menuTitle(for speaker: TranscriptionViewModel.SpeakerMenuItem) -> String {
+        if let name = speaker.displayName, name != speaker.label {
+            return "\(name) (\(speaker.label))"
+        }
+        return speaker.label
+    }
+
     @objc private func reassignBlockAction(_ sender: NSMenuItem) {
         guard let info = sender.representedObject as? BlockReassignInfo else { return }
         let segmentIndex = info.segmentIndex
         let label = info.label
-        onReassignBlock?(segmentIndex, label)
+        onReassignBlock?(segmentIndex, label, nil)
     }
 
     @objc private func reassignSelectionAction(_ sender: NSMenuItem) {
@@ -158,13 +165,13 @@ class InteractiveTranscriptionTextView: NSTextView {
               let map = segmentMap else { return }
         let range = selectedRange()
         guard range.length > 0 else { return }
-        onReassignSelection?(range, label, map)
+        onReassignSelection?(range, label, nil, map)
     }
 
     @objc private func newSpeakerForBlockAction(_ sender: NSMenuItem) {
         guard let segmentIndex = sender.representedObject as? Int else { return }
-        promptForNewSpeaker { [weak self] label in
-            self?.onReassignBlock?(segmentIndex, label)
+        promptForNewSpeaker { [weak self] label, displayName in
+            self?.onReassignBlock?(segmentIndex, label, displayName)
         }
     }
 
@@ -172,36 +179,39 @@ class InteractiveTranscriptionTextView: NSTextView {
         guard let map = segmentMap else { return }
         let range = selectedRange()
         guard range.length > 0 else { return }
-        promptForNewSpeaker { [weak self] label in
-            self?.onReassignSelection?(range, label, map)
+        promptForNewSpeaker { [weak self] label, displayName in
+            self?.onReassignSelection?(range, label, displayName, map)
         }
     }
 
-    private func promptForNewSpeaker(completion: @escaping (String) -> Void) {
+    private func promptForNewSpeaker(completion: @escaping (String, String?) -> Void) {
         let alert = NSAlert()
-        alert.messageText = "New Speaker Label"
-        alert.informativeText = "Enter a label for the new speaker:"
+        alert.messageText = "New Speaker"
+        alert.informativeText = "Enter a name for the new speaker (optional):"
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Cancel")
 
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-        // Suggest next available letter
+        input.placeholderString = "Name"
+        alert.accessoryView = input
+
         let usedLabels = Set(availableSpeakers.map { $0.label })
+        var autoLabel = ""
         for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
             if !usedLabels.contains(String(c)) {
-                input.stringValue = String(c)
+                autoLabel = String(c)
                 break
             }
         }
-        alert.accessoryView = input
+        if autoLabel.isEmpty {
+            autoLabel = "Z\(availableSpeakers.count)"
+        }
 
         guard let window = self.window else { return }
         alert.beginSheetModal(for: window) { response in
             if response == .alertFirstButtonReturn {
-                let label = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !label.isEmpty {
-                    completion(label)
-                }
+                let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                completion(autoLabel, name.isEmpty ? nil : name)
             }
         }
     }
@@ -216,8 +226,8 @@ struct TranscriptionTextView: NSViewRepresentable {
     var silenceThreshold: TimeInterval = 1.0
     var labelDisplayNames: [String: String] = [:]
     var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
-    var onReassignBlock: ((Int, String) -> Void)?
-    var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
+    var onReassignBlock: ((Int, String, String?) -> Void)?
+    var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()

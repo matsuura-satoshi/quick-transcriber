@@ -244,4 +244,82 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(names["A"], "Alice")
         XCTAssertEqual(names["B"], "B")
     }
+
+    // MARK: - Label Collision Prevention
+
+    func testMergeNewProfileWithDuplicateLabelGetsUniqueLabel() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1)),
+        ]
+
+        // New profile with label "B" but different embedding (no match >= 0.5)
+        store.mergeSessionProfiles([("B", makeEmbedding(dominant: 2))])
+
+        XCTAssertEqual(store.profiles.count, 3)
+        // The new profile should NOT have label "B" since it's taken
+        let labels = store.profiles.map { $0.label }
+        XCTAssertEqual(Set(labels).count, 3, "All labels should be unique, got: \(labels)")
+        XCTAssertEqual(labels[2], "C", "Next available label after A,B should be C")
+    }
+
+    func testMergeNewProfileSkipsUsedLabels() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(label: "C", embedding: makeEmbedding(dominant: 2)),
+        ]
+
+        // New profile with label "A" but different embedding
+        store.mergeSessionProfiles([("A", makeEmbedding(dominant: 3))])
+
+        XCTAssertEqual(store.profiles.count, 4)
+        XCTAssertEqual(store.profiles[3].label, "D")
+    }
+
+    func testMergeMatchingProfileKeepsOriginalLabel() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1)),
+        ]
+
+        // Same embedding as A — should merge, not create new
+        store.mergeSessionProfiles([("X", makeEmbedding(dominant: 0))])
+
+        XCTAssertEqual(store.profiles.count, 2, "Should merge, not add")
+        XCTAssertEqual(store.profiles[0].label, "A", "Label should remain A")
+        XCTAssertEqual(store.profiles[0].sessionCount, 2)
+    }
+
+    func testNextAvailableLabelWrapsAround() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        // Fill A-Z
+        for i in 0..<26 {
+            store.profiles.append(StoredSpeakerProfile(
+                label: String(UnicodeScalar(UInt8(65 + i))),
+                embedding: makeEmbedding(dominant: i % 256)
+            ))
+        }
+
+        // Add one more — should get "AA"
+        store.mergeSessionProfiles([("A", makeEmbedding(dominant: 100))])
+
+        XCTAssertEqual(store.profiles.count, 27)
+        XCTAssertEqual(store.profiles[26].label, "AA")
+    }
 }
