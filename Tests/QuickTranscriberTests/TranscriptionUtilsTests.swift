@@ -291,4 +291,41 @@ final class TranscriptionUtilsTests: XCTestCase {
         let result = TranscriptionUtils.joinSegments(segments, language: "ja", silenceThreshold: 1.0)
         XCTAssertEqual(result, "A: おはようございます\nB: おはよう")
     }
+
+    // MARK: - joinSegments with labelDisplayNames
+
+    func testJoinSegmentsResolvesDisplayNames() {
+        let segments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+            ConfirmedSegment(text: "Hi there", precedingSilence: 0.5, speaker: "B"),
+        ]
+        let names = ["A": "Alice", "B": "Bob"]
+        let result = TranscriptionUtils.joinSegments(
+            segments, language: "en", silenceThreshold: 1.0, labelDisplayNames: names
+        )
+        XCTAssertEqual(result, "Alice: Hello\nBob: Hi there")
+    }
+
+    func testJoinSegmentsFallsBackToLabelWhenNoDisplayName() {
+        let segments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+            ConfirmedSegment(text: "Hi", precedingSilence: 0.5, speaker: "C"),
+        ]
+        let names = ["A": "Alice"]  // C has no mapping
+        let result = TranscriptionUtils.joinSegments(
+            segments, language: "en", silenceThreshold: 1.0, labelDisplayNames: names
+        )
+        XCTAssertEqual(result, "Alice: Hello\nC: Hi")
+    }
+
+    func testJoinSegmentsEmptyDisplayNamesUsesLabels() {
+        let segments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
+            ConfirmedSegment(text: "Hi", precedingSilence: 0.5, speaker: "B"),
+        ]
+        let result = TranscriptionUtils.joinSegments(
+            segments, language: "en", silenceThreshold: 1.0, labelDisplayNames: [:]
+        )
+        XCTAssertEqual(result, "A: Hello\nB: Hi")
+    }
 }

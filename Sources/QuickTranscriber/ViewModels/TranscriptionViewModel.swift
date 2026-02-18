@@ -25,6 +25,8 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
     @Published public var confirmedSegments: [ConfirmedSegment] = []
+    @Published public var speakerProfiles: [StoredSpeakerProfile] = []
+    @Published public var labelDisplayNames: [String: String] = [:]
 
     public var silenceLineBreakThreshold: TimeInterval {
         parametersStore.parameters.silenceLineBreakThreshold
@@ -45,12 +47,18 @@ public final class TranscriptionViewModel: ObservableObject {
         modelName: String = "large-v3-v20240930_turbo",
         parametersStore: ParametersStore? = nil,
         fileWriter: TranscriptFileWriter? = nil,
-        diarizer: SpeakerDiarizer? = nil
+        diarizer: SpeakerDiarizer? = nil,
+        speakerProfileStore: SpeakerProfileStore? = nil
     ) {
         let resolvedStore = parametersStore ?? ParametersStore.shared
-        let profileStore = SpeakerProfileStore()
-        try? profileStore.load()
+        let profileStore = speakerProfileStore ?? {
+            let store = SpeakerProfileStore()
+            try? store.load()
+            return store
+        }()
         self.speakerProfileStore = profileStore
+        self.speakerProfiles = profileStore.profiles
+        self.labelDisplayNames = profileStore.labelDisplayNames
         // Always create diarizer so it's available when the user enables it at runtime.
         // The enableSpeakerDiarization parameter controls whether it's actually used.
         let resolvedEngine = engine ?? ChunkedWhisperEngine(
@@ -116,7 +124,7 @@ public final class TranscriptionViewModel: ObservableObject {
                 precedingSilence: 1.0
             ))
             confirmedSegments = previousSessionSegments
-            fileWriter.updateText(confirmedText)
+            fileWriter.updateText(resolvedFileText())
         }
 
         currentLanguage = language
@@ -195,6 +203,26 @@ public final class TranscriptionViewModel: ObservableObject {
         return confirmedText + "\n" + unconfirmedText
     }
 
+    // MARK: - Speaker Profile Management
+
+    public func renameSpeaker(id: UUID, to name: String) {
+        try? speakerProfileStore.rename(id: id, to: name)
+        speakerProfiles = speakerProfileStore.profiles
+        labelDisplayNames = speakerProfileStore.labelDisplayNames
+    }
+
+    public func deleteSpeaker(id: UUID) {
+        try? speakerProfileStore.delete(id: id)
+        speakerProfiles = speakerProfileStore.profiles
+        labelDisplayNames = speakerProfileStore.labelDisplayNames
+    }
+
+    public func deleteAllSpeakers() {
+        speakerProfileStore.deleteAll()
+        speakerProfiles = []
+        labelDisplayNames = [:]
+    }
+
     // MARK: - Private
 
     private func restartRecording() {
@@ -250,7 +278,8 @@ public final class TranscriptionViewModel: ObservableObject {
                         } else {
                             self.confirmedSegments = sessionSegments + state.confirmedSegments
                         }
-                        self.fileWriter.updateText(self.confirmedText)
+                        let fileText = self.resolvedFileText()
+                        self.fileWriter.updateText(fileText)
                     }
                 }
             } catch {
@@ -275,7 +304,23 @@ public final class TranscriptionViewModel: ObservableObject {
     private func stopRecording() {
         isRecording = false
         saveUnconfirmedText()
-        fileWriter.updateText(confirmedText)
-        Task { await service.stopTranscription() }
+        fileWriter.updateText(resolvedFileText())
+        Task {
+            await service.stopTranscription()
+            self.speakerProfiles = self.speakerProfileStore.profiles
+            self.labelDisplayNames = self.speakerProfileStore.labelDisplayNames
+        }
+    }
+
+    private func resolvedFileText() -> String {
+        guard !confirmedSegments.isEmpty, !labelDisplayNames.isEmpty else {
+            return confirmedText
+        }
+        return TranscriptionUtils.joinSegments(
+            confirmedSegments,
+            language: currentLanguage.rawValue,
+            silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
+            labelDisplayNames: labelDisplayNames
+        )
     }
 }

@@ -15,10 +15,11 @@ extension Notification.Name {
 @main
 struct QuickTranscriberApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var viewModel = TranscriptionViewModel()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(viewModel: viewModel)
         }
         .commands {
             // Replace the About menu item
@@ -65,7 +66,7 @@ struct QuickTranscriberApp: App {
         }
 
         Settings {
-            SettingsView()
+            SettingsView(viewModel: viewModel)
         }
     }
 }

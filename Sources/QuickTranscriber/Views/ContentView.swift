@@ -1,9 +1,11 @@
 import SwiftUI
 
 public struct ContentView: View {
-    @StateObject private var viewModel = TranscriptionViewModel()
+    @ObservedObject var viewModel: TranscriptionViewModel
 
-    public init() {}
+    public init(viewModel: TranscriptionViewModel) {
+        self.viewModel = viewModel
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -111,7 +113,8 @@ public struct ContentView: View {
             fontSize: viewModel.fontSize,
             confirmedSegments: viewModel.confirmedSegments,
             language: viewModel.currentLanguage.rawValue,
-            silenceThreshold: viewModel.silenceLineBreakThreshold
+            silenceThreshold: viewModel.silenceLineBreakThreshold,
+            labelDisplayNames: viewModel.labelDisplayNames
         )
         .frame(maxHeight: .infinity)
     }

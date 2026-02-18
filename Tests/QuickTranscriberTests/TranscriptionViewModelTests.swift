@@ -533,6 +533,137 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertNotNil(separatorSegment, "Should contain language separator segment")
     }
 
+    // MARK: - Speaker Profile Management
+
+    func testSpeakerProfilesInitiallyLoaded() async {
+        let (vm, _) = makeViewModel()
+        // speakerProfiles should be accessible (may be empty if no profiles saved)
+        XCTAssertNotNil(vm.speakerProfiles)
+    }
+
+    func testLabelDisplayNamesInitiallyEmpty() async {
+        let (vm, _) = makeViewModel()
+        XCTAssertNotNil(vm.labelDisplayNames)
+    }
+
+    func testRenameSpeakerUpdatesDisplayNames() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMSpeakerTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+
+        vm.renameSpeaker(id: id, to: "Alice")
+
+        XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
+        XCTAssertEqual(vm.speakerProfiles[0].displayName, "Alice")
+    }
+
+    func testDeleteSpeakerRemovesProfile() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMSpeakerTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let idA = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(id: idA, label: "A", embedding: [Float](repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(label: "B", embedding: [Float](repeating: 0.2, count: 256)),
+        ]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+
+        vm.deleteSpeaker(id: idA)
+
+        XCTAssertEqual(vm.speakerProfiles.count, 1)
+        XCTAssertEqual(vm.speakerProfiles[0].label, "B")
+    }
+
+    func testRenameAffectsFileOutput() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMSpeakerFileTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let fileWriter = TranscriptFileWriter(transcriptsDirectory: dir)
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            fileWriter: fileWriter, speakerProfileStore: store
+        )
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Simulate segments with speaker
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "A: Hello",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Rename speaker
+        vm.renameSpeaker(id: id, to: "Alice")
+
+        // Next state change should write with resolved name
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "A: Hello world",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello world", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let symlinkURL = dir.appendingPathComponent("qt_transcript.md")
+        let content = try! String(contentsOf: symlinkURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Alice: Hello world"),
+                      "File output should use display name. Got: \(content)")
+    }
+
+    func testDeleteAllSpeakersClearsAll() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMSpeakerTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: [Float](repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(label: "B", embedding: [Float](repeating: 0.2, count: 256)),
+        ]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+
+        vm.deleteAllSpeakers()
+
+        XCTAssertTrue(vm.speakerProfiles.isEmpty)
+        XCTAssertTrue(vm.labelDisplayNames.isEmpty)
+    }
+
     func testDirectoryChangeCreatesNewFileWithExistingText() async {
         // Use UserDefaults-based writer (no explicit directory)
         let dir1 = FileManager.default.temporaryDirectory

@@ -3,12 +3,15 @@ import AppKit
 
 public struct SettingsView: View {
     @ObservedObject private var store = ParametersStore.shared
+    @ObservedObject var viewModel: TranscriptionViewModel
 
-    public init() {}
+    public init(viewModel: TranscriptionViewModel) {
+        self.viewModel = viewModel
+    }
 
     public var body: some View {
         TabView {
-            TranscriptionSettingsTab(store: store)
+            TranscriptionSettingsTab(store: store, viewModel: viewModel)
                 .tabItem {
                     Label("Transcription", systemImage: "waveform")
                 }
@@ -23,11 +26,13 @@ public struct SettingsView: View {
 
 private struct TranscriptionSettingsTab: View {
     @ObservedObject var store: ParametersStore
+    @ObservedObject var viewModel: TranscriptionViewModel
 
     var body: some View {
         Form {
             chunkSection
             speakerSection
+            registeredSpeakersSection
             decodingSection
             resetSection
         }
@@ -97,6 +102,43 @@ private struct TranscriptionSettingsTab: View {
                 }
             }
             .disabled(!store.parameters.enableSpeakerDiarization)
+        }
+    }
+
+    // MARK: - Registered Speakers
+
+    @State private var showDeleteAllConfirmation = false
+
+    private var registeredSpeakersSection: some View {
+        Section("Registered Speakers") {
+            if viewModel.speakerProfiles.isEmpty {
+                Text("No speakers registered yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.speakerProfiles, id: \.id) { profile in
+                    SpeakerProfileRow(
+                        profile: profile,
+                        onRename: { name in
+                            viewModel.renameSpeaker(id: profile.id, to: name)
+                        },
+                        onDelete: {
+                            viewModel.deleteSpeaker(id: profile.id)
+                        }
+                    )
+                }
+                Button("Delete All Profiles", role: .destructive) {
+                    showDeleteAllConfirmation = true
+                }
+                .confirmationDialog(
+                    "Delete all speaker profiles?",
+                    isPresented: $showDeleteAllConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete All", role: .destructive) {
+                        viewModel.deleteAllSpeakers()
+                    }
+                }
+            }
         }
     }
 
@@ -195,6 +237,59 @@ private struct OutputSettingsTab: View {
         panel.message = "Choose a folder for transcript output"
         if panel.runModal() == .OK, let url = panel.url {
             transcriptsDirectory = url.path
+        }
+    }
+}
+
+// MARK: - Speaker Profile Row
+
+private struct SpeakerProfileRow: View {
+    let profile: StoredSpeakerProfile
+    let onRename: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var editingName: String
+
+    init(profile: StoredSpeakerProfile, onRename: @escaping (String) -> Void, onDelete: @escaping () -> Void) {
+        self.profile = profile
+        self.onRename = onRename
+        self.onDelete = onDelete
+        self._editingName = State(initialValue: profile.displayName ?? "")
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("Speaker \(profile.label)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("\(profile.sessionCount) sessions")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                TextField("Speaker \(profile.label)", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        onRename(editingName)
+                    }
+                    .onChange(of: editingName) { _, newValue in
+                        onRename(newValue)
+                    }
+            }
+            Spacer()
+            Button(action: onDelete) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
         }
     }
 }

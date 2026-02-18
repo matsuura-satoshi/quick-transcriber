@@ -8,6 +8,7 @@ struct TranscriptionTextView: NSViewRepresentable {
     let confirmedSegments: [ConfirmedSegment]
     var language: String = "en"
     var silenceThreshold: TimeInterval = 1.0
+    var labelDisplayNames: [String: String] = [:]
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -75,7 +76,8 @@ struct TranscriptionTextView: NSViewRepresentable {
                 fontSize: fontSize,
                 unconfirmed: newUnconfirmed,
                 oldFontSize: oldFontSize,
-                oldUnconfirmed: oldUnconfirmed
+                oldUnconfirmed: oldUnconfirmed,
+                labelDisplayNames: labelDisplayNames
             )
         } else {
             // No confidence data: use efficient diff-append path
@@ -161,7 +163,8 @@ struct TranscriptionTextView: NSViewRepresentable {
         language: String,
         silenceThreshold: TimeInterval,
         fontSize: CGFloat,
-        unconfirmed: String
+        unconfirmed: String,
+        labelDisplayNames: [String: String] = [:]
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         guard !segments.isEmpty else {
@@ -187,8 +190,9 @@ struct TranscriptionTextView: NSViewRepresentable {
 
             if isFirst {
                 if hasSpeakers, let speaker = segment.speaker {
+                    let displayName = labelDisplayNames[speaker] ?? speaker
                     let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
-                    result.append(NSAttributedString(string: "\(speaker): ", attributes: labelAttrs))
+                    result.append(NSAttributedString(string: "\(displayName): ", attributes: labelAttrs))
                     result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
                     currentSpeaker = speaker
                 } else {
@@ -200,9 +204,10 @@ struct TranscriptionTextView: NSViewRepresentable {
 
             // Priority 1: Speaker change
             if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
+                let displayName = labelDisplayNames[speaker] ?? speaker
                 let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
                 result.append(NSAttributedString(string: "\n", attributes: normalAttrs))
-                result.append(NSAttributedString(string: "\(speaker): ", attributes: labelAttrs))
+                result.append(NSAttributedString(string: "\(displayName): ", attributes: labelAttrs))
                 result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
                 currentSpeaker = speaker
                 lastChar = segment.text.last
@@ -278,13 +283,14 @@ struct TranscriptionTextView: NSViewRepresentable {
             fontSize: CGFloat,
             unconfirmed: String,
             oldFontSize: CGFloat,
-            oldUnconfirmed: String
+            oldUnconfirmed: String,
+            labelDisplayNames: [String: String] = [:]
         ) {
             guard let textView, let textStorage = textView.textStorage else { return }
 
             let attributed = TranscriptionTextView.buildAttributedStringFromSegments(
                 segments, language: language, silenceThreshold: silenceThreshold,
-                fontSize: fontSize, unconfirmed: unconfirmed
+                fontSize: fontSize, unconfirmed: unconfirmed, labelDisplayNames: labelDisplayNames
             )
 
             let newText = attributed.string

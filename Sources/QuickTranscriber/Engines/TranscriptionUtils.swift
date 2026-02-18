@@ -133,7 +133,8 @@ public enum TranscriptionUtils {
     public static func joinSegments(
         _ segments: [ConfirmedSegment],
         language: String,
-        silenceThreshold: TimeInterval = 1.0
+        silenceThreshold: TimeInterval = 1.0,
+        labelDisplayNames: [String: String] = [:]
     ) -> String {
         guard !segments.isEmpty else { return "" }
         let hasSpeakers = segments.contains { $0.speaker != nil }
@@ -149,7 +150,8 @@ public enum TranscriptionUtils {
 
             if index == 0 {
                 if hasSpeakers, let speaker = segment.speaker {
-                    result = "\(speaker): \(segment.text)"
+                    let displayName = labelDisplayNames[speaker] ?? speaker
+                    result = "\(displayName): \(segment.text)"
                     currentSpeaker = speaker
                 } else {
                     result = segment.text
@@ -159,7 +161,8 @@ public enum TranscriptionUtils {
 
             // Priority 1: Speaker change
             if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
-                result += "\n\(speaker): \(segment.text)"
+                let displayName = labelDisplayNames[speaker] ?? speaker
+                result += "\n\(displayName): \(segment.text)"
                 currentSpeaker = speaker
                 continue
             }

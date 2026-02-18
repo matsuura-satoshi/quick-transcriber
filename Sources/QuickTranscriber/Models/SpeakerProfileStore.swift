@@ -1,5 +1,9 @@
 import Foundation
 
+public enum SpeakerProfileStoreError: Error {
+    case profileNotFound
+}
+
 public final class SpeakerProfileStore {
     private let fileURL: URL
     public var profiles: [StoredSpeakerProfile] = []
@@ -34,6 +38,38 @@ public final class SpeakerProfileStore {
     public func deleteAll() {
         profiles = []
         try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    public func rename(id: UUID, to name: String) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        profiles[index].displayName = name.isEmpty ? nil : name
+        try save()
+    }
+
+    public func delete(id: UUID) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        profiles.remove(at: index)
+        try save()
+    }
+
+    public func displayName(for label: String) -> String {
+        if let profile = profiles.first(where: { $0.label == label }),
+           let name = profile.displayName, !name.isEmpty {
+            return name
+        }
+        return label
+    }
+
+    public var labelDisplayNames: [String: String] {
+        var result: [String: String] = [:]
+        for profile in profiles {
+            result[profile.label] = profile.displayName ?? profile.label
+        }
+        return result
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {
