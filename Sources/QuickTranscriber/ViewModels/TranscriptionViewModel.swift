@@ -87,6 +87,20 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        $meetingParticipants
+            .dropFirst()
+            .removeDuplicates()
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self,
+                      self.isRecording,
+                      self.parametersStore.parameters.diarizationMode == .manual
+                else { return }
+                NSLog("[QuickTranscriber] Meeting participants changed, restarting recording")
+                self.restartRecording()
+            }
+            .store(in: &cancellables)
+
         $isRecording
             .sink { UserDefaults.standard.set($0, forKey: "isRecording") }
             .store(in: &cancellables)

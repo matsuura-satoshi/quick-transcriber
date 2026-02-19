@@ -137,4 +137,69 @@ final class MeetingParticipantViewModelTests: XCTestCase {
 
         XCTAssertTrue(vm.meetingParticipants.isEmpty)
     }
+
+    // MARK: - Participant change auto-restart
+
+    private func makeViewModelWithStore() -> (TranscriptionViewModel, MockTranscriptionEngine, ParametersStore) {
+        let engine = MockTranscriptionEngine()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let paramsStore = ParametersStore()
+        paramsStore.parameters.diarizationMode = .manual
+        let vm = TranscriptionViewModel(
+            engine: engine,
+            modelName: "test-model",
+            parametersStore: paramsStore,
+            speakerProfileStore: store
+        )
+        return (vm, engine, paramsStore)
+    }
+
+    func testParticipantChangeRestartsDuringManualRecording() async throws {
+        let (vm, engine, _) = makeViewModelWithStore()
+        await vm.loadModel()
+        vm.toggleRecording()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(vm.isRecording)
+        let initialCount = engine.startStreamingCallCount
+        XCTAssertEqual(initialCount, 1)
+
+        vm.addNewParticipant(displayName: "Alice")
+
+        // Wait for 500ms debounce + 100ms restart margin
+        try await Task.sleep(nanoseconds: 800_000_000)
+
+        XCTAssertEqual(engine.startStreamingCallCount, initialCount + 1)
+        XCTAssertTrue(vm.isRecording)
+    }
+
+    func testParticipantChangeDoesNotRestartInAutoMode() async throws {
+        let (vm, engine, paramsStore) = makeViewModelWithStore()
+        paramsStore.parameters.diarizationMode = .auto
+        // Wait for parameters debounce to settle
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        await vm.loadModel()
+        vm.toggleRecording()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(vm.isRecording)
+        let initialCount = engine.startStreamingCallCount
+
+        vm.addNewParticipant(displayName: "Alice")
+
+        try await Task.sleep(nanoseconds: 800_000_000)
+
+        XCTAssertEqual(engine.startStreamingCallCount, initialCount)
+    }
+
+    func testParticipantChangeDoesNotRestartWhenNotRecording() async throws {
+        let (vm, engine, _) = makeViewModelWithStore()
+        XCTAssertFalse(vm.isRecording)
+        let initialCount = engine.startStreamingCallCount
+
+        vm.addNewParticipant(displayName: "Alice")
+
+        try await Task.sleep(nanoseconds: 800_000_000)
+
+        XCTAssertEqual(engine.startStreamingCallCount, initialCount)
+    }
 }
