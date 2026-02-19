@@ -368,14 +368,16 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         var emb2 = makeEmbedding(dominant: 0)  // similar, matches A
         emb2[1] = 0.15  // make slightly different so mean differs from moving average
         _ = tracker.identify(embedding: emb1)
-        _ = tracker.identify(embedding: emb2)
+        let result2 = tracker.identify(embedding: emb2)
+        let conf2 = result2.confidence
 
         let profiles = tracker.exportProfiles()
         XCTAssertEqual(profiles[0].hitCount, 2)
-        // Verify embedding is arithmetic mean (not moving average)
-        let expectedAvg = zip(emb1, emb2).map { ($0 + $1) / 2 }
-        for i in 0..<expectedAvg.count {
-            XCTAssertEqual(profiles[0].embedding[i], expectedAvg[i], accuracy: 0.001)
+        // Verify embedding is weighted mean: (1.0 * emb1 + conf2 * emb2) / (1.0 + conf2)
+        let totalWeight = 1.0 + conf2
+        let expectedWeighted = zip(emb1, emb2).map { (1.0 * $0 + conf2 * $1) / totalWeight }
+        for i in 0..<expectedWeighted.count {
+            XCTAssertEqual(profiles[0].embedding[i], expectedWeighted[i], accuracy: 0.001)
         }
     }
 
@@ -396,13 +398,16 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
         var similar = makeEmbedding(dominant: 0)
         similar[1] = 0.15
-        _ = tracker.identify(embedding: similar)
+        let result = tracker.identify(embedding: similar)
+        let conf = result.confidence
 
         let profiles = tracker.exportProfiles()
         XCTAssertEqual(profiles[0].hitCount, 2)
-        let expectedAvg = zip(emb, similar).map { ($0 + $1) / 2 }
-        for i in 0..<expectedAvg.count {
-            XCTAssertEqual(profiles[0].embedding[i], expectedAvg[i], accuracy: 0.001)
+        // Loaded profile has confidence 1.0, new match has actual confidence
+        let totalWeight = 1.0 + conf
+        let expectedWeighted = zip(emb, similar).map { (1.0 * $0 + conf * $1) / totalWeight }
+        for i in 0..<expectedWeighted.count {
+            XCTAssertEqual(profiles[0].embedding[i], expectedWeighted[i], accuracy: 0.001)
         }
     }
 
@@ -440,6 +445,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let profileB = profiles.first { $0.label == "B" }!
         XCTAssertEqual(profileA.hitCount, 1)
         XCTAssertEqual(profileA.embedding, embA1)
+        // B has 2 embeddings: embB (conf 1.0, new speaker) + embA2 (conf 1.0, user-corrected)
         XCTAssertEqual(profileB.hitCount, 2)
     }
 
@@ -504,7 +510,59 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(detailed.count, 1)
         XCTAssertEqual(detailed[0].label, "A")
         XCTAssertEqual(detailed[0].embeddingHistory.count, 2)
-        XCTAssertEqual(detailed[0].embeddingHistory[0], emb1)
-        XCTAssertEqual(detailed[0].embeddingHistory[1], emb2)
+        XCTAssertEqual(detailed[0].embeddingHistory[0].embedding, emb1)
+        XCTAssertEqual(detailed[0].embeddingHistory[1].embedding, emb2)
+    }
+
+    // MARK: - Weighted Embedding
+
+    func testWeightedMeanReducesLowConfidenceInfluence() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        // High-confidence embedding: dominant dim 0
+        let highConf = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: highConf)  // A, confidence=1.0
+        // Register B so that next identify of different embedding is forced to A (low confidence)
+        _ = tracker.identify(embedding: makeEmbedding(dominant: 1))  // B
+
+        // Low-confidence forced assignment: very different embedding forced to A
+        var lowConf = makeEmbedding(dominant: 2)
+        lowConf[0] = 0.3  // slightly closer to A so it picks A over B
+        let result = tracker.identify(embedding: lowConf)
+        XCTAssertEqual(result.label, "A")
+        XCTAssertLessThan(result.confidence, 0.5)  // low confidence
+
+        // With weighted mean, the centroid should be closer to highConf than to lowConf
+        let profiles = tracker.exportProfiles()
+        let profileA = profiles.first { $0.label == "A" }!
+        // dim 0 should be dominant (pulled toward highConf which has confidence 1.0)
+        XCTAssertGreaterThan(profileA.embedding[0], profileA.embedding[2],
+            "High-confidence embedding should have more influence on centroid")
+    }
+
+    func testNewSpeakerRegistrationHasConfidenceOne() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: emb)
+
+        let detailed = tracker.exportDetailedProfiles()
+        XCTAssertEqual(detailed[0].embeddingHistory.count, 1)
+        XCTAssertEqual(detailed[0].embeddingHistory[0].confidence, 1.0)
+    }
+
+    func testCorrectAssignmentSetsConfidenceToOne() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        _ = tracker.identify(embedding: embA)
+        _ = tracker.identify(embedding: embB)
+
+        tracker.correctAssignment(embedding: embB, from: "B", to: "A")
+
+        let detailed = tracker.exportDetailedProfiles()
+        let profileA = detailed.first { $0.label == "A" }!
+        // The moved embedding should have confidence 1.0 (user-confirmed)
+        let movedEntry = profileA.embeddingHistory.first { $0.embedding == embB }
+        XCTAssertNotNil(movedEntry)
+        XCTAssertEqual(movedEntry?.confidence, 1.0)
     }
 }

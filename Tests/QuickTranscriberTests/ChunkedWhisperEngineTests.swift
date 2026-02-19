@@ -327,7 +327,10 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let mockDiarizer = MockSpeakerDiarizer()
         let emb = [Float](repeating: 0.1, count: 256)
         mockDiarizer.detailedProfiles = [
-            (label: "A", embedding: emb, embeddingHistory: [emb, emb])
+            (label: "A", embedding: emb, embeddingHistory: [
+                WeightedEmbedding(embedding: emb, confidence: 1.0),
+                WeightedEmbedding(embedding: emb, confidence: 0.8)
+            ])
         ]
 
         let engine = ChunkedWhisperEngine(

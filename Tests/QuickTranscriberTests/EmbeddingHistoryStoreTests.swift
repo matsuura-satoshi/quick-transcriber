@@ -188,4 +188,78 @@ final class EmbeddingHistoryStoreTests: XCTestCase {
         let decoded = try JSONDecoder().decode(EmbeddingHistoryEntry.self, from: data)
         XCTAssertEqual(original, decoded)
     }
+
+    func testHistoricalEmbeddingBackwardCompatibility() throws {
+        // JSON without confidence field (legacy format)
+        let json = """
+        {"embedding":[1.0,0.0,0.0],"confirmed":true}
+        """
+        let data = json.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(HistoricalEmbedding.self, from: data)
+        XCTAssertEqual(decoded.embedding, [1.0, 0.0, 0.0])
+        XCTAssertTrue(decoded.confirmed)
+        XCTAssertNil(decoded.confidence)
+    }
+
+    func testHistoricalEmbeddingWithConfidence() throws {
+        let original = HistoricalEmbedding(embedding: [1.0, 0.0], confirmed: true, confidence: 0.85)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(HistoricalEmbedding.self, from: data)
+        XCTAssertEqual(decoded.confidence, 0.85)
+    }
+
+    func testReconstructProfileWeightedMean() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir)
+        let id = UUID()
+        // High confidence embedding: dominant dim 0
+        let emb1 = makeEmbedding(dominant: 0)
+        // Low confidence embedding: dominant dim 1
+        let emb2 = makeEmbedding(dominant: 1)
+
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: id, label: "A", sessionDate: Date(),
+                                 embeddings: [
+                                    HistoricalEmbedding(embedding: emb1, confirmed: true, confidence: 0.9),
+                                    HistoricalEmbedding(embedding: emb2, confirmed: true, confidence: 0.3),
+                                 ])
+        ])
+
+        let reconstructed = try store.reconstructProfile(for: id)
+        XCTAssertNotNil(reconstructed)
+        // Weighted: (0.9 * emb1 + 0.3 * emb2) / 1.2
+        let expected0 = (0.9 * emb1[0] + 0.3 * emb2[0]) / 1.2
+        let expected1 = (0.9 * emb1[1] + 0.3 * emb2[1]) / 1.2
+        XCTAssertEqual(reconstructed![0], expected0, accuracy: 0.001)
+        XCTAssertEqual(reconstructed![1], expected1, accuracy: 0.001)
+    }
+
+    func testReconstructProfileLegacyWithoutConfidence() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir)
+        let id = UUID()
+        let emb1 = makeEmbedding(dominant: 0)
+        let emb2 = makeEmbedding(dominant: 1)
+
+        // Entries without confidence (nil) should default to weight 1.0
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: id, label: "A", sessionDate: Date(),
+                                 embeddings: [
+                                    HistoricalEmbedding(embedding: emb1, confirmed: true),
+                                    HistoricalEmbedding(embedding: emb2, confirmed: true),
+                                 ])
+        ])
+
+        let reconstructed = try store.reconstructProfile(for: id)
+        XCTAssertNotNil(reconstructed)
+        // Both have weight 1.0 → arithmetic mean
+        let expected = zip(emb1, emb2).map { ($0 + $1) / 2 }
+        for i in 0..<expected.count {
+            XCTAssertEqual(reconstructed![i], expected[i], accuracy: 0.001)
+        }
+    }
 }

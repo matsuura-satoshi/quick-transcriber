@@ -3,10 +3,12 @@ import Foundation
 public struct HistoricalEmbedding: Codable, Equatable {
     public let embedding: [Float]
     public let confirmed: Bool
+    public let confidence: Float?
 
-    public init(embedding: [Float], confirmed: Bool) {
+    public init(embedding: [Float], confirmed: Bool, confidence: Float? = nil) {
         self.embedding = embedding
         self.confirmed = confirmed
+        self.confidence = confidence
     }
 }
 
@@ -58,23 +60,23 @@ public final class EmbeddingHistoryStore {
 
     public func reconstructProfile(for profileId: UUID) throws -> [Float]? {
         let entries = try loadAll()
-        let confirmedEmbeddings = entries
+        let confirmedEntries = entries
             .filter { $0.speakerProfileId == profileId }
             .flatMap { $0.embeddings }
             .filter { $0.confirmed }
-            .map { $0.embedding }
-        guard !confirmedEmbeddings.isEmpty else { return nil }
+        guard !confirmedEntries.isEmpty else { return nil }
 
-        let count = Float(confirmedEmbeddings.count)
-        var avg = [Float](repeating: 0, count: confirmedEmbeddings[0].count)
-        for emb in confirmedEmbeddings {
-            for i in 0..<avg.count {
-                avg[i] += emb[i]
+        let dims = confirmedEntries[0].embedding.count
+        var weightedSum = [Float](repeating: 0, count: dims)
+        var totalWeight: Float = 0
+        for entry in confirmedEntries {
+            let weight = entry.confidence ?? 1.0
+            totalWeight += weight
+            for i in 0..<dims {
+                weightedSum[i] += weight * entry.embedding[i]
             }
         }
-        for i in 0..<avg.count {
-            avg[i] /= count
-        }
-        return avg
+        guard totalWeight > 0 else { return nil }
+        return weightedSum.map { $0 / totalWeight }
     }
 }

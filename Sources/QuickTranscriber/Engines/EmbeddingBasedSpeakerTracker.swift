@@ -20,6 +20,16 @@ public struct SpeakerIdentification: Sendable, Equatable {
     }
 }
 
+public struct WeightedEmbedding: Sendable, Equatable {
+    public let embedding: [Float]
+    public let confidence: Float
+
+    public init(embedding: [Float], confidence: Float) {
+        self.embedding = embedding
+        self.confidence = confidence
+    }
+}
+
 /// Tracks speakers across diarization calls using embedding cosine similarity.
 ///
 /// FluidAudio reassigns internal speaker IDs on each `process()` call,
@@ -32,7 +42,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         public let label: String
         public var embedding: [Float]
         public var hitCount: Int
-        public var embeddingHistory: [[Float]]
+        public var embeddingHistory: [WeightedEmbedding]
     }
 
     private var profiles: [SpeakerProfile] = []
@@ -75,14 +85,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
 
         if bestIndex >= 0 && bestSimilarity >= similarityThreshold {
-            profiles[bestIndex].embeddingHistory.append(embedding)
+            profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
             recalculateEmbedding(at: bestIndex)
             return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // At capacity: assign to most similar existing speaker instead of creating new
         if let limit = expectedSpeakerCount, profiles.count >= limit, bestIndex >= 0 {
-            profiles[bestIndex].embeddingHistory.append(embedding)
+            profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
             recalculateEmbedding(at: bestIndex)
             return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
@@ -90,7 +100,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         // Registration gate: only register if sufficiently different from all existing profiles
         if case .registrationGate(let minSeparation) = strategy, bestIndex >= 0 {
             if bestSimilarity >= minSeparation {
-                profiles[bestIndex].embeddingHistory.append(embedding)
+                profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
                 recalculateEmbedding(at: bestIndex)
                 return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
             }
@@ -98,23 +108,26 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
         // Register new speaker
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
-        profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1, embeddingHistory: [embedding]))
+        profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1, embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]))
         nextLabelIndex += 1
         return SpeakerIdentification(label: label, confidence: 1.0, embedding: embedding)
     }
 
-    /// Recalculate the centroid embedding as arithmetic mean of all history entries.
+    /// Recalculate the centroid embedding as confidence-weighted mean of all history entries.
     private func recalculateEmbedding(at index: Int) {
         let history = profiles[index].embeddingHistory
         guard let first = history.first else { return }
-        let count = Float(history.count)
-        var sum = [Float](repeating: 0, count: first.count)
+        let dims = first.embedding.count
+        var weightedSum = [Float](repeating: 0, count: dims)
+        var totalWeight: Float = 0
         for entry in history {
-            for i in 0..<entry.count {
-                sum[i] += entry[i]
+            totalWeight += entry.confidence
+            for i in 0..<dims {
+                weightedSum[i] += entry.confidence * entry.embedding[i]
             }
         }
-        profiles[index].embedding = sum.map { $0 / count }
+        guard totalWeight > 0 else { return }
+        profiles[index].embedding = weightedSum.map { $0 / totalWeight }
         profiles[index].hitCount = history.count
     }
 
@@ -165,7 +178,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     public func correctAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
         // Remove from old profile
         if let oldIdx = profiles.firstIndex(where: { $0.label == oldLabel }) {
-            profiles[oldIdx].embeddingHistory.removeAll { $0 == embedding }
+            profiles[oldIdx].embeddingHistory.removeAll { $0.embedding == embedding }
             if profiles[oldIdx].embeddingHistory.isEmpty {
                 profiles.remove(at: oldIdx)
             } else {
@@ -173,16 +186,16 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             }
         }
 
-        // Add to new/existing profile
+        // Add to new/existing profile with confidence 1.0 (user-confirmed)
         if let newIdx = profiles.firstIndex(where: { $0.label == newLabel }) {
-            profiles[newIdx].embeddingHistory.append(embedding)
+            profiles[newIdx].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: 1.0))
             recalculateEmbedding(at: newIdx)
         } else {
             profiles.append(SpeakerProfile(
                 label: newLabel,
                 embedding: embedding,
                 hitCount: 1,
-                embeddingHistory: [embedding]
+                embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]
             ))
         }
     }
@@ -196,13 +209,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         profiles.map { ($0.label, $0.embedding, $0.hitCount) }
     }
 
-    public func exportDetailedProfiles() -> [(label: String, embedding: [Float], hitCount: Int, embeddingHistory: [[Float]])] {
+    public func exportDetailedProfiles() -> [(label: String, embedding: [Float], hitCount: Int, embeddingHistory: [WeightedEmbedding])] {
         profiles.map { ($0.label, $0.embedding, $0.hitCount, $0.embeddingHistory) }
     }
 
     public func loadProfiles(_ loadedProfiles: [(label: String, embedding: [Float])]) {
         profiles = loadedProfiles.map {
-            SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 1, embeddingHistory: [$0.embedding])
+            SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 1,
+                           embeddingHistory: [WeightedEmbedding(embedding: $0.embedding, confidence: 1.0)])
         }
         nextLabelIndex = loadedProfiles.count
     }

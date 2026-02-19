@@ -154,8 +154,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     speakerProfileId: profileId,
                     label: profile.label,
                     sessionDate: Date(),
-                    embeddings: profile.embeddingHistory.map { emb in
-                        HistoricalEmbedding(embedding: emb, confirmed: true)
+                    embeddings: profile.embeddingHistory.map { entry in
+                        HistoricalEmbedding(embedding: entry.embedding, confirmed: true, confidence: entry.confidence)
                     }
                 )
             }
