@@ -67,24 +67,15 @@ public final class SpeakerProfileStore {
     public var labelDisplayNames: [String: String] {
         var result: [String: String] = [:]
         for profile in profiles {
-            result[profile.label] = profile.displayName ?? profile.label
+            if let name = profile.displayName, !name.isEmpty {
+                result[profile.label] = name
+            }
         }
         return result
     }
 
     private func nextAvailableLabel() -> String {
-        let usedLabels = Set(profiles.map { $0.label })
-        for i in 0..<26 {
-            let label = String(UnicodeScalar(UInt8(65 + i)))
-            if !usedLabels.contains(label) { return label }
-        }
-        for i in 0..<26 {
-            for j in 0..<26 {
-                let label = String(UnicodeScalar(UInt8(65 + i))) + String(UnicodeScalar(UInt8(65 + j)))
-                if !usedLabels.contains(label) { return label }
-            }
-        }
-        return "Z\(profiles.count)"
+        LabelUtils.nextAvailableLabel(usedLabels: Set(profiles.map { $0.label }))
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {

@@ -20,7 +20,7 @@ public struct SettingsView: View {
                     Label("Output", systemImage: "folder")
                 }
         }
-        .frame(width: 480, height: 400)
+        .frame(minWidth: 480, maxWidth: 480, minHeight: 400, maxHeight: 700)
     }
 }
 
@@ -32,7 +32,9 @@ private struct TranscriptionSettingsTab: View {
         Form {
             chunkSection
             speakerSection
-            currentSessionSection
+            if store.parameters.enableSpeakerDiarization {
+                currentSessionSection
+            }
             registeredSpeakersSection
             decodingSection
             resetSection
@@ -121,6 +123,7 @@ private struct TranscriptionSettingsTab: View {
                             viewModel.renameSessionSpeaker(label: speaker.label, displayName: name)
                         }
                     )
+                    .id("\(speaker.label)-\(speaker.displayName ?? "")")
                 }
             }
         }
@@ -146,6 +149,7 @@ private struct TranscriptionSettingsTab: View {
                             viewModel.deleteSpeaker(id: profile.id)
                         }
                     )
+                    .id("\(profile.id)-\(profile.displayName ?? "")")
                 }
                 Button("Delete All Profiles", role: .destructive) {
                     showDeleteAllConfirmation = true
@@ -298,9 +302,6 @@ private struct SessionSpeakerRow: View {
                     .onSubmit {
                         onRename(editingName)
                     }
-                    .onChange(of: editingName) { _, newValue in
-                        onRename(newValue)
-                    }
             }
             Spacer()
         }
@@ -365,9 +366,6 @@ private struct SpeakerProfileRow: View {
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
                         onRename(editingName)
-                    }
-                    .onChange(of: editingName) { _, newValue in
-                        onRename(newValue)
                     }
             }
             Spacer()

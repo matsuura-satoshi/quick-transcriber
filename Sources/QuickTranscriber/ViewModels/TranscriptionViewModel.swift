@@ -24,7 +24,9 @@ public final class TranscriptionViewModel: ObservableObject {
     }()
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
-    @Published public var confirmedSegments: [ConfirmedSegment] = []
+    @Published public var confirmedSegments: [ConfirmedSegment] = [] {
+        didSet { sessionSpeakerCache = nil }
+    }
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
     @Published public var labelDisplayNames: [String: String] = [:]
 
@@ -40,6 +42,8 @@ public final class TranscriptionViewModel: ObservableObject {
     private var fileSessionActive: Bool = false
     private var previousSessionText: String = ""
     private var previousSessionSegments: [ConfirmedSegment] = []
+    private var sessionRenamedLabels: Set<String> = []
+    private var sessionSpeakerCache: [SessionSpeakerInfo]?
     private var cancellables: Set<AnyCancellable> = []
 
     public init(
@@ -214,24 +218,36 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public var sessionSpeakers: [SessionSpeakerInfo] {
+        if let cached = sessionSpeakerCache { return cached }
         guard !confirmedSegments.isEmpty else { return [] }
         var seen = Set<String>()
         var result: [SessionSpeakerInfo] = []
         for segment in confirmedSegments {
             guard let label = segment.speaker, !seen.contains(label) else { continue }
             seen.insert(label)
-            let storedProfile = speakerProfileStore.profiles.first { $0.label == label }
+            // Match by embedding if available, fall back to label match
+            var storedProfile: StoredSpeakerProfile?
+            if let emb = segment.speakerEmbedding {
+                storedProfile = speakerProfileStore.profiles.first { profile in
+                    EmbeddingBasedSpeakerTracker.cosineSimilarity(emb, profile.embedding) >= 0.5
+                }
+            }
+            if storedProfile == nil {
+                storedProfile = speakerProfileStore.profiles.first { $0.label == label }
+            }
             result.append(SessionSpeakerInfo(
                 label: label,
                 storedProfileId: storedProfile?.id,
                 displayName: labelDisplayNames[label]
             ))
         }
+        sessionSpeakerCache = result
         return result
     }
 
     public func renameSessionSpeaker(label: String, displayName: String) {
         labelDisplayNames[label] = displayName.isEmpty ? nil : displayName
+        sessionRenamedLabels.insert(label)
         if let profile = speakerProfileStore.profiles.first(where: { $0.label == label }) {
             try? speakerProfileStore.rename(id: profile.id, to: displayName)
             speakerProfiles = speakerProfileStore.profiles
@@ -407,7 +423,11 @@ public final class TranscriptionViewModel: ObservableObject {
     public func deleteAllSpeakers() {
         speakerProfileStore.deleteAll()
         speakerProfiles = []
-        labelDisplayNames = [:]
+        // Preserve display names for labels renamed during this session
+        let sessionNames = sessionRenamedLabels.reduce(into: [String: String]()) { result, label in
+            if let name = labelDisplayNames[label] { result[label] = name }
+        }
+        labelDisplayNames = sessionNames
     }
 
     // MARK: - Private
@@ -512,12 +532,13 @@ public final class TranscriptionViewModel: ObservableObject {
         saveUnconfirmedText()
         fileWriter.updateText(resolvedFileText())
         let pendingNames = self.labelDisplayNames
+        let renamedLabels = self.sessionRenamedLabels
         Task {
             await service.stopTranscription()
-            // Apply pending display names to newly merged profiles
+            // Apply display names only for labels explicitly renamed during this session
             for (label, name) in pendingNames {
-                if let profile = self.speakerProfileStore.profiles.first(where: { $0.label == label }),
-                   profile.displayName == nil || profile.displayName!.isEmpty {
+                guard renamedLabels.contains(label) else { continue }
+                if let profile = self.speakerProfileStore.profiles.first(where: { $0.label == label }) {
                     try? self.speakerProfileStore.rename(id: profile.id, to: name)
                 }
             }
