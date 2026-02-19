@@ -74,7 +74,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         let mockTranscriber = MockChunkTranscriber()
         let mockDiarizer = MockSpeakerDiarizer()
 
-        // SpeakerLabelTracker needs confirmationThreshold consecutive same labels
+        // ViterbiSpeakerSmoother needs consecutive same labels to confirm a speaker
         // nil, A, A → confirms A, triggers retroactive update on pending segments
         mockDiarizer.speakerResults = [
             nil,
