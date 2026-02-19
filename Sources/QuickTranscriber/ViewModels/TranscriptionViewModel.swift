@@ -297,6 +297,10 @@ public final class TranscriptionViewModel: ObservableObject {
 
         for i in startIdx...endIdx {
             let originalSpeaker = confirmedSegments[i].speaker
+            // Update tracker profiles for real-time correction feedback
+            if let embedding = confirmedSegments[i].speakerEmbedding, let oldLabel = originalSpeaker {
+                service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
+            }
             confirmedSegments[i].originalSpeaker = originalSpeaker
             confirmedSegments[i].speaker = newSpeaker
             confirmedSegments[i].speakerConfidence = 1.0
@@ -329,6 +333,9 @@ public final class TranscriptionViewModel: ObservableObject {
             if overlapStart <= charRange.location && overlapEnd >= NSMaxRange(charRange) {
                 // Fully selected — just reassign
                 let originalSpeaker = confirmedSegments[idx].speaker
+                if let embedding = confirmedSegments[idx].speakerEmbedding, let oldLabel = originalSpeaker {
+                    service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
+                }
                 confirmedSegments[idx].originalSpeaker = originalSpeaker
                 confirmedSegments[idx].speaker = newSpeaker
                 confirmedSegments[idx].speakerConfidence = 1.0
@@ -349,12 +356,18 @@ public final class TranscriptionViewModel: ObservableObject {
                     // The selected portion is now at splitIdx + 1
                     let targetIdx = splitIdx + 1
                     let originalSpeaker = confirmedSegments[targetIdx].speaker
+                    if let embedding = confirmedSegments[targetIdx].speakerEmbedding, let oldLabel = originalSpeaker {
+                        service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
+                    }
                     confirmedSegments[targetIdx].originalSpeaker = originalSpeaker
                     confirmedSegments[targetIdx].speaker = newSpeaker
                     confirmedSegments[targetIdx].speakerConfidence = 1.0
                     confirmedSegments[targetIdx].isUserCorrected = true
                 } else {
                     let originalSpeaker = confirmedSegments[splitIdx].speaker
+                    if let embedding = confirmedSegments[splitIdx].speakerEmbedding, let oldLabel = originalSpeaker {
+                        service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
+                    }
                     confirmedSegments[splitIdx].originalSpeaker = originalSpeaker
                     confirmedSegments[splitIdx].speaker = newSpeaker
                     confirmedSegments[splitIdx].speakerConfidence = 1.0
