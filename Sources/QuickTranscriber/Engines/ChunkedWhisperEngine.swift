@@ -57,6 +57,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     public func startStreaming(
         language: String,
         parameters: TranscriptionParameters = .default,
+        participantProfiles: [(label: String, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         accumulator = ChunkAccumulator(
@@ -66,13 +67,27 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         )
         confirmedSegments = []
         speakerSmoother = ViterbiSpeakerSmoother(stayProbability: parameters.speakerTransitionPenalty)
-        diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
-        if let diarizer, parameters.enableSpeakerDiarization, let store = speakerProfileStore {
-            let profiles = store.profiles.map { ($0.label, $0.embedding) }
-            if !profiles.isEmpty {
-                diarizer.loadSpeakerProfiles(profiles)
-                NSLog("[ChunkedWhisperEngine] Loaded \(profiles.count) speaker profiles from store")
+        if let diarizer, parameters.enableSpeakerDiarization {
+            if let participantProfiles, parameters.diarizationMode == .manual {
+                // Manual mode: load only participant embeddings
+                if !participantProfiles.isEmpty {
+                    diarizer.loadSpeakerProfiles(participantProfiles)
+                    NSLog("[ChunkedWhisperEngine] Manual mode: loaded \(participantProfiles.count) participant profiles")
+                }
+                diarizer.updateExpectedSpeakerCount(participantProfiles.count)
+            } else {
+                // Auto mode: load all profiles from store
+                diarizer.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
+                if let store = speakerProfileStore {
+                    let profiles = store.profiles.map { ($0.label, $0.embedding) }
+                    if !profiles.isEmpty {
+                        diarizer.loadSpeakerProfiles(profiles)
+                        NSLog("[ChunkedWhisperEngine] Auto mode: loaded \(profiles.count) speaker profiles from store")
+                    }
+                }
             }
+        } else {
+            diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
         }
         pendingSegmentStartIndex = nil
         silenceSinceLastSegment = 0

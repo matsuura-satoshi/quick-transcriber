@@ -46,7 +46,6 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     }
 
     private var profiles: [SpeakerProfile] = []
-    private var nextLabelIndex: Int = 0
     private let similarityThreshold: Float
     private let updateAlpha: Float
     public var expectedSpeakerCount: Int?
@@ -107,9 +106,9 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
 
         // Register new speaker
-        let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
+        let usedLabels = Set(profiles.map { $0.label })
+        let label = LabelUtils.nextAvailableLabel(usedLabels: usedLabels)
         profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1, embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]))
-        nextLabelIndex += 1
         return SpeakerIdentification(label: label, confidence: 1.0, embedding: embedding)
     }
 
@@ -202,7 +201,6 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     public func reset() {
         profiles = []
-        nextLabelIndex = 0
     }
 
     public func exportProfiles() -> [(label: String, embedding: [Float], hitCount: Int)] {
@@ -218,7 +216,6 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 1,
                            embeddingHistory: [WeightedEmbedding(embedding: $0.embedding, confidence: 1.0)])
         }
-        nextLabelIndex = loadedProfiles.count
     }
 
     /// Cosine similarity between two vectors.

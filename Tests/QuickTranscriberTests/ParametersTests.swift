@@ -30,4 +30,25 @@ final class ParametersTests: XCTestCase {
         let params = TranscriptionParameters.default
         XCTAssertFalse(params.enableSpeakerDiarization)
     }
+
+    func testDefaultDiarizationMode() {
+        let params = TranscriptionParameters.default
+        XCTAssertEqual(params.diarizationMode, .auto)
+    }
+
+    func testDecodingBackwardCompatibilityWithoutDiarizationMode() throws {
+        let oldJSON = """
+        {"temperature":0,"temperatureFallbackCount":0,"sampleLength":224,"concurrentWorkerCount":4,"chunkDuration":3,"silenceCutoffDuration":0.8,"silenceEnergyThreshold":0.01}
+        """
+        let data = oldJSON.data(using: .utf8)!
+        let params = try JSONDecoder().decode(TranscriptionParameters.self, from: data)
+        XCTAssertEqual(params.diarizationMode, .auto)
+    }
+
+    func testDiarizationModeCodable() throws {
+        let params = TranscriptionParameters(diarizationMode: .manual)
+        let data = try JSONEncoder().encode(params)
+        let decoded = try JSONDecoder().decode(TranscriptionParameters.self, from: data)
+        XCTAssertEqual(decoded.diarizationMode, .manual)
+    }
 }

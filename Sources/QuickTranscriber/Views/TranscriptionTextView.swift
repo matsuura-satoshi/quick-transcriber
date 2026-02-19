@@ -196,16 +196,7 @@ class InteractiveTranscriptionTextView: NSTextView {
         alert.accessoryView = input
 
         let usedLabels = Set(availableSpeakers.map { $0.label })
-        var autoLabel = ""
-        for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
-            if !usedLabels.contains(String(c)) {
-                autoLabel = String(c)
-                break
-            }
-        }
-        if autoLabel.isEmpty {
-            autoLabel = "Z\(availableSpeakers.count)"
-        }
+        let autoLabel = LabelUtils.nextAvailableLabel(usedLabels: usedLabels)
 
         guard let window = self.window else { return }
         alert.beginSheetModal(for: window) { response in

@@ -67,24 +67,52 @@ public final class SpeakerProfileStore {
     public var labelDisplayNames: [String: String] {
         var result: [String: String] = [:]
         for profile in profiles {
-            result[profile.label] = profile.displayName ?? profile.label
+            if let name = profile.displayName, !name.isEmpty {
+                result[profile.label] = name
+            }
         }
         return result
     }
 
+    // MARK: - Tags
+
+    public var allTags: [String] {
+        Array(Set(profiles.flatMap { $0.tags })).sorted()
+    }
+
+    public func addTag(_ tag: String, to profileId: UUID) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == profileId }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !profiles[index].tags.contains(trimmed) else { return }
+        profiles[index].tags.append(trimmed)
+        try save()
+    }
+
+    public func removeTag(_ tag: String, from profileId: UUID) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == profileId }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        profiles[index].tags.removeAll { $0 == tag }
+        try save()
+    }
+
+    public func profiles(withTag tag: String) -> [StoredSpeakerProfile] {
+        profiles.filter { $0.tags.contains(tag) }
+    }
+
+    public func profiles(matching search: String) -> [StoredSpeakerProfile] {
+        guard !search.isEmpty else { return profiles }
+        return profiles.filter {
+            ($0.displayName ?? "").localizedCaseInsensitiveContains(search)
+            || $0.label.localizedCaseInsensitiveContains(search)
+            || $0.tags.contains { $0.localizedCaseInsensitiveContains(search) }
+        }
+    }
+
     private func nextAvailableLabel() -> String {
-        let usedLabels = Set(profiles.map { $0.label })
-        for i in 0..<26 {
-            let label = String(UnicodeScalar(UInt8(65 + i)))
-            if !usedLabels.contains(label) { return label }
-        }
-        for i in 0..<26 {
-            for j in 0..<26 {
-                let label = String(UnicodeScalar(UInt8(65 + i))) + String(UnicodeScalar(UInt8(65 + j)))
-                if !usedLabels.contains(label) { return label }
-            }
-        }
-        return "Z\(profiles.count)"
+        LabelUtils.nextAvailableLabel(usedLabels: Set(profiles.map { $0.label }))
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {

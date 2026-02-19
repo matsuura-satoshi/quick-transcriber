@@ -9,6 +9,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     var startStreamingCalled = false
     var startStreamingLanguage: String?
     var startStreamingParameters: TranscriptionParameters?
+    var startStreamingParticipantProfiles: [(label: String, embedding: [Float])]?
     var startStreamingError: Error?
     private var stateChangeCallback: (@Sendable (TranscriptionState) -> Void)?
 
@@ -31,11 +32,13 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     func startStreaming(
         language: String,
         parameters: TranscriptionParameters = .default,
+        participantProfiles: [(label: String, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         startStreamingCalled = true
         startStreamingLanguage = language
         startStreamingParameters = parameters
+        startStreamingParticipantProfiles = participantProfiles
         stateChangeCallback = onStateChange
         if let error = startStreamingError {
             throw error

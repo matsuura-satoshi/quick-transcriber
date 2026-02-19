@@ -30,6 +30,7 @@ public final class TranscriptionService {
     public func startTranscription(
         language: String,
         parameters: TranscriptionParameters = .default,
+        participantProfiles: [(label: String, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         guard isReady else {
@@ -38,7 +39,7 @@ public final class TranscriptionService {
         guard await !engine.isStreaming else {
             throw TranscriptionServiceError.alreadyStreaming
         }
-        try await engine.startStreaming(language: language, parameters: parameters, onStateChange: onStateChange)
+        try await engine.startStreaming(language: language, parameters: parameters, participantProfiles: participantProfiles, onStateChange: onStateChange)
     }
 
     public func stopTranscription() async {
