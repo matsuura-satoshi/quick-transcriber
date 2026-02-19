@@ -6,22 +6,11 @@ public final class TranslationService: ObservableObject {
     @Published public var translatedSegments: [ConfirmedSegment] = []
 
     private var translationCursor: Int = 0
-    private var session: TranslationSession?
-    private var isTranslating: Bool = false
 
     public init() {}
 
-    public func setSession(_ session: TranslationSession) {
-        self.session = session
-    }
-
-    public func translateNewSegments(_ segments: [ConfirmedSegment]) async {
+    public func translateNewSegments(_ segments: [ConfirmedSegment], using session: TranslationSession) async {
         guard translationCursor < segments.count else { return }
-        guard let session else { return }
-        guard !isTranslating else { return }
-
-        isTranslating = true
-        defer { isTranslating = false }
 
         let newSegments = Array(segments[translationCursor...])
         let startCursor = translationCursor
@@ -57,7 +46,6 @@ public final class TranslationService: ObservableObject {
                 if targetIndex < translatedSegments.count {
                     translatedSegments[targetIndex] = translated
                 } else {
-                    // Fill gaps if any
                     while translatedSegments.count < targetIndex {
                         translatedSegments.append(ConfirmedSegment(text: ""))
                     }
@@ -74,6 +62,5 @@ public final class TranslationService: ObservableObject {
     public func reset() {
         translatedSegments = []
         translationCursor = 0
-        isTranslating = false
     }
 }

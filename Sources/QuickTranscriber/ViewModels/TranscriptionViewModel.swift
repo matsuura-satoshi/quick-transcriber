@@ -594,9 +594,6 @@ public final class TranscriptionViewModel: ObservableObject {
                         )
                         let fileText = self.resolvedFileText()
                         self.fileWriter.updateText(fileText)
-                        if self.translationEnabled {
-                            await self.translationService.translateNewSegments(self.confirmedSegments)
-                        }
                     }
                 }
             } catch {

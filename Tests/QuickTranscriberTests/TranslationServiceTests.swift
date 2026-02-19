@@ -37,18 +37,6 @@ final class TranslationServiceTests: XCTestCase {
         XCTAssertEqual(service.translatedSegments.count, 0)
     }
 
-    // MARK: - Translate without session
-
-    func testTranslateWithoutSessionDoesNothing() async {
-        let segments = [
-            ConfirmedSegment(text: "Hello", speaker: "A")
-        ]
-
-        await service.translateNewSegments(segments)
-
-        XCTAssertTrue(service.translatedSegments.isEmpty)
-    }
-
     // MARK: - Metadata preservation
 
     func testMetadataPreservedInTranslatedSegment() {

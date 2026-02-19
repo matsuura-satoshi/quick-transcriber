@@ -51,12 +51,15 @@ public struct ContentView: View {
                 updateTranslationConfig()
             }
         }
-        .translationTask(translationConfig) { session in
-            viewModel.translationService.setSession(session)
-            // Translate existing segments when session becomes available
-            if !viewModel.confirmedSegments.isEmpty {
-                await viewModel.translationService.translateNewSegments(viewModel.confirmedSegments)
+        .onChange(of: viewModel.confirmedSegments.count) { _, _ in
+            if viewModel.translationEnabled {
+                translationConfig?.invalidate()
             }
+        }
+        .translationTask(translationConfig) { session in
+            await viewModel.translationService.translateNewSegments(
+                viewModel.confirmedSegments, using: session
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuCopyAll"))) { _ in
             viewModel.copyAllText()
