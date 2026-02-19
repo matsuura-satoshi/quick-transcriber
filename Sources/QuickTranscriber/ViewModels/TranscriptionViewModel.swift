@@ -29,6 +29,7 @@ public final class TranscriptionViewModel: ObservableObject {
     }
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
     @Published public var labelDisplayNames: [String: String] = [:]
+    @Published public var meetingParticipants: [MeetingParticipant] = []
 
     public var silenceLineBreakThreshold: TimeInterval {
         parametersStore.parameters.silenceLineBreakThreshold
@@ -156,6 +157,7 @@ public final class TranscriptionViewModel: ObservableObject {
         confirmedText = ""
         confirmedSegments = []
         unconfirmedText = ""
+        meetingParticipants = []
         if wasRecording {
             Task {
                 await service.stopTranscription()
@@ -430,6 +432,43 @@ public final class TranscriptionViewModel: ObservableObject {
         labelDisplayNames = sessionNames
     }
 
+    // MARK: - Meeting Participants
+
+    public func addParticipantFromProfile(_ profileId: UUID) {
+        guard let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }),
+              !meetingParticipants.contains(where: { $0.speakerProfileId == profileId })
+        else { return }
+        let label = LabelUtils.nextAvailableLabel(
+            usedLabels: Set(meetingParticipants.map { $0.assignedLabel })
+        )
+        meetingParticipants.append(MeetingParticipant(
+            speakerProfileId: profileId,
+            assignedLabel: label,
+            displayName: profile.displayName ?? profile.label
+        ))
+    }
+
+    public func addNewParticipant(displayName: String) {
+        let label = LabelUtils.nextAvailableLabel(
+            usedLabels: Set(meetingParticipants.map { $0.assignedLabel })
+        )
+        meetingParticipants.append(MeetingParticipant(
+            speakerProfileId: nil,
+            assignedLabel: label,
+            displayName: displayName
+        ))
+        labelDisplayNames[label] = displayName
+        sessionRenamedLabels.insert(label)
+    }
+
+    public func removeParticipant(id: String) {
+        meetingParticipants.removeAll { $0.id == id }
+    }
+
+    public func clearParticipants() {
+        meetingParticipants = []
+    }
+
     // MARK: - Private
 
     private func restartRecording() {
@@ -459,13 +498,27 @@ public final class TranscriptionViewModel: ObservableObject {
             fileWriter.startSession(language: currentLanguage, initialText: confirmedText)
         }
 
+        // Resolve participant profiles for manual mode
+        let participantProfiles: [(label: String, embedding: [Float])]?
+        if params.diarizationMode == .manual && !meetingParticipants.isEmpty {
+            participantProfiles = meetingParticipants.compactMap { participant in
+                guard let profileId = participant.speakerProfileId,
+                      let stored = speakerProfileStore.profiles.first(where: { $0.id == profileId })
+                else { return nil }
+                return (participant.assignedLabel, stored.embedding)
+            }
+        } else {
+            participantProfiles = nil
+        }
+
         let sessionPrefix = self.previousSessionText
         let sessionSegments = self.previousSessionSegments
         Task {
             do {
                 try await service.startTranscription(
                     language: currentLanguage.rawValue,
-                    parameters: params
+                    parameters: params,
+                    participantProfiles: participantProfiles
                 ) { [weak self] state in
                     NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
@@ -533,6 +586,7 @@ public final class TranscriptionViewModel: ObservableObject {
         fileWriter.updateText(resolvedFileText())
         let pendingNames = self.labelDisplayNames
         let renamedLabels = self.sessionRenamedLabels
+        let participants = self.meetingParticipants
         Task {
             await service.stopTranscription()
             // Apply display names only for labels explicitly renamed during this session
@@ -540,6 +594,14 @@ public final class TranscriptionViewModel: ObservableObject {
                 guard renamedLabels.contains(label) else { continue }
                 if let profile = self.speakerProfileStore.profiles.first(where: { $0.label == label }) {
                     try? self.speakerProfileStore.rename(id: profile.id, to: name)
+                }
+            }
+            // Apply display names from new participants (no embedding yet) to newly created profiles
+            for participant in participants where participant.speakerProfileId == nil {
+                if let newProfile = self.speakerProfileStore.profiles.first(where: {
+                    $0.label == participant.assignedLabel && ($0.displayName == nil || $0.displayName!.isEmpty)
+                }) {
+                    try? self.speakerProfileStore.rename(id: newProfile.id, to: participant.displayName)
                 }
             }
             self.speakerProfiles = self.speakerProfileStore.profiles

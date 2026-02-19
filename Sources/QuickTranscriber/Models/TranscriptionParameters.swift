@@ -1,5 +1,10 @@
 import Foundation
 
+public enum DiarizationMode: String, Codable, Sendable, CaseIterable {
+    case manual  // Fixed participant list (participant count = speaker count)
+    case auto    // Existing behavior (load all profiles, auto-detect)
+}
+
 public struct TranscriptionParameters: Codable, Sendable, Equatable {
     public var temperature: Float
     public var temperatureFallbackCount: Int
@@ -21,6 +26,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
     public var expectedSpeakerCount: Int?
     /// Viterbi speaker smoothing: probability of staying with the same speaker (0.0-1.0)
     public var speakerTransitionPenalty: Double
+    public var diarizationMode: DiarizationMode
 
     public init(
         temperature: Float = 0.0,
@@ -33,7 +39,8 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceLineBreakThreshold: TimeInterval = 1.0,
         enableSpeakerDiarization: Bool = false,
         expectedSpeakerCount: Int? = nil,
-        speakerTransitionPenalty: Double = 0.8
+        speakerTransitionPenalty: Double = 0.8,
+        diarizationMode: DiarizationMode = .auto
     ) {
         self.temperature = temperature
         self.temperatureFallbackCount = temperatureFallbackCount
@@ -46,6 +53,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         self.enableSpeakerDiarization = enableSpeakerDiarization
         self.expectedSpeakerCount = expectedSpeakerCount
         self.speakerTransitionPenalty = speakerTransitionPenalty
+        self.diarizationMode = diarizationMode
     }
 
     public init(from decoder: Decoder) throws {
@@ -61,6 +69,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
         expectedSpeakerCount = try container.decodeIfPresent(Int.self, forKey: .expectedSpeakerCount)
         speakerTransitionPenalty = try container.decodeIfPresent(Double.self, forKey: .speakerTransitionPenalty) ?? 0.9
+        diarizationMode = try container.decodeIfPresent(DiarizationMode.self, forKey: .diarizationMode) ?? .auto
     }
 
     public static let `default` = TranscriptionParameters()

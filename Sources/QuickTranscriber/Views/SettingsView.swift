@@ -15,14 +15,20 @@ public struct SettingsView: View {
                 .tabItem {
                     Label("Transcription", systemImage: "waveform")
                 }
+            SpeakersSettingsTab(store: store, viewModel: viewModel)
+                .tabItem {
+                    Label("Speakers", systemImage: "person.2")
+                }
             OutputSettingsTab()
                 .tabItem {
                     Label("Output", systemImage: "folder")
                 }
         }
-        .frame(minWidth: 480, maxWidth: 480, minHeight: 400, maxHeight: 700)
+        .frame(minWidth: 520, maxWidth: 520, minHeight: 500, maxHeight: 800)
     }
 }
+
+// MARK: - Transcription Settings
 
 private struct TranscriptionSettingsTab: View {
     @ObservedObject var store: ParametersStore
@@ -31,18 +37,11 @@ private struct TranscriptionSettingsTab: View {
     var body: some View {
         Form {
             chunkSection
-            speakerSection
-            if store.parameters.enableSpeakerDiarization {
-                currentSessionSection
-            }
-            registeredSpeakersSection
             decodingSection
             resetSection
         }
         .formStyle(.grouped)
     }
-
-    // MARK: - Reset
 
     private var resetSection: some View {
         Section {
@@ -51,8 +50,6 @@ private struct TranscriptionSettingsTab: View {
             }
         }
     }
-
-    // MARK: - Chunk Settings
 
     private var chunkSection: some View {
         Section("Chunk Settings") {
@@ -90,21 +87,165 @@ private struct TranscriptionSettingsTab: View {
         }
     }
 
+    private var decodingSection: some View {
+        Section("Decoding") {
+            SliderRow(
+                label: "Temperature",
+                value: $store.parameters.temperature,
+                range: 0.0...1.0,
+                step: 0.05,
+                format: "%.2f"
+            )
+
+            StepperRow(
+                label: "Temperature Fallback Count",
+                value: $store.parameters.temperatureFallbackCount,
+                range: 0...5
+            )
+
+            StepperRow(
+                label: "Sample Length",
+                value: $store.parameters.sampleLength,
+                range: 1...224
+            )
+
+            StepperRow(
+                label: "Concurrent Workers",
+                value: $store.parameters.concurrentWorkerCount,
+                range: 1...8
+            )
+        }
+    }
+}
+
+// MARK: - Speakers Settings
+
+private struct SpeakersSettingsTab: View {
+    @ObservedObject var store: ParametersStore
+    @ObservedObject var viewModel: TranscriptionViewModel
+
+    @State private var showDeleteAllConfirmation = false
+    @State private var showAddFromRegistered = false
+    @State private var showNewParticipantAlert = false
+    @State private var newParticipantName = ""
+
+    var body: some View {
+        Form {
+            speakerDetectionSection
+            if store.parameters.enableSpeakerDiarization {
+                if store.parameters.diarizationMode == .manual || !viewModel.meetingParticipants.isEmpty {
+                    meetingParticipantsSection
+                }
+                currentSessionSection
+            }
+            registeredSpeakersSection
+        }
+        .formStyle(.grouped)
+        .sheet(isPresented: $showAddFromRegistered) {
+            AddFromRegisteredSheet(
+                profiles: viewModel.speakerProfiles,
+                existingParticipantIds: Set(viewModel.meetingParticipants.compactMap { $0.speakerProfileId }),
+                onAdd: { profileId in
+                    viewModel.addParticipantFromProfile(profileId)
+                }
+            )
+        }
+    }
+
     // MARK: - Speaker Detection
 
-    private var speakerSection: some View {
+    private var speakerDetectionSection: some View {
         Section("Speaker Detection") {
             Toggle("Enable Speaker Diarization", isOn: $store.parameters.enableSpeakerDiarization)
-            Picker("Number of Speakers", selection: Binding(
-                get: { store.parameters.expectedSpeakerCount ?? 0 },
-                set: { store.parameters.expectedSpeakerCount = $0 == 0 ? nil : $0 }
-            )) {
-                Text("Auto").tag(0)
-                ForEach(2...5, id: \.self) { n in
-                    Text("\(n)").tag(n)
+            if store.parameters.enableSpeakerDiarization {
+                Picker("Mode", selection: $store.parameters.diarizationMode) {
+                    Text("Auto").tag(DiarizationMode.auto)
+                    Text("Manual").tag(DiarizationMode.manual)
+                }
+                if store.parameters.diarizationMode == .auto {
+                    Picker("Number of Speakers", selection: Binding(
+                        get: { store.parameters.expectedSpeakerCount ?? 0 },
+                        set: { store.parameters.expectedSpeakerCount = $0 == 0 ? nil : $0 }
+                    )) {
+                        Text("Auto").tag(0)
+                        ForEach(2...5, id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
+                    }
+                } else {
+                    HStack {
+                        Text("Number of Speakers")
+                        Spacer()
+                        Text("\(viewModel.meetingParticipants.count)")
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .disabled(!store.parameters.enableSpeakerDiarization)
+        }
+    }
+
+    // MARK: - Meeting Participants
+
+    private var meetingParticipantsSection: some View {
+        Section("Meeting Participants (\(viewModel.meetingParticipants.count))") {
+            if store.parameters.diarizationMode == .manual && viewModel.meetingParticipants.isEmpty {
+                Label("No participants set \u{2014} running in auto mode", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .font(.callout)
+            }
+            ForEach(viewModel.meetingParticipants) { participant in
+                HStack {
+                    Text(participant.assignedLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24)
+                    Text(participant.displayName)
+                    if participant.speakerProfileId != nil {
+                        Text("Registered")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.blue.opacity(0.15))
+                            .foregroundStyle(.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                    Spacer()
+                    Button {
+                        viewModel.removeParticipant(id: participant.id)
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+            HStack(spacing: 8) {
+                Button("Add from Registered...") {
+                    showAddFromRegistered = true
+                }
+                .disabled(viewModel.speakerProfiles.isEmpty)
+                Button("New Person...") {
+                    newParticipantName = ""
+                    showNewParticipantAlert = true
+                }
+                if !viewModel.meetingParticipants.isEmpty {
+                    Button("Clear All", role: .destructive) {
+                        viewModel.clearParticipants()
+                    }
+                }
+            }
+            .alert("New Participant", isPresented: $showNewParticipantAlert) {
+                TextField("Name", text: $newParticipantName)
+                Button("Add") {
+                    let name = newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !name.isEmpty {
+                        viewModel.addNewParticipant(displayName: name)
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Enter a name for the new participant:")
+            }
         }
     }
 
@@ -131,10 +272,8 @@ private struct TranscriptionSettingsTab: View {
 
     // MARK: - Registered Speakers
 
-    @State private var showDeleteAllConfirmation = false
-
     private var registeredSpeakersSection: some View {
-        Section("Registered Speakers") {
+        Section("Registered Speakers (\(viewModel.speakerProfiles.count))") {
             if viewModel.speakerProfiles.isEmpty {
                 Text("No speakers registered yet.")
                     .foregroundStyle(.secondary)
@@ -166,37 +305,54 @@ private struct TranscriptionSettingsTab: View {
             }
         }
     }
+}
 
-    // MARK: - Decoding
+// MARK: - Add from Registered Sheet
 
-    private var decodingSection: some View {
-        Section("Decoding") {
-            SliderRow(
-                label: "Temperature",
-                value: $store.parameters.temperature,
-                range: 0.0...1.0,
-                step: 0.05,
-                format: "%.2f"
-            )
+private struct AddFromRegisteredSheet: View {
+    let profiles: [StoredSpeakerProfile]
+    let existingParticipantIds: Set<UUID>
+    let onAdd: (UUID) -> Void
+    @Environment(\.dismiss) private var dismiss
 
-            StepperRow(
-                label: "Temperature Fallback Count",
-                value: $store.parameters.temperatureFallbackCount,
-                range: 0...5
-            )
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Add from Registered Speakers")
+                    .font(.headline)
+                Spacer()
+                Button("Done") { dismiss() }
+            }
+            .padding()
 
-            StepperRow(
-                label: "Sample Length",
-                value: $store.parameters.sampleLength,
-                range: 1...224
-            )
-
-            StepperRow(
-                label: "Concurrent Workers",
-                value: $store.parameters.concurrentWorkerCount,
-                range: 1...8
-            )
+            if profiles.isEmpty {
+                Text("No registered speakers.")
+                    .foregroundStyle(.secondary)
+                    .padding()
+            } else {
+                List(profiles, id: \.id) { profile in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(profile.displayName ?? profile.label)
+                            Text("Speaker \(profile.label) · \(profile.sessionCount) sessions")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if existingParticipantIds.contains(profile.id) {
+                            Text("Added")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button("Add") {
+                                onAdd(profile.id)
+                            }
+                        }
+                    }
+                }
+            }
         }
+        .frame(minWidth: 350, minHeight: 300)
     }
 }
 
@@ -349,13 +505,13 @@ private struct SpeakerProfileRow: View {
                     Text("#\(idPrefix)")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Text("·")
+                    Text("\u{00B7}")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     Text("\(profile.sessionCount) sessions")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    Text("·")
+                    Text("\u{00B7}")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     Text("Last: \(lastUsedText)")
