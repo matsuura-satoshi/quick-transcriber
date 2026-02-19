@@ -477,4 +477,17 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let result = tracker.identify(embedding: emb)
         XCTAssertEqual(result.embedding, emb)
     }
+
+    // MARK: - ConfirmedSegment speakerEmbedding
+
+    func testConfirmedSegmentWithEmbedding() {
+        let emb: [Float] = [0.1, 0.2, 0.3]
+        let segment = ConfirmedSegment(text: "Hello", speakerEmbedding: emb)
+        XCTAssertEqual(segment.speakerEmbedding, emb)
+    }
+
+    func testConfirmedSegmentDefaultNilEmbedding() {
+        let segment = ConfirmedSegment(text: "Hello")
+        XCTAssertNil(segment.speakerEmbedding)
+    }
 }
