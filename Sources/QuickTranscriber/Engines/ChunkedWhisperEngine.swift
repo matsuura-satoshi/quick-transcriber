@@ -10,7 +10,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
     private var confirmedSegments: [ConfirmedSegment] = []
-    private let speakerTracker = SpeakerLabelTracker()
+    private var speakerSmoother = ViterbiSpeakerSmoother()
     private var pendingSegmentStartIndex: Int?
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
@@ -65,7 +65,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             silenceEnergyThreshold: parameters.silenceEnergyThreshold
         )
         confirmedSegments = []
-        speakerTracker.reset()
+        speakerSmoother = ViterbiSpeakerSmoother(stayProbability: parameters.speakerTransitionPenalty)
         diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
         if let diarizer, parameters.enableSpeakerDiarization, let store = speakerProfileStore {
             let profiles = store.profiles.map { ($0.label, $0.embedding) }
@@ -249,7 +249,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedResult: SpeakerIdentification?
             if currentParameters.enableSpeakerDiarization {
-                smoothedResult = speakerTracker.processLabel(rawSpeakerResult)
+                smoothedResult = speakerSmoother.processLabel(rawSpeakerResult)
 
                 // Retroactively update pending segments with confidence (skip user-corrected)
                 if let result = smoothedResult, let startIdx = pendingSegmentStartIndex {
