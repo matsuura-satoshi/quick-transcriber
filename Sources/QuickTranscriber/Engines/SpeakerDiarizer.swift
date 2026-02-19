@@ -8,6 +8,7 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
     func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
+    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String)
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -147,6 +148,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
                 sampleRate: sampleRate
             )
         }
+    }
+
+    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        speakerTracker.correctAssignment(embedding: embedding, from: oldLabel, to: newLabel)
     }
 
     /// Find the segment with the most overlap with the latest chunk's time range.

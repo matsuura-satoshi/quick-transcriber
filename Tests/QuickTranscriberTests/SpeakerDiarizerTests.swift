@@ -58,4 +58,24 @@ final class SpeakerDiarizerTests: XCTestCase {
         )
         XCTAssertEqual(result?.speakerId, "S1")
     }
+
+    // MARK: - correctSpeakerAssignment
+
+    func testCorrectSpeakerAssignmentDelegatesToTracker() {
+        let diarizer = FluidAudioSpeakerDiarizer()
+        let embA = [Float](repeating: 0.01, count: 256)
+        var embA_modified = embA
+        embA_modified[0] = 1.0
+        let embB = [Float](repeating: 0.01, count: 256)
+        var embB_modified = embB
+        embB_modified[1] = 1.0
+        diarizer.loadSpeakerProfiles([("A", embA_modified), ("B", embB_modified)])
+
+        diarizer.correctSpeakerAssignment(embedding: embA_modified, from: "A", to: "B")
+
+        let profiles = diarizer.exportSpeakerProfiles()
+        // A had only one embedding (from loadProfiles seed), now moved to B
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].label, "B")
+    }
 }
