@@ -1,11 +1,11 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 
 import PackageDescription
 
 let package = Package(
     name: "QuickTranscriber",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v15)
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/WhisperKit.git", from: "0.15.0"),
@@ -18,17 +18,20 @@ let package = Package(
                 .product(name: "WhisperKit", package: "WhisperKit"),
                 .product(name: "FluidAudio", package: "FluidAudio"),
             ],
-            path: "Sources/QuickTranscriber"
+            path: "Sources/QuickTranscriber",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(
             name: "QuickTranscriber",
             dependencies: ["QuickTranscriberLib"],
-            path: "Sources/QuickTranscriberApp"
+            path: "Sources/QuickTranscriberApp",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "QuickTranscriberTests",
             dependencies: ["QuickTranscriberLib"],
-            path: "Tests/QuickTranscriberTests"
+            path: "Tests/QuickTranscriberTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(
             name: "QuickTranscriberBenchmarks",
@@ -39,7 +42,8 @@ let package = Package(
             path: "Tests/QuickTranscriberBenchmarks",
             resources: [
                 .copy("Resources")
-            ]
+            ],
+            swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]
 )

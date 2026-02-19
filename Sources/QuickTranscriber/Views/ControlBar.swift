@@ -3,6 +3,7 @@ import SwiftUI
 struct ControlBar: View {
     @Binding var isRecording: Bool
     @Binding var currentLanguage: Language
+    @Binding var translationEnabled: Bool
     let modelState: ModelState
     let onToggleRecording: () -> Void
     let onSwitchLanguage: (Language) -> Void
@@ -14,6 +15,7 @@ struct ControlBar: View {
         HStack(spacing: 16) {
             recordButton
             languagePicker
+            translateButton
             Spacer()
             copyAllButton
             exportButton
@@ -50,6 +52,17 @@ struct ControlBar: View {
             .pickerStyle(.segmented)
             .frame(width: 200)
         }
+    }
+
+    private var translateButton: some View {
+        Button { translationEnabled.toggle() } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "translate")
+                    .font(.title2)
+                Text(translationEnabled ? "Hide" : "Translate")
+            }
+        }
+        .keyboardShortcut("t", modifiers: .command)
     }
 
     private var copyAllButton: some View {
