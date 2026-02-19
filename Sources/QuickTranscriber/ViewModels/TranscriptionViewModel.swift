@@ -432,6 +432,29 @@ public final class TranscriptionViewModel: ObservableObject {
         labelDisplayNames = sessionNames
     }
 
+    // MARK: - Tags
+
+    public var allTags: [String] {
+        speakerProfileStore.allTags
+    }
+
+    public func addTag(_ tag: String, to profileId: UUID) {
+        try? speakerProfileStore.addTag(tag, to: profileId)
+        speakerProfiles = speakerProfileStore.profiles
+    }
+
+    public func removeTag(_ tag: String, from profileId: UUID) {
+        try? speakerProfileStore.removeTag(tag, from: profileId)
+        speakerProfiles = speakerProfileStore.profiles
+    }
+
+    public func addParticipantsByTag(_ tag: String) {
+        let taggedProfiles = speakerProfileStore.profiles(withTag: tag)
+        for profile in taggedProfiles {
+            addParticipantFromProfile(profile.id)
+        }
+    }
+
     // MARK: - Meeting Participants
 
     public func addParticipantFromProfile(_ profileId: UUID) {

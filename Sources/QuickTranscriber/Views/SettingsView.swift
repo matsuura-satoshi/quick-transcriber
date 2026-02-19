@@ -128,6 +128,8 @@ private struct SpeakersSettingsTab: View {
     @State private var showAddFromRegistered = false
     @State private var showNewParticipantAlert = false
     @State private var newParticipantName = ""
+    @State private var searchText = ""
+    @State private var selectedTag: String?
 
     var body: some View {
         Form {
@@ -272,23 +274,69 @@ private struct SpeakersSettingsTab: View {
 
     // MARK: - Registered Speakers
 
+    private var filteredProfiles: [StoredSpeakerProfile] {
+        var result = viewModel.speakerProfiles
+        if let tag = selectedTag {
+            result = result.filter { $0.tags.contains(tag) }
+        }
+        if !searchText.isEmpty {
+            result = result.filter {
+                ($0.displayName ?? "").localizedCaseInsensitiveContains(searchText)
+                || $0.label.localizedCaseInsensitiveContains(searchText)
+                || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
+            }
+        }
+        return result
+    }
+
     private var registeredSpeakersSection: some View {
         Section("Registered Speakers (\(viewModel.speakerProfiles.count))") {
             if viewModel.speakerProfiles.isEmpty {
                 Text("No speakers registered yet.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(viewModel.speakerProfiles, id: \.id) { profile in
+                TextField("Search speakers...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+
+                if !viewModel.allTags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 4) {
+                            TagFilterPill(label: "All", isSelected: selectedTag == nil) {
+                                selectedTag = nil
+                            }
+                            ForEach(viewModel.allTags, id: \.self) { tag in
+                                TagFilterPill(label: tag, isSelected: selectedTag == tag) {
+                                    selectedTag = selectedTag == tag ? nil : tag
+                                }
+                            }
+                            if let tag = selectedTag, store.parameters.diarizationMode == .manual {
+                                Button("Add by Tag") {
+                                    viewModel.addParticipantsByTag(tag)
+                                }
+                                .font(.caption)
+                            }
+                        }
+                    }
+                }
+
+                ForEach(filteredProfiles, id: \.id) { profile in
                     SpeakerProfileRow(
                         profile: profile,
+                        allTags: viewModel.allTags,
                         onRename: { name in
                             viewModel.renameSpeaker(id: profile.id, to: name)
                         },
                         onDelete: {
                             viewModel.deleteSpeaker(id: profile.id)
+                        },
+                        onAddTag: { tag in
+                            viewModel.addTag(tag, to: profile.id)
+                        },
+                        onRemoveTag: { tag in
+                            viewModel.removeTag(tag, from: profile.id)
                         }
                     )
-                    .id("\(profile.id)-\(profile.displayName ?? "")")
+                    .id("\(profile.id)-\(profile.displayName ?? "")-\(profile.tags.joined())")
                 }
                 Button("Delete All Profiles", role: .destructive) {
                     showDeleteAllConfirmation = true
@@ -468,15 +516,23 @@ private struct SessionSpeakerRow: View {
 
 private struct SpeakerProfileRow: View {
     let profile: StoredSpeakerProfile
+    let allTags: [String]
     let onRename: (String) -> Void
     let onDelete: () -> Void
+    let onAddTag: (String) -> Void
+    let onRemoveTag: (String) -> Void
 
     @State private var editingName: String
+    @State private var showTagPopover = false
+    @State private var newTagText = ""
 
-    init(profile: StoredSpeakerProfile, onRename: @escaping (String) -> Void, onDelete: @escaping () -> Void) {
+    init(profile: StoredSpeakerProfile, allTags: [String] = [], onRename: @escaping (String) -> Void, onDelete: @escaping () -> Void, onAddTag: @escaping (String) -> Void = { _ in }, onRemoveTag: @escaping (String) -> Void = { _ in }) {
         self.profile = profile
+        self.allTags = allTags
         self.onRename = onRename
         self.onDelete = onDelete
+        self.onAddTag = onAddTag
+        self.onRemoveTag = onRemoveTag
         self._editingName = State(initialValue: profile.displayName ?? "")
     }
 
@@ -493,6 +549,10 @@ private struct SpeakerProfileRow: View {
 
     private var lastUsedText: String {
         Self.dateFormatter.string(from: profile.lastUsed)
+    }
+
+    private var suggestedTags: [String] {
+        allTags.filter { !profile.tags.contains($0) }
     }
 
     var body: some View {
@@ -523,6 +583,50 @@ private struct SpeakerProfileRow: View {
                     .onSubmit {
                         onRename(editingName)
                     }
+                HStack(spacing: 4) {
+                    ForEach(profile.tags, id: \.self) { tag in
+                        TagPill(tag: tag) { onRemoveTag(tag) }
+                    }
+                    Button {
+                        newTagText = ""
+                        showTagPopover = true
+                    } label: {
+                        Image(systemName: "plus.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .popover(isPresented: $showTagPopover) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("New tag...", text: $newTagText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 150)
+                                .onSubmit {
+                                    let trimmed = newTagText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !trimmed.isEmpty {
+                                        onAddTag(trimmed)
+                                        showTagPopover = false
+                                    }
+                                }
+                            if !suggestedTags.isEmpty {
+                                Text("Existing tags:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                FlowLayout(spacing: 4) {
+                                    ForEach(suggestedTags, id: \.self) { tag in
+                                        Button(tag) {
+                                            onAddTag(tag)
+                                            showTagPopover = false
+                                        }
+                                        .font(.caption)
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(8)
+                    }
+                }
             }
             Spacer()
             Button(action: onDelete) {
@@ -531,6 +635,96 @@ private struct SpeakerProfileRow: View {
             }
             .buttonStyle(.borderless)
         }
+    }
+}
+
+// MARK: - Tag UI
+
+private struct TagPill: View {
+    let tag: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Text(tag)
+                .font(.caption2)
+            Button {
+                onRemove()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8))
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(.secondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+private struct TagFilterPill: View {
+    let label: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(isSelected ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.1))
+                .foregroundStyle(isSelected ? Color.accentColor : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        var height: CGFloat = 0
+        for (i, row) in rows.enumerated() {
+            let maxH = row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+            height += maxH
+            if i > 0 { height += spacing }
+        }
+        return CGSize(width: proposal.width ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = computeRows(proposal: proposal, subviews: subviews)
+        var y = bounds.minY
+        for row in rows {
+            let maxH = row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+            var x = bounds.minX
+            for subview in row {
+                let size = subview.sizeThatFits(.unspecified)
+                subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += maxH + spacing
+        }
+    }
+
+    private func computeRows(proposal: ProposedViewSize, subviews: Subviews) -> [[LayoutSubviews.Element]] {
+        let maxWidth = proposal.width ?? .infinity
+        var rows: [[LayoutSubviews.Element]] = [[]]
+        var currentWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentWidth + size.width > maxWidth && !rows[rows.count - 1].isEmpty {
+                rows.append([])
+                currentWidth = 0
+            }
+            rows[rows.count - 1].append(subview)
+            currentWidth += size.width + spacing
+        }
+        return rows
     }
 }
 
