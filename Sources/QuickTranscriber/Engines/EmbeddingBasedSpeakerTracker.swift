@@ -196,6 +196,10 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         profiles.map { ($0.label, $0.embedding, $0.hitCount) }
     }
 
+    public func exportDetailedProfiles() -> [(label: String, embedding: [Float], hitCount: Int, embeddingHistory: [[Float]])] {
+        profiles.map { ($0.label, $0.embedding, $0.hitCount, $0.embeddingHistory) }
+    }
+
     public func loadProfiles(_ loadedProfiles: [(label: String, embedding: [Float])]) {
         profiles = loadedProfiles.map {
             SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 1, embeddingHistory: [$0.embedding])

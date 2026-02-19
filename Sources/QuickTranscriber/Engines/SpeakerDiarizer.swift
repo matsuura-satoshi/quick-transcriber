@@ -7,6 +7,7 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification?
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
+    func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [[Float]])]
     func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
     func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String)
 }
@@ -137,6 +138,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
 
     public func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
         speakerTracker.exportProfiles().map { ($0.label, $0.embedding) }
+    }
+
+    public func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [[Float]])] {
+        speakerTracker.exportDetailedProfiles().map { ($0.label, $0.embedding, $0.embeddingHistory) }
     }
 
     public func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {

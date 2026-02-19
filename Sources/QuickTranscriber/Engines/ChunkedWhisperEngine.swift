@@ -5,6 +5,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private let transcriber: ChunkTranscriber
     private let diarizer: SpeakerDiarizer?
     private let speakerProfileStore: SpeakerProfileStore?
+    private let embeddingHistoryStore: EmbeddingHistoryStore?
     private var accumulator: ChunkAccumulator
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
@@ -21,12 +22,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
         transcriber: ChunkTranscriber = WhisperKitChunkTranscriber(),
         diarizer: SpeakerDiarizer? = nil,
-        speakerProfileStore: SpeakerProfileStore? = nil
+        speakerProfileStore: SpeakerProfileStore? = nil,
+        embeddingHistoryStore: EmbeddingHistoryStore? = nil
     ) {
         self.audioCaptureService = audioCaptureService
         self.transcriber = transcriber
         self.diarizer = diarizer
         self.speakerProfileStore = speakerProfileStore
+        self.embeddingHistoryStore = embeddingHistoryStore
         self.accumulator = ChunkAccumulator()
     }
 
@@ -137,6 +140,28 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     try? store.save()
                     NSLog("[ChunkedWhisperEngine] Saved \(filteredProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - filteredProfiles.count))")
                 }
+            }
+        }
+        // Save embedding history for future profile reconstruction
+        if let historyStore = embeddingHistoryStore, let diarizer {
+            let detailed = diarizer.exportDetailedSpeakerProfiles()
+            let entries = detailed.compactMap { profile -> EmbeddingHistoryEntry? in
+                guard !profile.embeddingHistory.isEmpty else { return nil }
+                // Match with stored profile to get UUID
+                let storedProfile = speakerProfileStore?.profiles.first { $0.label == profile.label }
+                let profileId = storedProfile?.id ?? UUID()
+                return EmbeddingHistoryEntry(
+                    speakerProfileId: profileId,
+                    label: profile.label,
+                    sessionDate: Date(),
+                    embeddings: profile.embeddingHistory.map { emb in
+                        HistoricalEmbedding(embedding: emb, confirmed: true)
+                    }
+                )
+            }
+            if !entries.isEmpty {
+                historyStore.appendSession(entries: entries)
+                NSLog("[ChunkedWhisperEngine] Saved \(entries.count) speaker histories")
             }
         }
         NSLog("[ChunkedWhisperEngine] Streaming stopped. Total segments: \(confirmedSegments.count)")

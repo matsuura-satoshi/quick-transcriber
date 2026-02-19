@@ -316,6 +316,50 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
     }
 
+    func testStopStreamingSavesEmbeddingHistory() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EngineHistoryTest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let profileStore = SpeakerProfileStore(directory: tmpDir)
+        let historyStore = EmbeddingHistoryStore(directory: tmpDir)
+        let mockDiarizer = MockSpeakerDiarizer()
+        let emb = [Float](repeating: 0.1, count: 256)
+        mockDiarizer.detailedProfiles = [
+            (label: "A", embedding: emb, embeddingHistory: [emb, emb])
+        ]
+
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: MockAudioCaptureService(),
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer,
+            speakerProfileStore: profileStore,
+            embeddingHistoryStore: historyStore
+        )
+
+        try await engine.startStreaming(language: "en", parameters: .init(enableSpeakerDiarization: true)) { _ in }
+        await engine.stopStreaming()
+
+        let loaded = try historyStore.loadAll()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].label, "A")
+        XCTAssertEqual(loaded[0].embeddings.count, 2)
+    }
+
+    func testStopStreamingWithoutHistoryStoreDoesNotCrash() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: MockAudioCaptureService(),
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer
+        )
+
+        try await engine.startStreaming(language: "en", parameters: .init(enableSpeakerDiarization: true)) { _ in }
+        await engine.stopStreaming()
+        // Should not crash
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()

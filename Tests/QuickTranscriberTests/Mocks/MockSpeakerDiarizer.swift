@@ -23,9 +23,14 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
 
     var exportedProfiles: [(label: String, embedding: [Float])] = []
     var loadedProfiles: [(label: String, embedding: [Float])]?
+    var detailedProfiles: [(label: String, embedding: [Float], embeddingHistory: [[Float]])] = []
 
     func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
         exportedProfiles
+    }
+
+    func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [[Float]])] {
+        detailedProfiles
     }
 
     func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {

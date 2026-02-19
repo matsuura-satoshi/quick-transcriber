@@ -63,7 +63,8 @@ public final class TranscriptionViewModel: ObservableObject {
         // The enableSpeakerDiarization parameter controls whether it's actually used.
         let resolvedEngine = engine ?? ChunkedWhisperEngine(
             diarizer: diarizer ?? FluidAudioSpeakerDiarizer(),
-            speakerProfileStore: profileStore
+            speakerProfileStore: profileStore,
+            embeddingHistoryStore: EmbeddingHistoryStore()
         )
         self.service = TranscriptionService(engine: resolvedEngine)
         self.modelName = modelName

@@ -490,4 +490,21 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let segment = ConfirmedSegment(text: "Hello")
         XCTAssertNil(segment.speakerEmbedding)
     }
+
+    // MARK: - Export Detailed Profiles
+
+    func testExportDetailedProfilesIncludesHistory() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb1 = makeEmbedding(dominant: 0)
+        let emb2 = makeEmbedding(dominant: 0)  // matches A
+        _ = tracker.identify(embedding: emb1)
+        _ = tracker.identify(embedding: emb2)
+
+        let detailed = tracker.exportDetailedProfiles()
+        XCTAssertEqual(detailed.count, 1)
+        XCTAssertEqual(detailed[0].label, "A")
+        XCTAssertEqual(detailed[0].embeddingHistory.count, 2)
+        XCTAssertEqual(detailed[0].embeddingHistory[0], emb1)
+        XCTAssertEqual(detailed[0].embeddingHistory[1], emb2)
+    }
 }
