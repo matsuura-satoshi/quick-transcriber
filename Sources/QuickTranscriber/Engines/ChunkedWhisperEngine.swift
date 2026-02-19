@@ -5,6 +5,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private let transcriber: ChunkTranscriber
     private let diarizer: SpeakerDiarizer?
     private let speakerProfileStore: SpeakerProfileStore?
+    private let embeddingHistoryStore: EmbeddingHistoryStore?
     private var accumulator: ChunkAccumulator
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
@@ -21,12 +22,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
         transcriber: ChunkTranscriber = WhisperKitChunkTranscriber(),
         diarizer: SpeakerDiarizer? = nil,
-        speakerProfileStore: SpeakerProfileStore? = nil
+        speakerProfileStore: SpeakerProfileStore? = nil,
+        embeddingHistoryStore: EmbeddingHistoryStore? = nil
     ) {
         self.audioCaptureService = audioCaptureService
         self.transcriber = transcriber
         self.diarizer = diarizer
         self.speakerProfileStore = speakerProfileStore
+        self.embeddingHistoryStore = embeddingHistoryStore
         self.accumulator = ChunkAccumulator()
     }
 
@@ -139,6 +142,28 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 }
             }
         }
+        // Save embedding history for future profile reconstruction
+        if let historyStore = embeddingHistoryStore, let diarizer, currentParameters.enableSpeakerDiarization {
+            let detailed = diarizer.exportDetailedSpeakerProfiles()
+            let entries = detailed.compactMap { profile -> EmbeddingHistoryEntry? in
+                guard !profile.embeddingHistory.isEmpty else { return nil }
+                // Match with stored profile to get UUID
+                let storedProfile = speakerProfileStore?.profiles.first { $0.label == profile.label }
+                let profileId = storedProfile?.id ?? UUID()
+                return EmbeddingHistoryEntry(
+                    speakerProfileId: profileId,
+                    label: profile.label,
+                    sessionDate: Date(),
+                    embeddings: profile.embeddingHistory.map { emb in
+                        HistoricalEmbedding(embedding: emb, confirmed: true)
+                    }
+                )
+            }
+            if !entries.isEmpty {
+                historyStore.appendSession(entries: entries)
+                NSLog("[ChunkedWhisperEngine] Saved \(entries.count) speaker histories")
+            }
+        }
         NSLog("[ChunkedWhisperEngine] Streaming stopped. Total segments: \(confirmedSegments.count)")
     }
 
@@ -153,6 +178,10 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments[index].speaker = speaker
         confirmedSegments[index].speakerConfidence = 1.0
         confirmedSegments[index].isUserCorrected = true
+    }
+
+    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newLabel)
     }
 
     public func cleanup() {
@@ -247,7 +276,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     text: segment.text,
                     precedingSilence: precedingSilence,
                     speaker: smoothedResult?.label,
-                    speakerConfidence: smoothedResult?.confidence
+                    speakerConfidence: smoothedResult?.confidence,
+                    speakerEmbedding: rawSpeakerResult?.embedding
                 ))
                 NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.label ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }

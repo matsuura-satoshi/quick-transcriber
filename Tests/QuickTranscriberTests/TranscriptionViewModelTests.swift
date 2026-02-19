@@ -811,4 +811,90 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.speakerProfiles[0].displayName, "Alice")
     }
+
+    // MARK: - Speaker Correction Wiring
+
+    func testReassignSpeakerForBlockCallsCorrectSpeakerAssignment() {
+        let emb: [Float] = Array(repeating: 0.1, count: 256)
+        let engine = MockTranscriptionEngine()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMCorrectionTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let vm = TranscriptionViewModel(
+            engine: engine,
+            parametersStore: ParametersStore(),
+            speakerProfileStore: SpeakerProfileStore(directory: dir)
+        )
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A", speakerEmbedding: emb),
+            ConfirmedSegment(text: "World", speaker: "A", speakerEmbedding: nil),
+        ]
+        vm.confirmedText = "A: Hello World"
+
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+
+        // Both segments should be reassigned
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, "B")
+        XCTAssertEqual(vm.confirmedSegments[0].isUserCorrected, true)
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, "B")
+        XCTAssertEqual(vm.confirmedSegments[1].isUserCorrected, true)
+
+        // Only segment with embedding should trigger correction call
+        XCTAssertEqual(engine.correctedAssignments.count, 1)
+        XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
+        XCTAssertEqual(engine.correctedAssignments[0].newLabel, "B")
+        XCTAssertEqual(engine.correctedAssignments[0].embedding, emb)
+    }
+
+    func testReassignSpeakerForSelectionCallsCorrectSpeakerAssignment() {
+        let emb: [Float] = Array(repeating: 0.2, count: 256)
+        let engine = MockTranscriptionEngine()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMCorrectionTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let vm = TranscriptionViewModel(
+            engine: engine,
+            parametersStore: ParametersStore(),
+            speakerProfileStore: SpeakerProfileStore(directory: dir)
+        )
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8, speakerEmbedding: emb),
+            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7, speakerEmbedding: emb),
+        ]
+        vm.confirmedText = "A: Hello\nB: World"
+
+        // Build a segment map matching "A: Hello\nB: World"
+        let (_, segmentMap) = TranscriptionTextView.buildAttributedStringFromSegments(
+            vm.confirmedSegments,
+            language: "en",
+            silenceThreshold: 1.0,
+            fontSize: 15.0,
+            unconfirmed: ""
+        )
+
+        // Select range covering just the first segment
+        let firstEntry = segmentMap.entries.first { $0.segmentIndex == 0 }!
+        let selectionRange = firstEntry.characterRange
+
+        vm.reassignSpeakerForSelection(
+            selectionRange: selectionRange,
+            newSpeaker: "C",
+            segmentMap: segmentMap
+        )
+
+        // First segment should be reassigned
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, "C")
+        XCTAssertEqual(vm.confirmedSegments[0].isUserCorrected, true)
+        // Second segment should be unchanged
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, "B")
+
+        // Only first segment correction should be sent to engine
+        XCTAssertEqual(engine.correctedAssignments.count, 1)
+        XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
+        XCTAssertEqual(engine.correctedAssignments[0].newLabel, "C")
+    }
 }

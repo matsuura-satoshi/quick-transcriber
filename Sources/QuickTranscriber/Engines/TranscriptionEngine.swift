@@ -34,10 +34,15 @@ public protocol TranscriptionEngine: AnyObject {
     func stopStreaming() async
     func cleanup()
     var isStreaming: Bool { get async }
+    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String)
 }
 
 extension TranscriptionEngine {
     public func startStreaming(language: String, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws {
         try await startStreaming(language: language, parameters: .default, onStateChange: onStateChange)
+    }
+
+    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        // Default no-op for engines without diarization
     }
 }

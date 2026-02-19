@@ -7,6 +7,7 @@ public struct ConfirmedSegment: Sendable, Equatable {
     public var speakerConfidence: Float?
     public var isUserCorrected: Bool
     public var originalSpeaker: String?
+    public var speakerEmbedding: [Float]?
 
     public init(
         text: String,
@@ -14,7 +15,8 @@ public struct ConfirmedSegment: Sendable, Equatable {
         speaker: String? = nil,
         speakerConfidence: Float? = nil,
         isUserCorrected: Bool = false,
-        originalSpeaker: String? = nil
+        originalSpeaker: String? = nil,
+        speakerEmbedding: [Float]? = nil
     ) {
         self.text = text
         self.precedingSilence = precedingSilence
@@ -22,6 +24,7 @@ public struct ConfirmedSegment: Sendable, Equatable {
         self.speakerConfidence = speakerConfidence
         self.isUserCorrected = isUserCorrected
         self.originalSpeaker = originalSpeaker
+        self.speakerEmbedding = speakerEmbedding
     }
 }
 

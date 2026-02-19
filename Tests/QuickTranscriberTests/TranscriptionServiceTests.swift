@@ -116,6 +116,19 @@ final class TranscriptionServiceTests: XCTestCase {
         }
     }
 
+    func testCorrectSpeakerAssignmentForwardsToEngine() {
+        let engine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: engine)
+
+        let embedding: [Float] = [1.0, 2.0, 3.0]
+        service.correctSpeakerAssignment(embedding: embedding, from: "A", to: "B")
+
+        XCTAssertEqual(engine.correctedAssignments.count, 1)
+        XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
+        XCTAssertEqual(engine.correctedAssignments[0].newLabel, "B")
+        XCTAssertEqual(engine.correctedAssignments[0].embedding, embedding)
+    }
+
     func testServiceErrorDescriptions() {
         XCTAssertNotNil(TranscriptionServiceError.engineNotReady.errorDescription)
         XCTAssertNotNil(TranscriptionServiceError.alreadyStreaming.errorDescription)

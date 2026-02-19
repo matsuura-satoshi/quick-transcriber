@@ -45,6 +45,10 @@ public final class TranscriptionService {
         await engine.stopStreaming()
     }
 
+    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        engine.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newLabel)
+    }
+
     public func cleanup() {
         engine.cleanup()
         isReady = false

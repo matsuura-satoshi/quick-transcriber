@@ -11,6 +11,13 @@ public enum ProfileStrategy: Sendable {
 public struct SpeakerIdentification: Sendable, Equatable {
     public let label: String
     public let confidence: Float
+    public let embedding: [Float]?
+
+    public init(label: String, confidence: Float, embedding: [Float]? = nil) {
+        self.label = label
+        self.confidence = confidence
+        self.embedding = embedding
+    }
 }
 
 /// Tracks speakers across diarization calls using embedding cosine similarity.
@@ -25,6 +32,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         public let label: String
         public var embedding: [Float]
         public var hitCount: Int
+        public var embeddingHistory: [[Float]]
     }
 
     private var profiles: [SpeakerProfile] = []
@@ -37,7 +45,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     /// - Parameters:
     ///   - similarityThreshold: Minimum cosine similarity to match a known speaker (default: 0.5)
-    ///   - updateAlpha: Weight for new embedding in moving average update (default: 0.3)
+    ///   - updateAlpha: Unused, kept for backward compatibility (default: 0.3)
     ///   - expectedSpeakerCount: Maximum number of speakers to track (nil = unlimited)
     ///   - strategy: Profile maintenance strategy (default: .none)
     public init(similarityThreshold: Float = 0.5, updateAlpha: Float = 0.3,
@@ -67,42 +75,47 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
 
         if bestIndex >= 0 && bestSimilarity >= similarityThreshold {
-            // Update profile with moving average
-            profiles[bestIndex].hitCount += 1
-            let alpha = updateAlpha
-            profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                (1 - alpha) * old + alpha * new
-            }
-            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+            profiles[bestIndex].embeddingHistory.append(embedding)
+            recalculateEmbedding(at: bestIndex)
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // At capacity: assign to most similar existing speaker instead of creating new
         if let limit = expectedSpeakerCount, profiles.count >= limit, bestIndex >= 0 {
-            profiles[bestIndex].hitCount += 1
-            let alpha = updateAlpha
-            profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                (1 - alpha) * old + alpha * new
-            }
-            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+            profiles[bestIndex].embeddingHistory.append(embedding)
+            recalculateEmbedding(at: bestIndex)
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // Registration gate: only register if sufficiently different from all existing profiles
         if case .registrationGate(let minSeparation) = strategy, bestIndex >= 0 {
             if bestSimilarity >= minSeparation {
-                profiles[bestIndex].hitCount += 1
-                let alpha = updateAlpha
-                profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                    (1 - alpha) * old + alpha * new
-                }
-                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+                profiles[bestIndex].embeddingHistory.append(embedding)
+                recalculateEmbedding(at: bestIndex)
+                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
             }
         }
 
         // Register new speaker
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
-        profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1))
+        profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1, embeddingHistory: [embedding]))
         nextLabelIndex += 1
-        return SpeakerIdentification(label: label, confidence: 1.0)
+        return SpeakerIdentification(label: label, confidence: 1.0, embedding: embedding)
+    }
+
+    /// Recalculate the centroid embedding as arithmetic mean of all history entries.
+    private func recalculateEmbedding(at index: Int) {
+        let history = profiles[index].embeddingHistory
+        guard let first = history.first else { return }
+        let count = Float(history.count)
+        var sum = [Float](repeating: 0, count: first.count)
+        for entry in history {
+            for i in 0..<entry.count {
+                sum[i] += entry[i]
+            }
+        }
+        profiles[index].embedding = sum.map { $0 / count }
+        profiles[index].hitCount = history.count
     }
 
     private func maintainProfiles() {
@@ -131,11 +144,8 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 if sim >= threshold {
                     // Keep the profile with more hits, absorb the other
                     let (keep, remove) = profiles[i].hitCount >= profiles[j].hitCount ? (i, j) : (j, i)
-                    let alpha = updateAlpha
-                    profiles[keep].embedding = zip(profiles[keep].embedding, profiles[remove].embedding).map { a, b in
-                        (1 - alpha) * a + alpha * b
-                    }
-                    profiles[keep].hitCount += profiles[remove].hitCount
+                    profiles[keep].embeddingHistory.append(contentsOf: profiles[remove].embeddingHistory)
+                    recalculateEmbedding(at: keep)
                     profiles.remove(at: remove)
                     if remove < keep { i = max(0, i - 1) }
                 } else {
@@ -143,6 +153,37 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 }
             }
             i += 1
+        }
+    }
+
+    /// Correct a speaker assignment by moving an embedding from one profile to another.
+    ///
+    /// - Parameters:
+    ///   - embedding: The embedding vector to reassign (matched by value)
+    ///   - oldLabel: The current speaker label
+    ///   - newLabel: The target speaker label (created if it doesn't exist)
+    public func correctAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        // Remove from old profile
+        if let oldIdx = profiles.firstIndex(where: { $0.label == oldLabel }) {
+            profiles[oldIdx].embeddingHistory.removeAll { $0 == embedding }
+            if profiles[oldIdx].embeddingHistory.isEmpty {
+                profiles.remove(at: oldIdx)
+            } else {
+                recalculateEmbedding(at: oldIdx)
+            }
+        }
+
+        // Add to new/existing profile
+        if let newIdx = profiles.firstIndex(where: { $0.label == newLabel }) {
+            profiles[newIdx].embeddingHistory.append(embedding)
+            recalculateEmbedding(at: newIdx)
+        } else {
+            profiles.append(SpeakerProfile(
+                label: newLabel,
+                embedding: embedding,
+                hitCount: 1,
+                embeddingHistory: [embedding]
+            ))
         }
     }
 
@@ -155,8 +196,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         profiles.map { ($0.label, $0.embedding, $0.hitCount) }
     }
 
+    public func exportDetailedProfiles() -> [(label: String, embedding: [Float], hitCount: Int, embeddingHistory: [[Float]])] {
+        profiles.map { ($0.label, $0.embedding, $0.hitCount, $0.embeddingHistory) }
+    }
+
     public func loadProfiles(_ loadedProfiles: [(label: String, embedding: [Float])]) {
-        profiles = loadedProfiles.map { SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 0) }
+        profiles = loadedProfiles.map {
+            SpeakerProfile(label: $0.label, embedding: $0.embedding, hitCount: 1, embeddingHistory: [$0.embedding])
+        }
         nextLabelIndex = loadedProfiles.count
     }
 

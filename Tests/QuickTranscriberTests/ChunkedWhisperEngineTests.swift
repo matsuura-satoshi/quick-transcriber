@@ -248,6 +248,118 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(store.profiles[0].label, "A")
     }
 
+    func testCorrectSpeakerAssignmentForwardsToDiarizer() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer
+        )
+
+        let embedding: [Float] = [1.0, 2.0, 3.0]
+        engine.correctSpeakerAssignment(embedding: embedding, from: "A", to: "B")
+
+        XCTAssertEqual(mockDiarizer.correctedAssignments.count, 1)
+        XCTAssertEqual(mockDiarizer.correctedAssignments[0].oldLabel, "A")
+        XCTAssertEqual(mockDiarizer.correctedAssignments[0].newLabel, "B")
+        XCTAssertEqual(mockDiarizer.correctedAssignments[0].embedding, embedding)
+    }
+
+    func testCorrectSpeakerAssignmentWithoutDiarizerIsNoOp() {
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: MockChunkTranscriber()
+        )
+        // Should not crash when no diarizer
+        engine.correctSpeakerAssignment(embedding: [1.0], from: "A", to: "B")
+    }
+
+    func testProcessChunkStoresEmbeddingInSegments() async throws {
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let mockDiarizer = MockSpeakerDiarizer()
+        let testEmbedding: [Float] = [Float](repeating: 0.42, count: 256)
+        mockDiarizer.speakerResults = [
+            SpeakerIdentification(label: "A", confidence: 0.8, embedding: testEmbedding)
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+        let expectation = XCTestExpectation(description: "State change with embedding")
+        var receivedSegments: [ConfirmedSegment]?
+
+        try await engine.startStreaming(language: "en", parameters: params) { state in
+            if !state.confirmedSegments.isEmpty {
+                receivedSegments = state.confirmedSegments
+                expectation.fulfill()
+            }
+        }
+
+        // Feed enough audio for a chunk (5s at 16kHz = 80000 samples)
+        let speechBuffer = [Float](repeating: 0.1, count: 80000)
+        mockCapture.simulateBuffer(speechBuffer)
+
+        await fulfillment(of: [expectation], timeout: 6.0)
+
+        XCTAssertNotNil(receivedSegments)
+        XCTAssertEqual(receivedSegments?.count, 1)
+        XCTAssertEqual(receivedSegments?[0].speakerEmbedding, testEmbedding)
+
+        await engine.stopStreaming()
+    }
+
+    func testStopStreamingSavesEmbeddingHistory() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EngineHistoryTest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let profileStore = SpeakerProfileStore(directory: tmpDir)
+        let historyStore = EmbeddingHistoryStore(directory: tmpDir)
+        let mockDiarizer = MockSpeakerDiarizer()
+        let emb = [Float](repeating: 0.1, count: 256)
+        mockDiarizer.detailedProfiles = [
+            (label: "A", embedding: emb, embeddingHistory: [emb, emb])
+        ]
+
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: MockAudioCaptureService(),
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer,
+            speakerProfileStore: profileStore,
+            embeddingHistoryStore: historyStore
+        )
+
+        try await engine.startStreaming(language: "en", parameters: .init(enableSpeakerDiarization: true)) { _ in }
+        await engine.stopStreaming()
+
+        let loaded = try historyStore.loadAll()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].label, "A")
+        XCTAssertEqual(loaded[0].embeddings.count, 2)
+    }
+
+    func testStopStreamingWithoutHistoryStoreDoesNotCrash() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: MockAudioCaptureService(),
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer
+        )
+
+        try await engine.startStreaming(language: "en", parameters: .init(enableSpeakerDiarization: true)) { _ in }
+        await engine.stopStreaming()
+        // Should not crash
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()

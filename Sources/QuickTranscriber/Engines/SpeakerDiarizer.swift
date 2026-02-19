@@ -7,7 +7,9 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification?
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
+    func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [[Float]])]
     func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
+    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String)
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -138,6 +140,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         speakerTracker.exportProfiles().map { ($0.label, $0.embedding) }
     }
 
+    public func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [[Float]])] {
+        speakerTracker.exportDetailedProfiles().map { ($0.label, $0.embedding, $0.embeddingHistory) }
+    }
+
     public func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {
         speakerTracker.loadProfiles(profiles)
         lock.withLock {
@@ -147,6 +153,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
                 sampleRate: sampleRate
             )
         }
+    }
+
+    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        speakerTracker.correctAssignment(embedding: embedding, from: oldLabel, to: newLabel)
     }
 
     /// Find the segment with the most overlap with the latest chunk's time range.
