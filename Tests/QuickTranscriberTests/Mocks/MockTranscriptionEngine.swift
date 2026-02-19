@@ -7,6 +7,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     var setupError: Error?
 
     var startStreamingCalled = false
+    var startStreamingCallCount: Int = 0
     var startStreamingLanguage: String?
     var startStreamingParameters: TranscriptionParameters?
     var startStreamingParticipantProfiles: [(label: String, embedding: [Float])]?
@@ -14,6 +15,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     private var stateChangeCallback: (@Sendable (TranscriptionState) -> Void)?
 
     var stopStreamingCalled = false
+    var stopStreamingCallCount: Int = 0
     var cleanupCalled = false
 
     private var _isStreaming = false
@@ -36,6 +38,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         startStreamingCalled = true
+        startStreamingCallCount += 1
         startStreamingLanguage = language
         startStreamingParameters = parameters
         startStreamingParticipantProfiles = participantProfiles
@@ -48,6 +51,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
 
     func stopStreaming() async {
         stopStreamingCalled = true
+        stopStreamingCallCount += 1
         _isStreaming = false
         stateChangeCallback = nil
     }
