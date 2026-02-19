@@ -19,6 +19,8 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
     public var enableSpeakerDiarization: Bool
     /// Expected number of speakers (nil = auto-detect, unlimited)
     public var expectedSpeakerCount: Int?
+    /// Viterbi speaker smoothing: probability of staying with the same speaker (0.0-1.0)
+    public var speakerTransitionPenalty: Double
 
     public init(
         temperature: Float = 0.0,
@@ -30,7 +32,8 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceEnergyThreshold: Float = 0.01,
         silenceLineBreakThreshold: TimeInterval = 1.0,
         enableSpeakerDiarization: Bool = false,
-        expectedSpeakerCount: Int? = nil
+        expectedSpeakerCount: Int? = nil,
+        speakerTransitionPenalty: Double = 0.9
     ) {
         self.temperature = temperature
         self.temperatureFallbackCount = temperatureFallbackCount
@@ -42,6 +45,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         self.silenceLineBreakThreshold = silenceLineBreakThreshold
         self.enableSpeakerDiarization = enableSpeakerDiarization
         self.expectedSpeakerCount = expectedSpeakerCount
+        self.speakerTransitionPenalty = speakerTransitionPenalty
     }
 
     public init(from decoder: Decoder) throws {
@@ -56,6 +60,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceLineBreakThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .silenceLineBreakThreshold) ?? 1.0
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
         expectedSpeakerCount = try container.decodeIfPresent(Int.self, forKey: .expectedSpeakerCount)
+        speakerTransitionPenalty = try container.decodeIfPresent(Double.self, forKey: .speakerTransitionPenalty) ?? 0.9
     }
 
     public static let `default` = TranscriptionParameters()
