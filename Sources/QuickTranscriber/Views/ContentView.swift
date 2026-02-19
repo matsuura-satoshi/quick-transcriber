@@ -1,7 +1,9 @@
 import SwiftUI
+import Translation
 
 public struct ContentView: View {
     @ObservedObject var viewModel: TranscriptionViewModel
+    @State private var translationConfig: TranslationSession.Configuration?
 
     public init(viewModel: TranscriptionViewModel) {
         self.viewModel = viewModel
@@ -11,11 +13,19 @@ public struct ContentView: View {
         VStack(spacing: 0) {
             statusBar
             Divider()
-            transcriptionArea
+            HSplitView {
+                transcriptionArea
+                    .frame(minWidth: 250)
+                if viewModel.translationEnabled {
+                    translationArea
+                        .frame(minWidth: 250)
+                }
+            }
             Divider()
             ControlBar(
                 isRecording: $viewModel.isRecording,
                 currentLanguage: $viewModel.currentLanguage,
+                translationEnabled: $viewModel.translationEnabled,
                 modelState: viewModel.modelState,
                 onToggleRecording: { viewModel.toggleRecording() },
                 onSwitchLanguage: { viewModel.switchLanguage($0) },
@@ -25,9 +35,28 @@ public struct ContentView: View {
             )
         }
         .navigationTitle("Quick Transcriber")
-        .frame(minWidth: 600, minHeight: 400)
+        .frame(minWidth: viewModel.translationEnabled ? 900 : 600, minHeight: 400)
         .task {
             await viewModel.loadModel()
+        }
+        .onChange(of: viewModel.translationEnabled) { _, enabled in
+            if enabled {
+                updateTranslationConfig()
+            } else {
+                translationConfig = nil
+            }
+        }
+        .onChange(of: viewModel.currentLanguage) { _, _ in
+            if viewModel.translationEnabled {
+                updateTranslationConfig()
+            }
+        }
+        .translationTask(translationConfig) { session in
+            viewModel.translationService.setSession(session)
+            // Translate existing segments when session becomes available
+            if !viewModel.confirmedSegments.isEmpty {
+                await viewModel.translationService.translateNewSegments(viewModel.confirmedSegments)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuCopyAll"))) { _ in
             viewModel.copyAllText()
@@ -130,5 +159,32 @@ public struct ContentView: View {
             }
         )
         .frame(maxHeight: .infinity)
+    }
+
+    private var translationArea: some View {
+        TranslationTextView(
+            confirmedSegments: viewModel.translationService.translatedSegments,
+            fontSize: viewModel.fontSize,
+            language: viewModel.translationTargetLanguage.rawValue,
+            silenceThreshold: viewModel.silenceLineBreakThreshold,
+            labelDisplayNames: viewModel.labelDisplayNames
+        )
+        .frame(maxHeight: .infinity)
+    }
+
+    private func updateTranslationConfig() {
+        let source: Locale.Language
+        let target: Locale.Language
+        if viewModel.currentLanguage == .english {
+            source = Locale.Language(identifier: "en")
+            target = Locale.Language(identifier: "ja")
+        } else {
+            source = Locale.Language(identifier: "ja")
+            target = Locale.Language(identifier: "en")
+        }
+        translationConfig = TranslationSession.Configuration(
+            source: source,
+            target: target
+        )
     }
 }

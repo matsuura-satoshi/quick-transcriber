@@ -36,11 +36,26 @@ private struct TranscriptionSettingsTab: View {
 
     var body: some View {
         Form {
+            translationSection
             chunkSection
             decodingSection
             resetSection
         }
         .formStyle(.grouped)
+    }
+
+    private var translationSection: some View {
+        Section("Translation") {
+            Toggle("Enable Translation Panel", isOn: $viewModel.translationEnabled)
+            if viewModel.translationEnabled {
+                HStack {
+                    Text("Direction")
+                    Spacer()
+                    Text("\(viewModel.currentLanguage.displayName) \u{2192} \(viewModel.translationTargetLanguage.displayName)")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
     }
 
     private var resetSection: some View {

@@ -30,9 +30,15 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
     @Published public var labelDisplayNames: [String: String] = [:]
     @Published public var meetingParticipants: [MeetingParticipant] = []
+    @Published public var translationEnabled: Bool = UserDefaults.standard.bool(forKey: "translationEnabled")
+    public let translationService = TranslationService()
 
     public var silenceLineBreakThreshold: TimeInterval {
         parametersStore.parameters.silenceLineBreakThreshold
+    }
+
+    public var translationTargetLanguage: Language {
+        currentLanguage == .english ? .japanese : .english
     }
 
     private var service: TranscriptionService
@@ -104,6 +110,10 @@ public final class TranscriptionViewModel: ObservableObject {
         $isRecording
             .sink { UserDefaults.standard.set($0, forKey: "isRecording") }
             .store(in: &cancellables)
+
+        $translationEnabled
+            .sink { UserDefaults.standard.set($0, forKey: "translationEnabled") }
+            .store(in: &cancellables)
     }
 
     public func loadModel() async {
@@ -149,6 +159,7 @@ public final class TranscriptionViewModel: ObservableObject {
 
         currentLanguage = language
         UserDefaults.standard.set(language.rawValue, forKey: "selectedLanguage")
+        translationService.reset()
 
         if wasRecording {
             Task {
@@ -172,6 +183,7 @@ public final class TranscriptionViewModel: ObservableObject {
         confirmedSegments = []
         unconfirmedText = ""
         meetingParticipants = []
+        translationService.reset()
         if wasRecording {
             Task {
                 await service.stopTranscription()
@@ -582,6 +594,9 @@ public final class TranscriptionViewModel: ObservableObject {
                         )
                         let fileText = self.resolvedFileText()
                         self.fileWriter.updateText(fileText)
+                        if self.translationEnabled {
+                            await self.translationService.translateNewSegments(self.confirmedSegments)
+                        }
                     }
                 }
             } catch {
