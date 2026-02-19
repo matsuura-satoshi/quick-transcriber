@@ -468,4 +468,13 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // A should still have its embedding, B created with nonexistent
         XCTAssertEqual(profiles.count, 2)
     }
+
+    // MARK: - SpeakerIdentification Embedding
+
+    func testIdentifyReturnsSpeakerIdentificationWithEmbedding() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb = makeEmbedding(dominant: 0)
+        let result = tracker.identify(embedding: emb)
+        XCTAssertEqual(result.embedding, emb)
+    }
 }

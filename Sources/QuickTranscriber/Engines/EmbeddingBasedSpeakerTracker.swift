@@ -11,6 +11,13 @@ public enum ProfileStrategy: Sendable {
 public struct SpeakerIdentification: Sendable, Equatable {
     public let label: String
     public let confidence: Float
+    public let embedding: [Float]?
+
+    public init(label: String, confidence: Float, embedding: [Float]? = nil) {
+        self.label = label
+        self.confidence = confidence
+        self.embedding = embedding
+    }
 }
 
 /// Tracks speakers across diarization calls using embedding cosine similarity.
@@ -70,14 +77,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         if bestIndex >= 0 && bestSimilarity >= similarityThreshold {
             profiles[bestIndex].embeddingHistory.append(embedding)
             recalculateEmbedding(at: bestIndex)
-            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // At capacity: assign to most similar existing speaker instead of creating new
         if let limit = expectedSpeakerCount, profiles.count >= limit, bestIndex >= 0 {
             profiles[bestIndex].embeddingHistory.append(embedding)
             recalculateEmbedding(at: bestIndex)
-            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+            return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
         }
 
         // Registration gate: only register if sufficiently different from all existing profiles
@@ -85,7 +92,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             if bestSimilarity >= minSeparation {
                 profiles[bestIndex].embeddingHistory.append(embedding)
                 recalculateEmbedding(at: bestIndex)
-                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity)
+                return SpeakerIdentification(label: profiles[bestIndex].label, confidence: bestSimilarity, embedding: embedding)
             }
         }
 
@@ -93,7 +100,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         let label = String(UnicodeScalar(UInt8(65 + nextLabelIndex % 26)))
         profiles.append(SpeakerProfile(label: label, embedding: embedding, hitCount: 1, embeddingHistory: [embedding]))
         nextLabelIndex += 1
-        return SpeakerIdentification(label: label, confidence: 1.0)
+        return SpeakerIdentification(label: label, confidence: 1.0, embedding: embedding)
     }
 
     /// Recalculate the centroid embedding as arithmetic mean of all history entries.
