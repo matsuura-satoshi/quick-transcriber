@@ -405,4 +405,67 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
             XCTAssertEqual(profiles[0].embedding[i], expectedAvg[i], accuracy: 0.001)
         }
     }
+
+    // MARK: - Correct Assignment
+
+    func testCorrectAssignmentMovesEmbeddingBetweenProfiles() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        _ = tracker.identify(embedding: embA)  // A
+        _ = tracker.identify(embedding: embB)  // B
+
+        tracker.correctAssignment(embedding: embB, from: "B", to: "A")
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].label, "A")
+        XCTAssertEqual(profiles[0].hitCount, 2)
+    }
+
+    func testCorrectAssignmentRecalculatesProfiles() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA1 = makeEmbedding(dominant: 0)
+        var embA2 = makeEmbedding(dominant: 0)
+        embA2[1] = 0.15
+        let embB = makeEmbedding(dominant: 1)
+        _ = tracker.identify(embedding: embA1)
+        _ = tracker.identify(embedding: embA2)
+        _ = tracker.identify(embedding: embB)
+
+        tracker.correctAssignment(embedding: embA2, from: "A", to: "B")
+
+        let profiles = tracker.exportProfiles()
+        let profileA = profiles.first { $0.label == "A" }!
+        let profileB = profiles.first { $0.label == "B" }!
+        XCTAssertEqual(profileA.hitCount, 1)
+        XCTAssertEqual(profileA.embedding, embA1)
+        XCTAssertEqual(profileB.hitCount, 2)
+    }
+
+    func testCorrectAssignmentToNewSpeaker() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let emb = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: emb)
+
+        tracker.correctAssignment(embedding: emb, from: "A", to: "Z")
+
+        let profiles = tracker.exportProfiles()
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].label, "Z")
+        XCTAssertEqual(profiles[0].embedding, emb)
+    }
+
+    func testCorrectAssignmentWithNonexistentEmbeddingIsGraceful() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        _ = tracker.identify(embedding: embA)
+
+        let nonexistent = makeEmbedding(dominant: 5)
+        tracker.correctAssignment(embedding: nonexistent, from: "A", to: "B")
+
+        let profiles = tracker.exportProfiles()
+        // A should still have its embedding, B created with nonexistent
+        XCTAssertEqual(profiles.count, 2)
+    }
 }

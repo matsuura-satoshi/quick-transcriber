@@ -149,6 +149,37 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
     }
 
+    /// Correct a speaker assignment by moving an embedding from one profile to another.
+    ///
+    /// - Parameters:
+    ///   - embedding: The embedding vector to reassign (matched by value)
+    ///   - oldLabel: The current speaker label
+    ///   - newLabel: The target speaker label (created if it doesn't exist)
+    public func correctAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        // Remove from old profile
+        if let oldIdx = profiles.firstIndex(where: { $0.label == oldLabel }) {
+            profiles[oldIdx].embeddingHistory.removeAll { $0 == embedding }
+            if profiles[oldIdx].embeddingHistory.isEmpty {
+                profiles.remove(at: oldIdx)
+            } else {
+                recalculateEmbedding(at: oldIdx)
+            }
+        }
+
+        // Add to new/existing profile
+        if let newIdx = profiles.firstIndex(where: { $0.label == newLabel }) {
+            profiles[newIdx].embeddingHistory.append(embedding)
+            recalculateEmbedding(at: newIdx)
+        } else {
+            profiles.append(SpeakerProfile(
+                label: newLabel,
+                embedding: embedding,
+                hitCount: 1,
+                embeddingHistory: [embedding]
+            ))
+        }
+    }
+
     public func reset() {
         profiles = []
         nextLabelIndex = 0
