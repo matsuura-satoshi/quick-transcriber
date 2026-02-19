@@ -33,7 +33,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceLineBreakThreshold: TimeInterval = 1.0,
         enableSpeakerDiarization: Bool = false,
         expectedSpeakerCount: Int? = nil,
-        speakerTransitionPenalty: Double = 0.9
+        speakerTransitionPenalty: Double = 0.8
     ) {
         self.temperature = temperature
         self.temperatureFallbackCount = temperatureFallbackCount
