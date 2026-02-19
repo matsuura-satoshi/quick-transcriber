@@ -149,6 +149,8 @@ class DiarizationBenchmarkTestBase: XCTestCase {
             let smoother: ViterbiSpeakerSmoother? = stayProbability.map {
                 ViterbiSpeakerSmoother(stayProbability: $0)
             }
+            // Pending indices for retroactive update simulation
+            var pendingStartIndex: Int?
 
             // Split into chunks and feed to diarizer
             let chunkSamples = Int(chunkDuration * Double(sampleRate))
@@ -172,19 +174,48 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                     let rawResult = await diarizer.identifySpeaker(audioChunk: chunk)
                     // Skip chunks where diarizer returns nil (accumulation period)
                     if let rawResult {
-                        let effectiveResult: SpeakerIdentification
                         if let smoother {
-                            effectiveResult = smoother.processLabel(rawResult) ?? rawResult
+                            let smoothed = smoother.processLabel(rawResult)
+                            if let smoothed {
+                                // Confirmed: retroactively update any pending labels
+                                if let startIdx = pendingStartIndex {
+                                    for i in startIdx..<predictedLabels.count {
+                                        predictedLabels[i] = smoothed.label
+                                    }
+                                    pendingStartIndex = nil
+                                }
+                                groundTruthLabels.append(gtLabel)
+                                predictedLabels.append(smoothed.label)
+                            } else {
+                                // Pending: use placeholder, will be retroactively updated
+                                if pendingStartIndex == nil {
+                                    pendingStartIndex = predictedLabels.count
+                                }
+                                groundTruthLabels.append(gtLabel)
+                                predictedLabels.append("__pending__")
+                            }
                         } else {
-                            effectiveResult = rawResult
+                            groundTruthLabels.append(gtLabel)
+                            predictedLabels.append(rawResult.label)
                         }
-                        groundTruthLabels.append(gtLabel)
-                        predictedLabels.append(effectiveResult.label)
                     }
                 }
                 // Skip chunks with no ground-truth speaker (silence/unannotated)
 
                 offset = end
+            }
+
+            // Handle any remaining pending labels at end of conversation
+            if let startIdx = pendingStartIndex {
+                // Find the last confirmed label to fill pending slots
+                let lastConfirmed = predictedLabels[0..<startIdx].last { $0 != "__pending__" }
+                if let label = lastConfirmed {
+                    for i in startIdx..<predictedLabels.count {
+                        if predictedLabels[i] == "__pending__" {
+                            predictedLabels[i] = label
+                        }
+                    }
+                }
             }
 
             guard !groundTruthLabels.isEmpty else { continue }
