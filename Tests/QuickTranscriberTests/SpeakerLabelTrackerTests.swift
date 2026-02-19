@@ -235,31 +235,25 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
         let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
 
         var segments: [ConfirmedSegment] = []
-        var pendingStart: Int?
 
         // Chunk 1: A confirmed
         let s1 = smoother.processLabel(id("A"))
         segments.append(ConfirmedSegment(text: "Hello", speaker: s1?.label, speakerConfidence: s1?.confidence))
 
-        // Chunk 2: B pending
+        // Chunk 2: B observed with moderate confidence (0.7)
+        // With stayProbability=0.9, Viterbi keeps A as the best speaker since
+        // a single observation of B(0.7) cannot overcome the transition penalty.
+        // Unlike the old threshold-based tracker which would go pending,
+        // Viterbi correctly returns A -- the false alarm never even causes a pending state.
         let s2 = smoother.processLabel(id("B", 0.7))
-        XCTAssertNil(s2)
+        XCTAssertNotNil(s2, "Viterbi should keep A as best speaker for single B(0.7) observation")
+        XCTAssertEqual(s2?.label, "A")
         segments.append(ConfirmedSegment(text: "glitch", speaker: s2?.label, speakerConfidence: s2?.confidence))
-        pendingStart = 1
 
-        // Chunk 3: Back to A (false alarm resolved)
+        // Chunk 3: Back to A (reinforces A)
         let s3 = smoother.processLabel(id("A", 0.9))
         XCTAssertNotNil(s3)
         XCTAssertEqual(s3?.label, "A")
-
-        // Retroactive update: pending segments get A
-        if let start = pendingStart {
-            for i in start..<segments.count {
-                segments[i].speaker = s3?.label
-                segments[i].speakerConfidence = s3?.confidence
-            }
-            pendingStart = nil
-        }
         segments.append(ConfirmedSegment(text: "continuing", speaker: s3?.label, speakerConfidence: s3?.confidence))
 
         let text = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
