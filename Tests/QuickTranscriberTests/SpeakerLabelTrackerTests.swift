@@ -146,10 +146,10 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
         _ = smoother.processLabel(id("B", 0.7))
         _ = smoother.processLabel(id("B", 0.7))
         _ = smoother.processLabel(id("B", 0.7))
-        // After 3 moderate B observations, with 0.99 stay probability, A might still hold
-        // This tests that high stayProbability does resist switching
-        // (We don't assert the exact result here since the math depends on implementation;
-        //  the key test is that lower stayProbability switches more easily below)
+        // After 3 moderate B observations, with 0.99 stay probability, A should still hold
+        let result = smoother.processLabel(id("B", 0.7))
+        XCTAssertTrue(result == nil || result?.label == "A",
+            "High stay probability (0.99) should resist switching on moderate-confidence observations")
     }
 
     // MARK: - Low stayProbability switches more easily

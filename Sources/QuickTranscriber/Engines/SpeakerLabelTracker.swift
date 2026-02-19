@@ -19,7 +19,7 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
     private var pendingCount: Int = 0
 
     public init(stayProbability: Double = 0.9) {
-        self.stayProbability = stayProbability
+        self.stayProbability = max(0.5, min(stayProbability, 0.999))
     }
 
     /// Process a raw speaker identification from the diarizer.
