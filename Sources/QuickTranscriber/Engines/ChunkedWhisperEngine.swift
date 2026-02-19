@@ -155,6 +155,10 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments[index].isUserCorrected = true
     }
 
+    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newLabel)
+    }
+
     public func cleanup() {
         Task { [weak self] in
             await self?.stopStreaming()
@@ -247,7 +251,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     text: segment.text,
                     precedingSilence: precedingSilence,
                     speaker: smoothedResult?.label,
-                    speakerConfidence: smoothedResult?.confidence
+                    speakerConfidence: smoothedResult?.confidence,
+                    speakerEmbedding: rawSpeakerResult?.embedding
                 ))
                 NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.label ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }

@@ -55,6 +55,12 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         stateChangeCallback = nil
     }
 
+    var correctedAssignments: [(embedding: [Float], oldLabel: String, newLabel: String)] = []
+
+    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+        correctedAssignments.append((embedding: embedding, oldLabel: oldLabel, newLabel: newLabel))
+    }
+
     // Helper to simulate state changes from the engine
     func simulateStateChange(_ state: TranscriptionState) {
         stateChangeCallback?(state)
