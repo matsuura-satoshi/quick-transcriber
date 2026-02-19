@@ -107,6 +107,7 @@ class DiarizationBenchmarkTestBase: XCTestCase {
         diarizationChunkDuration: Double? = nil,
         expectedSpeakerCount: Int? = nil,
         profileStrategy: ProfileStrategy = .none,
+        stayProbability: Double? = nil,
         label: String = "default"
     ) async throws -> DiarizationBenchmarkResult {
         let refs = try loadDiarizationReferences(name: dataset)
@@ -145,6 +146,10 @@ class DiarizationBenchmarkTestBase: XCTestCase {
             )
             try await diarizer.setup()
 
+            let smoother: ViterbiSpeakerSmoother? = stayProbability.map {
+                ViterbiSpeakerSmoother(stayProbability: $0)
+            }
+
             // Split into chunks and feed to diarizer
             let chunkSamples = Int(chunkDuration * Double(sampleRate))
             var predictedLabels: [String] = []
@@ -164,11 +169,17 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                     segments: ref.segments
                 ) {
                     // Prediction
-                    let speakerResult = await diarizer.identifySpeaker(audioChunk: chunk)
+                    let rawResult = await diarizer.identifySpeaker(audioChunk: chunk)
                     // Skip chunks where diarizer returns nil (accumulation period)
-                    if let speakerResult {
+                    if let rawResult {
+                        let effectiveResult: SpeakerIdentification
+                        if let smoother {
+                            effectiveResult = smoother.processLabel(rawResult) ?? rawResult
+                        } else {
+                            effectiveResult = rawResult
+                        }
                         groundTruthLabels.append(gtLabel)
-                        predictedLabels.append(speakerResult.label)
+                        predictedLabels.append(effectiveResult.label)
                     }
                 }
                 // Skip chunks with no ground-truth speaker (silence/unannotated)
@@ -470,6 +481,24 @@ final class CallHomeDiarizationTests: DiarizationBenchmarkTestBase {
             label: "chunk_5s_accum_7s_speakers_2"
         )
     }
+
+    // MARK: - Viterbi smoothing sweep
+
+    func testCallHomeENViterbiSweep() async throws {
+        let penalties: [Double] = [0.7, 0.8, 0.9, 0.95, 0.99]
+        for penalty in penalties {
+            _ = try await runDiarizationBenchmark(
+                dataset: "callhome_en",
+                maxConversations: 5,
+                chunkDuration: 5.0,
+                windowDuration: 15.0,
+                diarizationChunkDuration: 7.0,
+                expectedSpeakerCount: 2,
+                stayProbability: penalty,
+                label: "viterbi_stay\(String(format: "%.2f", penalty))"
+            )
+        }
+    }
 }
 
 // MARK: - AMI Meeting Corpus Diarization Benchmarks
@@ -530,5 +559,23 @@ final class AMIDiarizationTests: DiarizationBenchmarkTestBase {
             expectedSpeakerCount: -1,
             label: "chunk_5s_accum_7s_window_15s_speakers_gt"
         )
+    }
+
+    // MARK: - Viterbi smoothing sweep
+
+    func testAMIViterbiSweep() async throws {
+        let penalties: [Double] = [0.7, 0.8, 0.9, 0.95, 0.99]
+        for penalty in penalties {
+            _ = try await runDiarizationBenchmark(
+                dataset: "ami",
+                maxConversations: 5,
+                chunkDuration: 5.0,
+                windowDuration: 15.0,
+                diarizationChunkDuration: 7.0,
+                expectedSpeakerCount: -1,
+                stayProbability: penalty,
+                label: "viterbi_stay\(String(format: "%.2f", penalty))"
+            )
+        }
     }
 }
