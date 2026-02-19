@@ -143,7 +143,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             }
         }
         // Save embedding history for future profile reconstruction
-        if let historyStore = embeddingHistoryStore, let diarizer {
+        if let historyStore = embeddingHistoryStore, let diarizer, currentParameters.enableSpeakerDiarization {
             let detailed = diarizer.exportDetailedSpeakerProfiles()
             let entries = detailed.compactMap { profile -> EmbeddingHistoryEntry? in
                 guard !profile.embeddingHistory.isEmpty else { return nil }
