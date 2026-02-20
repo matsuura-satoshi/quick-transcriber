@@ -1,29 +1,31 @@
 import XCTest
 @testable import QuickTranscriberLib
 
-final class MeetingParticipantTests: XCTestCase {
+final class ActiveSpeakerTests: XCTestCase {
 
-    func testIdUsesProfileIdWhenPresent() {
+    func testIdIsAlwaysUUID() {
         let profileId = UUID()
-        let p = MeetingParticipant(speakerProfileId: profileId, assignedLabel: "A", displayName: "Alice")
-        XCTAssertEqual(p.id, profileId.uuidString)
-    }
-
-    func testIdFallsBackToLabelWhenNoProfileId() {
-        let p = MeetingParticipant(assignedLabel: "B", displayName: "Bob")
-        XCTAssertEqual(p.id, "B")
+        let speaker = ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", displayName: "Alice", source: .manual)
+        XCTAssertNotEqual(speaker.id, profileId) // id is independent UUID
     }
 
     func testEquatable() {
         let id = UUID()
-        let p1 = MeetingParticipant(speakerProfileId: id, assignedLabel: "A", displayName: "Alice")
-        let p2 = MeetingParticipant(speakerProfileId: id, assignedLabel: "A", displayName: "Alice")
-        XCTAssertEqual(p1, p2)
+        let s1 = ActiveSpeaker(id: id, sessionLabel: "A", displayName: "Alice", source: .manual)
+        let s2 = ActiveSpeaker(id: id, sessionLabel: "A", displayName: "Alice", source: .manual)
+        XCTAssertEqual(s1, s2)
+    }
+
+    func testSourceValues() {
+        let manual = ActiveSpeaker(sessionLabel: "A", source: .manual)
+        let auto = ActiveSpeaker(sessionLabel: "B", source: .autoDetected)
+        XCTAssertEqual(manual.source, .manual)
+        XCTAssertEqual(auto.source, .autoDetected)
     }
 }
 
 @MainActor
-final class MeetingParticipantViewModelTests: XCTestCase {
+final class ActiveSpeakerViewModelTests: XCTestCase {
 
     private var tmpDir: URL!
 
@@ -32,7 +34,7 @@ final class MeetingParticipantViewModelTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: "selectedLanguage")
         UserDefaults.standard.removeObject(forKey: "isRecording")
         tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("MeetingTests-\(UUID().uuidString)")
+            .appendingPathComponent("ActiveSpeakerTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
     }
 
@@ -58,87 +60,129 @@ final class MeetingParticipantViewModelTests: XCTestCase {
         return (vm, engine, store)
     }
 
-    func testAddParticipantFromProfile() {
+    func testAddManualSpeakerFromProfile() {
         let (vm, _, store) = makeViewModel()
         let profile = StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice")
         store.profiles = [profile]
         vm.speakerProfiles = store.profiles
 
-        vm.addParticipantFromProfile(profile.id)
+        vm.addManualSpeaker(fromProfile: profile.id)
 
-        XCTAssertEqual(vm.meetingParticipants.count, 1)
-        XCTAssertEqual(vm.meetingParticipants[0].speakerProfileId, profile.id)
-        XCTAssertEqual(vm.meetingParticipants[0].displayName, "Alice")
-        XCTAssertEqual(vm.meetingParticipants[0].assignedLabel, "A")
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profile.id)
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice")
+        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "A")
+        XCTAssertEqual(vm.activeSpeakers[0].source, .manual)
     }
 
-    func testAddParticipantFromProfileNoDuplicate() {
+    func testAddManualSpeakerFromProfileNoDuplicate() {
         let (vm, _, store) = makeViewModel()
         let profile = StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0))
         store.profiles = [profile]
 
-        vm.addParticipantFromProfile(profile.id)
-        vm.addParticipantFromProfile(profile.id)
+        vm.addManualSpeaker(fromProfile: profile.id)
+        vm.addManualSpeaker(fromProfile: profile.id)
 
-        XCTAssertEqual(vm.meetingParticipants.count, 1)
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
     }
 
-    func testAddNewParticipant() {
+    func testAddManualSpeakerByName() {
         let (vm, _, _) = makeViewModel()
 
-        vm.addNewParticipant(displayName: "Bob")
+        vm.addManualSpeaker(displayName: "Bob")
 
-        XCTAssertEqual(vm.meetingParticipants.count, 1)
-        XCTAssertNil(vm.meetingParticipants[0].speakerProfileId)
-        XCTAssertEqual(vm.meetingParticipants[0].displayName, "Bob")
-        XCTAssertEqual(vm.meetingParticipants[0].assignedLabel, "A")
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertNil(vm.activeSpeakers[0].speakerProfileId)
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Bob")
+        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "A")
+        XCTAssertEqual(vm.activeSpeakers[0].source, .manual)
         XCTAssertEqual(vm.labelDisplayNames["A"], "Bob")
     }
 
-    func testAddMultipleParticipantsAssignsSequentialLabels() {
+    func testAddMultipleSpeakersAssignsSequentialLabels() {
         let (vm, _, store) = makeViewModel()
         let profile = StoredSpeakerProfile(label: "X", embedding: makeEmbedding(dominant: 0), displayName: "Alice")
         store.profiles = [profile]
 
-        vm.addParticipantFromProfile(profile.id)
-        vm.addNewParticipant(displayName: "Bob")
+        vm.addManualSpeaker(fromProfile: profile.id)
+        vm.addManualSpeaker(displayName: "Bob")
 
-        XCTAssertEqual(vm.meetingParticipants[0].assignedLabel, "A")
-        XCTAssertEqual(vm.meetingParticipants[1].assignedLabel, "B")
+        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "A")
+        XCTAssertEqual(vm.activeSpeakers[1].sessionLabel, "B")
     }
 
-    func testRemoveParticipant() {
+    func testRemoveActiveSpeaker() {
         let (vm, _, _) = makeViewModel()
-        vm.addNewParticipant(displayName: "Alice")
-        vm.addNewParticipant(displayName: "Bob")
-        XCTAssertEqual(vm.meetingParticipants.count, 2)
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
 
-        vm.removeParticipant(id: vm.meetingParticipants[0].id)
+        vm.removeActiveSpeaker(id: vm.activeSpeakers[0].id)
 
-        XCTAssertEqual(vm.meetingParticipants.count, 1)
-        XCTAssertEqual(vm.meetingParticipants[0].displayName, "Bob")
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Bob")
     }
 
-    func testClearParticipants() {
+    func testClearActiveSpeakers() {
         let (vm, _, _) = makeViewModel()
-        vm.addNewParticipant(displayName: "Alice")
-        vm.addNewParticipant(displayName: "Bob")
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
 
-        vm.clearParticipants()
+        vm.clearActiveSpeakers()
 
-        XCTAssertTrue(vm.meetingParticipants.isEmpty)
+        XCTAssertTrue(vm.activeSpeakers.isEmpty)
     }
 
-    func testClearTextClearsParticipants() {
+    func testClearActiveSpeakersBySource() {
         let (vm, _, _) = makeViewModel()
-        vm.addNewParticipant(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Alice")
+        // Simulate auto-detected speaker via confirmedSegments
+        vm.activeSpeakers.append(ActiveSpeaker(
+            sessionLabel: "B",
+            displayName: "Auto Speaker",
+            source: .autoDetected
+        ))
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+
+        vm.clearActiveSpeakers(source: .manual)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].source, .autoDetected)
+    }
+
+    func testClearTextClearsActiveSpeakers() {
+        let (vm, _, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")
 
         vm.clearText()
 
-        XCTAssertTrue(vm.meetingParticipants.isEmpty)
+        XCTAssertTrue(vm.activeSpeakers.isEmpty)
     }
 
-    // MARK: - Participant change auto-restart
+    func testAvailableSpeakersFromActiveSpeakers() {
+        let (vm, _, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
+
+        let speakers = vm.availableSpeakers
+        XCTAssertEqual(speakers.count, 2)
+        XCTAssertEqual(speakers[0].label, "A")
+        XCTAssertEqual(speakers[0].displayName, "Alice")
+        XCTAssertEqual(speakers[1].label, "B")
+        XCTAssertEqual(speakers[1].displayName, "Bob")
+    }
+
+    func testRenameActiveSpeaker() {
+        let (vm, _, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")
+
+        vm.renameActiveSpeaker(label: "A", displayName: "Alicia")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alicia")
+        XCTAssertEqual(vm.labelDisplayNames["A"], "Alicia")
+    }
+
+    // MARK: - Active speaker change auto-restart
 
     private func makeViewModelWithStore() -> (TranscriptionViewModel, MockTranscriptionEngine, ParametersStore) {
         let engine = MockTranscriptionEngine()
@@ -154,7 +198,7 @@ final class MeetingParticipantViewModelTests: XCTestCase {
         return (vm, engine, paramsStore)
     }
 
-    func testParticipantChangeRestartsDuringManualRecording() async throws {
+    func testManualSpeakerChangeRestartsDuringManualRecording() async throws {
         let (vm, engine, _) = makeViewModelWithStore()
         await vm.loadModel()
         vm.toggleRecording()
@@ -163,7 +207,7 @@ final class MeetingParticipantViewModelTests: XCTestCase {
         let initialCount = engine.startStreamingCallCount
         XCTAssertEqual(initialCount, 1)
 
-        vm.addNewParticipant(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Alice")
 
         // Wait for 500ms debounce + 100ms restart margin
         try await Task.sleep(nanoseconds: 800_000_000)
@@ -172,7 +216,7 @@ final class MeetingParticipantViewModelTests: XCTestCase {
         XCTAssertTrue(vm.isRecording)
     }
 
-    func testParticipantChangeDoesNotRestartInAutoMode() async throws {
+    func testManualSpeakerChangeDoesNotRestartInAutoMode() async throws {
         let (vm, engine, paramsStore) = makeViewModelWithStore()
         paramsStore.parameters.diarizationMode = .auto
         // Wait for parameters debounce to settle
@@ -184,22 +228,42 @@ final class MeetingParticipantViewModelTests: XCTestCase {
         XCTAssertTrue(vm.isRecording)
         let initialCount = engine.startStreamingCallCount
 
-        vm.addNewParticipant(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Alice")
 
         try await Task.sleep(nanoseconds: 800_000_000)
 
         XCTAssertEqual(engine.startStreamingCallCount, initialCount)
     }
 
-    func testParticipantChangeDoesNotRestartWhenNotRecording() async throws {
+    func testManualSpeakerChangeDoesNotRestartWhenNotRecording() async throws {
         let (vm, engine, _) = makeViewModelWithStore()
         XCTAssertFalse(vm.isRecording)
         let initialCount = engine.startStreamingCallCount
 
-        vm.addNewParticipant(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Alice")
 
         try await Task.sleep(nanoseconds: 800_000_000)
 
+        XCTAssertEqual(engine.startStreamingCallCount, initialCount)
+    }
+
+    func testAutoDetectedSpeakerDoesNotTriggerRestart() async throws {
+        let (vm, engine, _) = makeViewModelWithStore()
+        await vm.loadModel()
+        vm.toggleRecording()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let initialCount = engine.startStreamingCallCount
+
+        // Simulate auto-detected speaker addition (not manual)
+        vm.activeSpeakers.append(ActiveSpeaker(
+            sessionLabel: "B",
+            displayName: nil,
+            source: .autoDetected
+        ))
+
+        try await Task.sleep(nanoseconds: 800_000_000)
+
+        // Should NOT restart because autoDetected changes are filtered out
         XCTAssertEqual(engine.startStreamingCallCount, initialCount)
     }
 }
