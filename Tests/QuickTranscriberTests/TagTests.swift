@@ -259,4 +259,48 @@ final class TagViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.allTags, ["eng", "mgmt", "team"])
     }
+
+    func testAddManualSpeakersBulk() {
+        let (vm, store) = makeViewModel()
+        let id1 = UUID()
+        let id2 = UUID()
+        let id3 = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice"),
+            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1), displayName: "Bob"),
+            StoredSpeakerProfile(id: id3, label: "C", embedding: makeEmbedding(dominant: 2), displayName: "Charlie"),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.addManualSpeakers(profileIds: [id1, id3])
+
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+        XCTAssertEqual(Set(vm.activeSpeakers.compactMap { $0.speakerProfileId }), Set([id1, id3]))
+    }
+
+    func testAddManualSpeakersBulkSkipsAlreadyActive() {
+        let (vm, store) = makeViewModel()
+        let id1 = UUID()
+        let id2 = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice"),
+            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1), displayName: "Bob"),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.addManualSpeaker(fromProfile: id1)
+        vm.addManualSpeakers(profileIds: [id1, id2])
+
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+    }
+
+    func testAddManualSpeakersBulkEmptyArrayNoOp() {
+        let (vm, _) = makeViewModel()
+
+        vm.addManualSpeakers(profileIds: [])
+
+        XCTAssertEqual(vm.activeSpeakers.count, 0)
+    }
 }

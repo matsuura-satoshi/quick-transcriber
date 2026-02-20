@@ -145,6 +145,7 @@ private struct SpeakersSettingsTab: View {
     @State private var newSpeakerName = ""
     @State private var searchText = ""
     @State private var selectedTag: String?
+    @State private var showTagFilter = false
 
     var body: some View {
         Form {
@@ -161,6 +162,18 @@ private struct SpeakersSettingsTab: View {
                 existingProfileIds: Set(viewModel.activeSpeakers.compactMap { $0.speakerProfileId }),
                 onAdd: { profileId in
                     viewModel.addManualSpeaker(fromProfile: profileId)
+                }
+            )
+        }
+        .sheet(isPresented: $showTagFilter) {
+            TagFilterSheet(
+                allTags: viewModel.allTags,
+                profiles: viewModel.registeredSpeakersForMenu,
+                onAdd: { profileId in
+                    viewModel.addManualSpeaker(fromProfile: profileId)
+                },
+                onBulkAdd: { profileIds in
+                    viewModel.addManualSpeakers(profileIds: profileIds)
                 }
             )
         }
@@ -229,6 +242,10 @@ private struct SpeakersSettingsTab: View {
                     showAddFromRegistered = true
                 }
                 .disabled(viewModel.speakerProfiles.isEmpty)
+                Button("Add by Tag...") {
+                    showTagFilter = true
+                }
+                .disabled(viewModel.allTags.isEmpty)
                 Button("New Speaker...") {
                     newSpeakerName = ""
                     showNewSpeakerAlert = true
@@ -290,12 +307,6 @@ private struct SpeakersSettingsTab: View {
                                 TagFilterPill(label: tag, isSelected: selectedTag == tag) {
                                     selectedTag = selectedTag == tag ? nil : tag
                                 }
-                            }
-                            if let tag = selectedTag {
-                                Button("Add by Tag") {
-                                    viewModel.addManualSpeakersByTag(tag)
-                                }
-                                .font(.caption)
                             }
                         }
                     }
@@ -675,7 +686,7 @@ private struct TagPill: View {
     }
 }
 
-private struct TagFilterPill: View {
+struct TagFilterPill: View {
     let label: String
     let isSelected: Bool
     let action: () -> Void
@@ -694,7 +705,7 @@ private struct TagFilterPill: View {
     }
 }
 
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 4
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
