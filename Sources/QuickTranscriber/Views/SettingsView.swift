@@ -141,8 +141,8 @@ private struct SpeakersSettingsTab: View {
 
     @State private var showDeleteAllConfirmation = false
     @State private var showAddFromRegistered = false
-    @State private var showNewParticipantAlert = false
-    @State private var newParticipantName = ""
+    @State private var showNewSpeakerAlert = false
+    @State private var newSpeakerName = ""
     @State private var searchText = ""
     @State private var selectedTag: String?
 
@@ -150,10 +150,7 @@ private struct SpeakersSettingsTab: View {
         Form {
             speakerDetectionSection
             if store.parameters.enableSpeakerDiarization {
-                if store.parameters.diarizationMode == .manual || !viewModel.meetingParticipants.isEmpty {
-                    meetingParticipantsSection
-                }
-                currentSessionSection
+                activeSpeakersSection
             }
             registeredSpeakersSection
         }
@@ -161,9 +158,9 @@ private struct SpeakersSettingsTab: View {
         .sheet(isPresented: $showAddFromRegistered) {
             AddFromRegisteredSheet(
                 profiles: viewModel.speakerProfiles,
-                existingParticipantIds: Set(viewModel.meetingParticipants.compactMap { $0.speakerProfileId }),
+                existingProfileIds: Set(viewModel.activeSpeakers.compactMap { $0.speakerProfileId }),
                 onAdd: { profileId in
-                    viewModel.addParticipantFromProfile(profileId)
+                    viewModel.addManualSpeaker(fromProfile: profileId)
                 }
             )
         }
@@ -193,7 +190,8 @@ private struct SpeakersSettingsTab: View {
                     HStack {
                         Text("Number of Speakers")
                         Spacer()
-                        Text("\(viewModel.meetingParticipants.count)")
+                        let manualCount = viewModel.activeSpeakers.filter { $0.source == .manual }.count
+                        Text("\(manualCount)")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -201,88 +199,57 @@ private struct SpeakersSettingsTab: View {
         }
     }
 
-    // MARK: - Meeting Participants
+    // MARK: - Active Speakers (unified section)
 
-    private var meetingParticipantsSection: some View {
-        Section("Meeting Participants (\(viewModel.meetingParticipants.count))") {
-            if store.parameters.diarizationMode == .manual && viewModel.meetingParticipants.isEmpty {
-                Label("No participants set \u{2014} running in auto mode", systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
-                    .font(.callout)
-            }
-            ForEach(viewModel.meetingParticipants) { participant in
-                HStack {
-                    Text(participant.assignedLabel)
-                        .font(.caption)
+    private var activeSpeakersSection: some View {
+        Section("Active Speakers (\(viewModel.activeSpeakers.count))") {
+            if viewModel.activeSpeakers.isEmpty {
+                if store.parameters.diarizationMode == .manual {
+                    Label("No speakers added \u{2014} running in auto mode", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                } else {
+                    Text("No speakers detected yet.")
                         .foregroundStyle(.secondary)
-                        .frame(width: 24)
-                    Text(participant.displayName)
-                    if participant.speakerProfileId != nil {
-                        Text("Registered")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(.blue.opacity(0.15))
-                            .foregroundStyle(.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                    }
-                    Spacer()
-                    Button {
-                        viewModel.removeParticipant(id: participant.id)
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
                 }
+            }
+            ForEach(viewModel.activeSpeakers) { speaker in
+                ActiveSpeakerRow(
+                    speaker: speaker,
+                    onRename: { name in
+                        viewModel.renameActiveSpeaker(label: speaker.sessionLabel, displayName: name)
+                    },
+                    onRemove: {
+                        viewModel.removeActiveSpeaker(id: speaker.id)
+                    }
+                )
             }
             HStack(spacing: 8) {
                 Button("Add from Registered...") {
                     showAddFromRegistered = true
                 }
                 .disabled(viewModel.speakerProfiles.isEmpty)
-                Button("New Person...") {
-                    newParticipantName = ""
-                    showNewParticipantAlert = true
+                Button("New Speaker...") {
+                    newSpeakerName = ""
+                    showNewSpeakerAlert = true
                 }
-                if !viewModel.meetingParticipants.isEmpty {
+                if !viewModel.activeSpeakers.isEmpty {
                     Button("Clear All", role: .destructive) {
-                        viewModel.clearParticipants()
+                        viewModel.clearActiveSpeakers()
                     }
                 }
             }
-            .alert("New Participant", isPresented: $showNewParticipantAlert) {
-                TextField("Name", text: $newParticipantName)
+            .alert("New Speaker", isPresented: $showNewSpeakerAlert) {
+                TextField("Name", text: $newSpeakerName)
                 Button("Add") {
-                    let name = newParticipantName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = newSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !name.isEmpty {
-                        viewModel.addNewParticipant(displayName: name)
+                        viewModel.addManualSpeaker(displayName: name)
                     }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Enter a name for the new participant:")
-            }
-        }
-    }
-
-    // MARK: - Current Session
-
-    private var currentSessionSection: some View {
-        Section("Current Session") {
-            if viewModel.sessionSpeakers.isEmpty {
-                Text("No speakers detected yet.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(viewModel.sessionSpeakers) { speaker in
-                    SessionSpeakerRow(
-                        speaker: speaker,
-                        onRename: { name in
-                            viewModel.renameSessionSpeaker(label: speaker.label, displayName: name)
-                        }
-                    )
-                    .id("\(speaker.label)-\(speaker.displayName ?? "")")
-                }
+                Text("Enter a name for the new speaker:")
             }
         }
     }
@@ -324,9 +291,9 @@ private struct SpeakersSettingsTab: View {
                                     selectedTag = selectedTag == tag ? nil : tag
                                 }
                             }
-                            if let tag = selectedTag, store.parameters.diarizationMode == .manual {
+                            if let tag = selectedTag {
                                 Button("Add by Tag") {
-                                    viewModel.addParticipantsByTag(tag)
+                                    viewModel.addManualSpeakersByTag(tag)
                                 }
                                 .font(.caption)
                             }
@@ -374,7 +341,7 @@ private struct SpeakersSettingsTab: View {
 
 private struct AddFromRegisteredSheet: View {
     let profiles: [StoredSpeakerProfile]
-    let existingParticipantIds: Set<UUID>
+    let existingProfileIds: Set<UUID>
     let onAdd: (UUID) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -402,7 +369,7 @@ private struct AddFromRegisteredSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        if existingParticipantIds.contains(profile.id) {
+                        if existingProfileIds.contains(profile.id) {
                             Text("Added")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -416,6 +383,78 @@ private struct AddFromRegisteredSheet: View {
             }
         }
         .frame(minWidth: 350, minHeight: 300)
+    }
+}
+
+// MARK: - Active Speaker Row
+
+private struct ActiveSpeakerRow: View {
+    let speaker: ActiveSpeaker
+    let onRename: (String) -> Void
+    let onRemove: () -> Void
+
+    @State private var editingName: String
+
+    init(speaker: ActiveSpeaker, onRename: @escaping (String) -> Void, onRemove: @escaping () -> Void) {
+        self.speaker = speaker
+        self.onRename = onRename
+        self.onRemove = onRemove
+        self._editingName = State(initialValue: speaker.displayName ?? "")
+    }
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("Speaker \(speaker.sessionLabel)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    sourceBadge
+                    if speaker.speakerProfileId != nil {
+                        Text("Registered")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.blue.opacity(0.15))
+                            .foregroundStyle(.blue)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    }
+                }
+                TextField("Enter name...", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        onRename(editingName)
+                    }
+            }
+            Spacer()
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+
+    @ViewBuilder
+    private var sourceBadge: some View {
+        switch speaker.source {
+        case .manual:
+            Text("Manual")
+                .font(.caption2)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(.green.opacity(0.15))
+                .foregroundStyle(.green)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        case .autoDetected:
+            Text("Auto")
+                .font(.caption2)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(.orange.opacity(0.15))
+                .foregroundStyle(.orange)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+        }
     }
 }
 
@@ -481,48 +520,6 @@ private struct OutputSettingsTab: View {
         panel.message = "Choose a folder for transcript output"
         if panel.runModal() == .OK, let url = panel.url {
             transcriptsDirectory = url.path
-        }
-    }
-}
-
-// MARK: - Session Speaker Row
-
-private struct SessionSpeakerRow: View {
-    let speaker: TranscriptionViewModel.SessionSpeakerInfo
-    let onRename: (String) -> Void
-
-    @State private var editingName: String
-
-    init(speaker: TranscriptionViewModel.SessionSpeakerInfo, onRename: @escaping (String) -> Void) {
-        self.speaker = speaker
-        self.onRename = onRename
-        self._editingName = State(initialValue: speaker.displayName ?? "")
-    }
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text("Speaker \(speaker.label)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if speaker.storedProfileId != nil {
-                        Text("Registered")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(.blue.opacity(0.15))
-                            .foregroundStyle(.blue)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                    }
-                }
-                TextField("Enter name...", text: $editingName)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        onRename(editingName)
-                    }
-            }
-            Spacer()
         }
     }
 }

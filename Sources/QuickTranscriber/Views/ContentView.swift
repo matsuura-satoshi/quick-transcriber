@@ -163,13 +163,13 @@ public struct ContentView: View {
             availableSpeakers: viewModel.availableSpeakers,
             onReassignBlock: { segmentIndex, newSpeaker, displayName in
                 if let displayName {
-                    viewModel.renameSessionSpeaker(label: newSpeaker, displayName: displayName)
+                    viewModel.renameActiveSpeaker(label: newSpeaker, displayName: displayName)
                 }
                 viewModel.reassignSpeakerForBlock(segmentIndex: segmentIndex, newSpeaker: newSpeaker)
             },
             onReassignSelection: { range, newSpeaker, displayName, map in
                 if let displayName {
-                    viewModel.renameSessionSpeaker(label: newSpeaker, displayName: displayName)
+                    viewModel.renameActiveSpeaker(label: newSpeaker, displayName: displayName)
                 }
                 viewModel.reassignSpeakerForSelection(selectionRange: range, newSpeaker: newSpeaker, segmentMap: map)
             }

@@ -161,39 +161,30 @@ final class SpeakerReassignmentTests: XCTestCase {
 
     // MARK: - availableSpeakers
 
-    func testAvailableSpeakersFromSegments() {
+    func testAvailableSpeakersFromActiveSpeakers() {
         let (vm, _) = makeViewModel()
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7),
-        ]
+        // availableSpeakers now derives from activeSpeakers, not confirmedSegments
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
 
         let speakers = vm.availableSpeakers
-        XCTAssertTrue(speakers.contains { $0.label == "A" })
-        XCTAssertTrue(speakers.contains { $0.label == "B" })
+        XCTAssertTrue(speakers.contains { $0.label == "A" && $0.displayName == "Alice" })
+        XCTAssertTrue(speakers.contains { $0.label == "B" && $0.displayName == "Bob" })
     }
 
-    func testAvailableSpeakersIncludesRegisteredProfiles() {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ReassignTest-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [
-            StoredSpeakerProfile(label: "C", embedding: [Float](repeating: 0.1, count: 256), displayName: "Charlie"),
-        ]
-        try! store.save()
-
-        let engine = MockTranscriptionEngine()
-        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A"),
-        ]
+    func testAvailableSpeakersIncludesAutoDetected() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")
+        // Simulate auto-detected speaker
+        vm.activeSpeakers.append(ActiveSpeaker(
+            sessionLabel: "B",
+            displayName: "Bob",
+            source: .autoDetected
+        ))
 
         let speakers = vm.availableSpeakers
-        XCTAssertTrue(speakers.contains { $0.label == "A" })
-        XCTAssertTrue(speakers.contains { $0.label == "C" && $0.displayName == "Charlie" })
+        XCTAssertTrue(speakers.contains { $0.label == "A" && $0.displayName == "Alice" })
+        XCTAssertTrue(speakers.contains { $0.label == "B" && $0.displayName == "Bob" })
     }
 
     // MARK: - regenerateText

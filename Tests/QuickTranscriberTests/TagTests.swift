@@ -215,7 +215,7 @@ final class TagViewModelTests: XCTestCase {
         XCTAssertEqual(vm.speakerProfiles[0].tags, [])
     }
 
-    func testAddParticipantsByTag() {
+    func testAddManualSpeakersByTag() {
         let (vm, store) = makeViewModel()
         let id1 = UUID()
         let id2 = UUID()
@@ -228,13 +228,13 @@ final class TagViewModelTests: XCTestCase {
         try? store.save()
         vm.speakerProfiles = store.profiles
 
-        vm.addParticipantsByTag("team")
+        vm.addManualSpeakersByTag("team")
 
-        XCTAssertEqual(vm.meetingParticipants.count, 2)
-        XCTAssertEqual(Set(vm.meetingParticipants.map { $0.displayName }), Set(["Alice", "Bob"]))
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+        XCTAssertEqual(Set(vm.activeSpeakers.map { $0.displayName }), Set(["Alice", "Bob"]))
     }
 
-    func testAddParticipantsByTagSkipsDuplicates() {
+    func testAddManualSpeakersByTagSkipsDuplicates() {
         let (vm, store) = makeViewModel()
         let id1 = UUID()
         store.profiles = [
@@ -243,10 +243,10 @@ final class TagViewModelTests: XCTestCase {
         try? store.save()
         vm.speakerProfiles = store.profiles
 
-        vm.addParticipantFromProfile(id1)
-        vm.addParticipantsByTag("team")
+        vm.addManualSpeaker(fromProfile: id1)
+        vm.addManualSpeakersByTag("team")
 
-        XCTAssertEqual(vm.meetingParticipants.count, 1)
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
     }
 
     func testAllTags() {

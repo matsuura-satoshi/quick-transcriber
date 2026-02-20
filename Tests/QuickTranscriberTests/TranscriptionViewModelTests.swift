@@ -714,84 +714,52 @@ final class TranscriptionViewModelTests: XCTestCase {
                       "New file should contain existing text as initial content")
     }
 
-    // MARK: - Session Speakers
+    // MARK: - Available Speakers from Active Speakers
 
-    func testSessionSpeakersReturnsDetectedSpeakers() async {
+    func testAvailableSpeakersFromActiveSpeakers() async {
         let (vm, _) = makeViewModel()
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
-            ConfirmedSegment(text: "World", precedingSilence: 0, speaker: "B"),
-            ConfirmedSegment(text: "Again", precedingSilence: 0, speaker: "A"),
-        ]
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
 
-        let speakers = vm.sessionSpeakers
+        let speakers = vm.availableSpeakers
         XCTAssertEqual(speakers.count, 2)
         XCTAssertEqual(speakers[0].label, "A")
-        XCTAssertEqual(speakers[1].label, "B")
-    }
-
-    func testSessionSpeakersEmptyWhenNoSegments() async {
-        let (vm, _) = makeViewModel()
-        XCTAssertTrue(vm.sessionSpeakers.isEmpty)
-    }
-
-    func testSessionSpeakersIncludesDisplayName() async {
-        let (vm, _) = makeViewModel()
-        vm.labelDisplayNames = ["A": "Alice"]
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
-        ]
-
-        let speakers = vm.sessionSpeakers
         XCTAssertEqual(speakers[0].displayName, "Alice")
+        XCTAssertEqual(speakers[1].label, "B")
+        XCTAssertEqual(speakers[1].displayName, "Bob")
     }
 
-    func testSessionSpeakersIncludesStoredProfileId() async {
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("VMSessionTest-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let id = UUID()
-        let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
-
-        let engine = MockTranscriptionEngine()
-        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
-        ]
-
-        let speakers = vm.sessionSpeakers
-        XCTAssertEqual(speakers[0].storedProfileId, id)
+    func testAvailableSpeakersEmptyWhenNoActiveSpeakers() async {
+        let (vm, _) = makeViewModel()
+        XCTAssertTrue(vm.availableSpeakers.isEmpty)
     }
 
-    // MARK: - Rename Session Speaker
+    // MARK: - Rename Active Speaker
 
-    func testRenameSessionSpeakerUpdatesLabelDisplayNames() async {
+    func testRenameActiveSpeakerUpdatesLabelDisplayNames() async {
         let (vm, _) = makeViewModel()
         vm.confirmedSegments = [
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
         ]
 
-        vm.renameSessionSpeaker(label: "A", displayName: "Alice")
+        vm.renameActiveSpeaker(label: "A", displayName: "Alice")
 
         XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
     }
 
-    func testRenameSessionSpeakerEmptyNameClearsDisplayName() async {
+    func testRenameActiveSpeakerEmptyNameClearsDisplayName() async {
         let (vm, _) = makeViewModel()
         vm.labelDisplayNames = ["A": "Alice"]
         vm.confirmedSegments = [
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
         ]
 
-        vm.renameSessionSpeaker(label: "A", displayName: "")
+        vm.renameActiveSpeaker(label: "A", displayName: "")
 
         XCTAssertNil(vm.labelDisplayNames["A"])
     }
 
-    func testRenameSessionSpeakerUpdatesStoreIfProfileExists() async {
+    func testRenameActiveSpeakerUpdatesStoreIfProfileExists() async {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("VMRenameTest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -808,7 +776,7 @@ final class TranscriptionViewModelTests: XCTestCase {
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
         ]
 
-        vm.renameSessionSpeaker(label: "A", displayName: "Alice")
+        vm.renameActiveSpeaker(label: "A", displayName: "Alice")
 
         XCTAssertEqual(vm.speakerProfiles[0].displayName, "Alice")
     }
