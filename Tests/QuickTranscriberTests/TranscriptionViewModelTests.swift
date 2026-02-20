@@ -929,4 +929,46 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.confirmedSegments[0].text, "Fallback text")
         XCTAssertEqual(vm.confirmedText, "Fallback text")
     }
+
+    // MARK: - Registered Speakers For Menu
+
+    func testAddAndReassignBlockAddsActiveSpeakerAndReassigns() {
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, label: "X", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice")
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "World", speaker: "A")
+        ]
+
+        vm.addAndReassignBlock(profileId: profileId, segmentIndex: 0)
+
+        // Should have added an active speaker
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
+        // Segments in the block should be reassigned to the new label
+        let newLabel = vm.activeSpeakers[0].sessionLabel
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, newLabel)
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, newLabel)
+    }
+
+    func testRegisteredSpeakersForMenuExcludesActiveSpeakers() {
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, label: "A", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice", tags: ["eng"]),
+            StoredSpeakerProfile(id: UUID(), label: "B", embedding: Array(repeating: 0.2, count: 256), displayName: "Bob", tags: [])
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.activeSpeakers = [
+            ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", displayName: "Alice", source: .manual)
+        ]
+        let menuItems = vm.registeredSpeakersForMenu
+        XCTAssertEqual(menuItems.count, 2)
+        XCTAssertTrue(menuItems.first { $0.profileId == profileId }!.isAlreadyActive)
+        XCTAssertFalse(menuItems.first { $0.profileId != profileId }!.isAlreadyActive)
+    }
 }
