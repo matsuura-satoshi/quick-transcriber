@@ -353,6 +353,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         regenerateText()
+        translationService.syncSpeakerMetadata(from: confirmedSegments)
     }
 
     public func reassignSpeakerForSelection(
@@ -422,6 +423,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         regenerateText()
+        translationService.syncSpeakerMetadata(from: confirmedSegments)
     }
 
     public func regenerateText() {

@@ -5,6 +5,7 @@ public struct ContentView: View {
     @ObservedObject var viewModel: TranscriptionViewModel
     @ObservedObject var translationService: TranslationService
     @State private var translationConfig: TranslationSession.Configuration?
+    @State private var translationReady: Bool = false
 
     public init(viewModel: TranscriptionViewModel) {
         self.viewModel = viewModel
@@ -46,19 +47,22 @@ public struct ContentView: View {
         }
         .onChange(of: viewModel.translationEnabled) { _, enabled in
             if enabled {
+                translationReady = false
                 updateTranslationConfig()
             } else {
                 translationConfig = nil
+                translationReady = false
                 translationService.reset()
             }
         }
         .onChange(of: viewModel.currentLanguage) { _, _ in
             if viewModel.translationEnabled {
+                translationReady = false
                 updateTranslationConfig()
             }
         }
         .onChange(of: viewModel.confirmedSegments.count) { _, _ in
-            if viewModel.translationEnabled {
+            if viewModel.translationEnabled && translationReady {
                 translationConfig?.invalidate()
             }
         }
@@ -66,6 +70,9 @@ public struct ContentView: View {
             await translationService.translateNewSegments(
                 viewModel.confirmedSegments, using: session
             )
+            if !translationReady {
+                translationReady = true
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuCopyAll"))) { _ in
             viewModel.copyAllText()
