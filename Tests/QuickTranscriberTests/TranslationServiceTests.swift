@@ -76,4 +76,78 @@ final class TranslationServiceTests: XCTestCase {
     func testInitialState() {
         XCTAssertTrue(service.translatedSegments.isEmpty)
     }
+
+    // MARK: - syncSpeakerMetadata
+
+    func testSyncSpeakerMetadataUpdatesLabels() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "translated1", speaker: "A"),
+            ConfirmedSegment(text: "translated2", speaker: "A"),
+            ConfirmedSegment(text: "translated3", speaker: "B"),
+        ]
+
+        let source = [
+            ConfirmedSegment(text: "original1", speaker: "C", speakerConfidence: 1.0, isUserCorrected: true, originalSpeaker: "A"),
+            ConfirmedSegment(text: "original2", speaker: "C", speakerConfidence: 1.0, isUserCorrected: true, originalSpeaker: "A"),
+            ConfirmedSegment(text: "original3", speaker: "B"),
+        ]
+
+        service.syncSpeakerMetadata(from: source)
+
+        XCTAssertEqual(service.translatedSegments[0].speaker, "C")
+        XCTAssertEqual(service.translatedSegments[0].speakerConfidence, 1.0)
+        XCTAssertTrue(service.translatedSegments[0].isUserCorrected)
+        XCTAssertEqual(service.translatedSegments[0].originalSpeaker, "A")
+
+        XCTAssertEqual(service.translatedSegments[1].speaker, "C")
+        XCTAssertEqual(service.translatedSegments[2].speaker, "B")
+    }
+
+    func testSyncSpeakerMetadataPreservesTranslatedText() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "こんにちは", speaker: "A"),
+        ]
+
+        let source = [
+            ConfirmedSegment(text: "Hello", speaker: "B"),
+        ]
+
+        service.syncSpeakerMetadata(from: source)
+
+        XCTAssertEqual(service.translatedSegments[0].text, "こんにちは")
+        XCTAssertEqual(service.translatedSegments[0].speaker, "B")
+    }
+
+    func testSyncSpeakerMetadataHandlesCountMismatch() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "translated1", speaker: "A"),
+            ConfirmedSegment(text: "translated2", speaker: "A"),
+        ]
+
+        // Source has more segments (e.g. after split)
+        let source = [
+            ConfirmedSegment(text: "original1", speaker: "C"),
+            ConfirmedSegment(text: "original2a", speaker: "C"),
+            ConfirmedSegment(text: "original2b", speaker: "D"),
+        ]
+
+        service.syncSpeakerMetadata(from: source)
+
+        // Only syncs up to min count
+        XCTAssertEqual(service.translatedSegments[0].speaker, "C")
+        XCTAssertEqual(service.translatedSegments[1].speaker, "C")
+        XCTAssertEqual(service.translatedSegments.count, 2)
+    }
+
+    func testSyncSpeakerMetadataWithEmptyTranslation() {
+        service.translatedSegments = []
+
+        let source = [
+            ConfirmedSegment(text: "original", speaker: "A"),
+        ]
+
+        service.syncSpeakerMetadata(from: source)
+
+        XCTAssertTrue(service.translatedSegments.isEmpty)
+    }
 }

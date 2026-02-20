@@ -25,6 +25,8 @@ public final class TranslationService: ObservableObject {
 
             let responses = try await session.translations(from: requests)
 
+            // Batch updates to avoid N separate @Published notifications
+            var updated = translatedSegments
             for response in responses {
                 guard let idStr = response.clientIdentifier,
                       let index = Int(idStr) else { continue }
@@ -43,20 +45,34 @@ public final class TranslationService: ObservableObject {
                 )
 
                 let targetIndex = index
-                if targetIndex < translatedSegments.count {
-                    translatedSegments[targetIndex] = translated
+                if targetIndex < updated.count {
+                    updated[targetIndex] = translated
                 } else {
-                    while translatedSegments.count < targetIndex {
-                        translatedSegments.append(ConfirmedSegment(text: ""))
+                    while updated.count < targetIndex {
+                        updated.append(ConfirmedSegment(text: ""))
                     }
-                    translatedSegments.append(translated)
+                    updated.append(translated)
                 }
             }
+            translatedSegments = updated
 
             translationCursor = startCursor + newSegments.count
         } catch {
             NSLog("[QuickTranscriber] Translation error: \(error)")
         }
+    }
+
+    public func syncSpeakerMetadata(from source: [ConfirmedSegment]) {
+        let count = min(translatedSegments.count, source.count)
+        guard count > 0 else { return }
+        var updated = translatedSegments
+        for i in 0..<count {
+            updated[i].speaker = source[i].speaker
+            updated[i].speakerConfidence = source[i].speakerConfidence
+            updated[i].isUserCorrected = source[i].isUserCorrected
+            updated[i].originalSpeaker = source[i].originalSpeaker
+        }
+        translatedSegments = updated
     }
 
     public func reset() {
