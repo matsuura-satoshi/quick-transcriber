@@ -3,10 +3,12 @@ import Translation
 
 public struct ContentView: View {
     @ObservedObject var viewModel: TranscriptionViewModel
+    @ObservedObject var translationService: TranslationService
     @State private var translationConfig: TranslationSession.Configuration?
 
     public init(viewModel: TranscriptionViewModel) {
         self.viewModel = viewModel
+        self.translationService = viewModel.translationService
     }
 
     public var body: some View {
@@ -38,12 +40,16 @@ public struct ContentView: View {
         .frame(minWidth: viewModel.translationEnabled ? 900 : 600, minHeight: 400)
         .task {
             await viewModel.loadModel()
+            if viewModel.translationEnabled {
+                updateTranslationConfig()
+            }
         }
         .onChange(of: viewModel.translationEnabled) { _, enabled in
             if enabled {
                 updateTranslationConfig()
             } else {
                 translationConfig = nil
+                translationService.reset()
             }
         }
         .onChange(of: viewModel.currentLanguage) { _, _ in
@@ -57,7 +63,7 @@ public struct ContentView: View {
             }
         }
         .translationTask(translationConfig) { session in
-            await viewModel.translationService.translateNewSegments(
+            await translationService.translateNewSegments(
                 viewModel.confirmedSegments, using: session
             )
         }
@@ -166,7 +172,7 @@ public struct ContentView: View {
 
     private var translationArea: some View {
         TranslationTextView(
-            confirmedSegments: viewModel.translationService.translatedSegments,
+            confirmedSegments: translationService.translatedSegments,
             fontSize: viewModel.fontSize,
             language: viewModel.translationTargetLanguage.rawValue,
             silenceThreshold: viewModel.silenceLineBreakThreshold,
