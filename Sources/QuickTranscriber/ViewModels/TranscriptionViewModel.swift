@@ -257,6 +257,19 @@ public final class TranscriptionViewModel: ObservableObject {
         public let displayName: String?
     }
 
+    public var registeredSpeakersForMenu: [RegisteredSpeakerInfo] {
+        let activeIds = Set(activeSpeakers.compactMap { $0.speakerProfileId })
+        return speakerProfileStore.profiles.map {
+            RegisteredSpeakerInfo(
+                profileId: $0.id,
+                label: $0.label,
+                displayName: $0.displayName,
+                tags: $0.tags,
+                isAlreadyActive: activeIds.contains($0.id)
+            )
+        }
+    }
+
     public func renameActiveSpeaker(label: String, displayName: String) {
         labelDisplayNames[label] = displayName.isEmpty ? nil : displayName
         sessionRenamedLabels.insert(label)
