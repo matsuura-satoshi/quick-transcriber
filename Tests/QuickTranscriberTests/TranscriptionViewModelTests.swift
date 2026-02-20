@@ -929,4 +929,23 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.confirmedSegments[0].text, "Fallback text")
         XCTAssertEqual(vm.confirmedText, "Fallback text")
     }
+
+    // MARK: - Registered Speakers For Menu
+
+    func testRegisteredSpeakersForMenuExcludesActiveSpeakers() {
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, label: "A", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice", tags: ["eng"]),
+            StoredSpeakerProfile(id: UUID(), label: "B", embedding: Array(repeating: 0.2, count: 256), displayName: "Bob", tags: [])
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.activeSpeakers = [
+            ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", displayName: "Alice", source: .manual)
+        ]
+        let menuItems = vm.registeredSpeakersForMenu
+        XCTAssertEqual(menuItems.count, 2)
+        XCTAssertTrue(menuItems.first { $0.profileId == profileId }!.isAlreadyActive)
+        XCTAssertFalse(menuItems.first { $0.profileId != profileId }!.isAlreadyActive)
+    }
 }
