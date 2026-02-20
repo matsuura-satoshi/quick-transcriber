@@ -62,6 +62,12 @@ internal class InteractiveTranscriptionTextView: NSTextView {
     internal var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
     internal var onReassignBlock: ((Int, String, String?) -> Void)?
     internal var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
+    internal var registeredSpeakers: [RegisteredSpeakerInfo] = []
+    internal var allTags: [String] = []
+    internal var onAddAndReassignBlock: ((UUID, Int) -> Void)?
+    internal var onAddAndReassignSelection: ((UUID, NSRange, SegmentCharacterMap) -> Void)?
+    private var lastEventLocation: NSPoint = .zero
+    private var currentPopover: NSPopover?
 
     override func mouseDown(with event: NSEvent) {
         guard let map = segmentMap else {
@@ -87,6 +93,7 @@ internal class InteractiveTranscriptionTextView: NSTextView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        lastEventLocation = convert(event.locationInWindow, from: nil)
         let base = super.menu(for: event) ?? NSMenu()
         let range = selectedRange()
 
@@ -113,6 +120,11 @@ internal class InteractiveTranscriptionTextView: NSTextView {
             speakerMenu.addItem(item)
         }
         speakerMenu.addItem(NSMenuItem.separator())
+        if !registeredSpeakers.isEmpty {
+            let addItem = NSMenuItem(title: "Add Speaker...", action: #selector(addSpeakerForSelectionAction(_:)), keyEquivalent: "")
+            addItem.target = self
+            speakerMenu.addItem(addItem)
+        }
         let newItem = NSMenuItem(title: "New Speaker...", action: #selector(newSpeakerForSelectionAction(_:)), keyEquivalent: "")
         newItem.target = self
         speakerMenu.addItem(newItem)
@@ -137,12 +149,19 @@ internal class InteractiveTranscriptionTextView: NSTextView {
             menu.addItem(item)
         }
         menu.addItem(NSMenuItem.separator())
+        if !registeredSpeakers.isEmpty {
+            let addItem = NSMenuItem(title: "Add Speaker...", action: #selector(addSpeakerForBlockAction(_:)), keyEquivalent: "")
+            addItem.target = self
+            addItem.representedObject = firstIdx
+            menu.addItem(addItem)
+        }
         let newItem = NSMenuItem(title: "New Speaker...", action: #selector(newSpeakerForBlockAction(_:)), keyEquivalent: "")
         newItem.target = self
         newItem.representedObject = firstIdx
         menu.addItem(newItem)
 
         let point = convert(event.locationInWindow, from: nil)
+        lastEventLocation = point
         menu.popUp(positioning: nil, at: point, in: self)
     }
 
@@ -206,6 +225,47 @@ internal class InteractiveTranscriptionTextView: NSTextView {
             }
         }
     }
+
+    @objc private func addSpeakerForBlockAction(_ sender: NSMenuItem) {
+        guard let segmentIndex = sender.representedObject as? Int else { return }
+        showAddSpeakerPopover { [weak self] profileId in
+            self?.onAddAndReassignBlock?(profileId, segmentIndex)
+        }
+    }
+
+    @objc private func addSpeakerForSelectionAction(_ sender: NSMenuItem) {
+        guard let map = segmentMap else { return }
+        let range = selectedRange()
+        guard range.length > 0 else { return }
+        showAddSpeakerPopover { [weak self] profileId in
+            self?.onAddAndReassignSelection?(profileId, range, map)
+        }
+    }
+
+    private func showAddSpeakerPopover(onSelect: @escaping (UUID) -> Void) {
+        currentPopover?.close()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentSize = NSSize(width: 260, height: 300)
+
+        let view = AddSpeakerPopover(
+            speakers: registeredSpeakers,
+            allTags: allTags,
+            onSelect: { profileId in
+                onSelect(profileId)
+                popover.close()
+            },
+            onDismiss: {
+                popover.close()
+            }
+        )
+        popover.contentViewController = NSHostingController(rootView: view)
+
+        let rect = NSRect(x: lastEventLocation.x, y: lastEventLocation.y, width: 1, height: 1)
+        popover.show(relativeTo: rect, of: self, preferredEdge: .maxY)
+        currentPopover = popover
+    }
 }
 
 struct TranscriptionTextView: NSViewRepresentable {
@@ -217,8 +277,12 @@ struct TranscriptionTextView: NSViewRepresentable {
     var silenceThreshold: TimeInterval = 1.0
     var labelDisplayNames: [String: String] = [:]
     var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
+    var registeredSpeakers: [RegisteredSpeakerInfo] = []
+    var allTags: [String] = []
     var onReassignBlock: ((Int, String, String?) -> Void)?
     var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
+    var onAddAndReassignBlock: ((UUID, Int) -> Void)?
+    var onAddAndReassignSelection: ((UUID, NSRange, SegmentCharacterMap) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -260,8 +324,12 @@ struct TranscriptionTextView: NSViewRepresentable {
         if let interactiveView = coordinator.textView as? InteractiveTranscriptionTextView {
             interactiveView.confirmedSegments = confirmedSegments
             interactiveView.availableSpeakers = availableSpeakers
+            interactiveView.registeredSpeakers = registeredSpeakers
+            interactiveView.allTags = allTags
             interactiveView.onReassignBlock = onReassignBlock
             interactiveView.onReassignSelection = onReassignSelection
+            interactiveView.onAddAndReassignBlock = onAddAndReassignBlock
+            interactiveView.onAddAndReassignSelection = onAddAndReassignSelection
         }
 
         let newConfirmed = confirmedText
