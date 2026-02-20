@@ -266,4 +266,40 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         // Should NOT restart because autoDetected changes are filtered out
         XCTAssertEqual(engine.startStreamingCallCount, initialCount)
     }
+
+    // MARK: - Manual mode includes auto-detected speakers
+
+    func testManualModePassesAutoDetectedSpeakersToEngine() async throws {
+        let (vm, engine, paramsStore) = makeViewModelWithStore()
+        let profileStore = vm.speakerProfileStore
+        let profile = StoredSpeakerProfile(
+            label: "B",
+            embedding: makeEmbedding(dominant: 1),
+            displayName: "Bob"
+        )
+        profileStore.profiles = [profile]
+
+        // Add an auto-detected speaker with a known profile
+        vm.activeSpeakers.append(ActiveSpeaker(
+            speakerProfileId: profile.id,
+            sessionLabel: "B",
+            displayName: "Bob",
+            source: .autoDetected
+        ))
+
+        paramsStore.parameters.diarizationMode = .manual
+        try await Task.sleep(nanoseconds: 600_000_000)
+
+        await vm.loadModel()
+        vm.toggleRecording()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(vm.isRecording)
+        let profiles = engine.startStreamingParticipantProfiles
+        XCTAssertNotNil(profiles, "Manual mode should pass participant profiles")
+        XCTAssertTrue(
+            profiles?.contains(where: { $0.label == "B" }) == true,
+            "Auto-detected speaker should be included in participant profiles"
+        )
+    }
 }
