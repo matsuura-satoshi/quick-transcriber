@@ -492,6 +492,18 @@ public final class TranscriptionViewModel: ObservableObject {
         sessionRenamedLabels.insert(label)
     }
 
+    public func addAndReassignBlock(profileId: UUID, segmentIndex: Int) {
+        addManualSpeaker(fromProfile: profileId)
+        guard let speaker = activeSpeakers.last(where: { $0.speakerProfileId == profileId }) else { return }
+        reassignSpeakerForBlock(segmentIndex: segmentIndex, newSpeaker: speaker.sessionLabel)
+    }
+
+    public func addAndReassignSelection(profileId: UUID, selectionRange: NSRange, segmentMap: SegmentCharacterMap) {
+        addManualSpeaker(fromProfile: profileId)
+        guard let speaker = activeSpeakers.last(where: { $0.speakerProfileId == profileId }) else { return }
+        reassignSpeakerForSelection(selectionRange: selectionRange, newSpeaker: speaker.sessionLabel, segmentMap: segmentMap)
+    }
+
     public func removeActiveSpeaker(id: UUID) {
         activeSpeakers.removeAll { $0.id == id }
     }
