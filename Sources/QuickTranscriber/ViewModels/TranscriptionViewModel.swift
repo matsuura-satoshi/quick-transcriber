@@ -462,6 +462,12 @@ public final class TranscriptionViewModel: ObservableObject {
         }
     }
 
+    public func addManualSpeakers(profileIds: [UUID]) {
+        for id in profileIds {
+            addManualSpeaker(fromProfile: id)
+        }
+    }
+
     // MARK: - Active Speaker Management
 
     public func addManualSpeaker(fromProfile profileId: UUID) {
