@@ -675,7 +675,7 @@ private struct TagPill: View {
     }
 }
 
-private struct TagFilterPill: View {
+struct TagFilterPill: View {
     let label: String
     let isSelected: Bool
     let action: () -> Void
@@ -694,7 +694,7 @@ private struct TagFilterPill: View {
     }
 }
 
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 4
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
