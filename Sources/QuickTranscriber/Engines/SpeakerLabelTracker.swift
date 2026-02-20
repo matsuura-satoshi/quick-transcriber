@@ -13,8 +13,7 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
 
     // Viterbi state: log-probabilities for each known speaker
     private var stateLogProb: [String: Double] = [:]
-    private var confirmedLabel: String?
-    private var confirmedIdentification: SpeakerIdentification?
+    private var confirmed: SpeakerIdentification?
     private var pendingLabel: String?
     private var pendingCount: Int = 0
 
@@ -28,14 +27,13 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
     ///   speaker change is still being evaluated (pending).
     public func processLabel(_ identification: SpeakerIdentification?) -> SpeakerIdentification? {
         guard let id = identification else {
-            return confirmedIdentification
+            return confirmed
         }
 
         // First speaker: confirm immediately
-        if confirmedLabel == nil {
+        guard let currentConfirmed = confirmed else {
             stateLogProb[id.label] = 0.0
-            confirmedLabel = id.label
-            confirmedIdentification = id
+            confirmed = id
             pendingLabel = nil
             pendingCount = 0
             return id
@@ -75,23 +73,29 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
         // Normalize to prevent underflow
         let maxLogProb = newLogProb.values.max() ?? 0.0
         for key in newLogProb.keys {
-            newLogProb[key]! -= maxLogProb
+            newLogProb[key, default: 0] -= maxLogProb
         }
         stateLogProb = newLogProb
 
         // Find best speaker
-        let bestSpeaker = stateLogProb.max(by: { $0.value < $1.value })!.key
+        guard let bestEntry = stateLogProb.max(by: { $0.value < $1.value }) else {
+            return confirmed
+        }
+        let bestSpeaker = bestEntry.key
 
         // Decision logic
-        if bestSpeaker == confirmedLabel {
+        if bestSpeaker == currentConfirmed.label {
             // Same speaker still winning - return confirmed with updated confidence
-            confirmedIdentification = id.label == confirmedLabel ? id : confirmedIdentification
+            if id.label == currentConfirmed.label {
+                confirmed = id
+            }
             pendingLabel = nil
             pendingCount = 0
+            let active = confirmed ?? currentConfirmed
             return SpeakerIdentification(
-                label: confirmedLabel!,
-                confidence: id.label == confirmedLabel ? id.confidence : confirmedIdentification!.confidence,
-                embedding: id.label == confirmedLabel ? id.embedding : confirmedIdentification?.embedding
+                label: active.label,
+                confidence: id.label == currentConfirmed.label ? id.confidence : active.confidence,
+                embedding: id.label == currentConfirmed.label ? id.embedding : active.embedding
             )
         } else {
             // Different speaker is winning in Viterbi
@@ -104,15 +108,14 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
 
             // Require 1 step of stability before confirming
             if pendingCount >= 2 {
-                confirmedLabel = bestSpeaker
-                confirmedIdentification = SpeakerIdentification(
+                confirmed = SpeakerIdentification(
                     label: bestSpeaker,
                     confidence: id.confidence,
                     embedding: id.embedding
                 )
                 pendingLabel = nil
                 pendingCount = 0
-                return confirmedIdentification
+                return confirmed
             }
 
             return nil  // Pending
@@ -121,8 +124,7 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
 
     public func reset() {
         stateLogProb = [:]
-        confirmedLabel = nil
-        confirmedIdentification = nil
+        confirmed = nil
         pendingLabel = nil
         pendingCount = 0
     }

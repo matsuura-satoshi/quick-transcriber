@@ -36,7 +36,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         }
     }
 
-    private let sampleRate: Int = 16000
+    private let sampleRate: Int = Constants.Audio.sampleRateInt
     private let windowDuration: TimeInterval
     private var rollingBuffer: [Float] = []
     private var diarizer: OfflineDiarizerManager?
@@ -45,7 +45,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
     private let lock = NSLock()
 
     public init(
-        similarityThreshold: Float = 0.5,
+        similarityThreshold: Float = Constants.Embedding.similarityThreshold,
         updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 15.0,
         diarizationChunkDuration: TimeInterval = 7.0,
@@ -61,7 +61,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         )
         self.pacer = DiarizationPacer(
             diarizationChunkDuration: diarizationChunkDuration,
-            sampleRate: 16000
+            sampleRate: Constants.Audio.sampleRateInt
         )
     }
 

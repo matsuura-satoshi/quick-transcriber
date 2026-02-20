@@ -89,7 +89,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         await vm.loadModel()
 
         // Simulate having unconfirmed text when stopping
-        vm.confirmedText = "Hello"
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello")]
         vm.unconfirmedText = "World"
 
         // Start then stop recording
@@ -108,7 +108,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         await vm.loadModel()
 
         // First session
-        vm.confirmedText = "First session text"
+        vm.confirmedSegments = [ConfirmedSegment(text: "First session text")]
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
         vm.toggleRecording() // stop
@@ -131,7 +131,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         let (vm, _) = makeViewModel()
         await vm.loadModel()
 
-        vm.confirmedText = "Some text"
+        vm.confirmedSegments = [ConfirmedSegment(text: "Some text")]
         vm.unconfirmedText = "More text"
 
         vm.clearText()
@@ -148,7 +148,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertTrue(vm.isRecording)
 
-        vm.confirmedText = "Some text"
+        vm.confirmedSegments = [ConfirmedSegment(text: "Some text")]
         vm.clearText()
 
         // clearText internally does: stopTranscription (await) + 100ms sleep + startRecording
@@ -174,7 +174,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         await vm.loadModel()
 
         // Simulate having previous text
-        vm.confirmedText = "Hello world"
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello world")]
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
         vm.toggleRecording() // stop to set previousSessionText
@@ -204,21 +204,20 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     func testDisplayTextConfirmedOnly() {
         let (vm, _) = makeViewModel()
-        vm.confirmedText = "Hello"
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello")]
         vm.unconfirmedText = ""
         XCTAssertEqual(vm.displayText, "Hello")
     }
 
     func testDisplayTextUnconfirmedOnly() {
         let (vm, _) = makeViewModel()
-        vm.confirmedText = ""
         vm.unconfirmedText = "World"
         XCTAssertEqual(vm.displayText, "World")
     }
 
     func testDisplayTextBoth() {
         let (vm, _) = makeViewModel()
-        vm.confirmedText = "Hello"
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello")]
         vm.unconfirmedText = "World"
         XCTAssertEqual(vm.displayText, "Hello\nWorld")
     }
@@ -466,11 +465,13 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         // Previous segments should be preserved and prepended
-        XCTAssertEqual(vm.confirmedSegments.count, 3,
-                       "Should have 2 previous + 1 new segments")
+        // 2 original + 1 promoted unconfirmed ("partial") + 1 new = 4
+        XCTAssertEqual(vm.confirmedSegments.count, 4,
+                       "Should have 2 previous + 1 promoted + 1 new segments")
         XCTAssertEqual(vm.confirmedSegments[0].text, "Hello")
         XCTAssertEqual(vm.confirmedSegments[1].text, "world")
-        XCTAssertEqual(vm.confirmedSegments[2].text, "new text")
+        XCTAssertEqual(vm.confirmedSegments[2].text, "partial")
+        XCTAssertEqual(vm.confirmedSegments[3].text, "new text")
     }
 
     func testClearTextClearsConfirmedSegments() async {
@@ -831,7 +832,6 @@ final class TranscriptionViewModelTests: XCTestCase {
             ConfirmedSegment(text: "Hello", speaker: "A", speakerEmbedding: emb),
             ConfirmedSegment(text: "World", speaker: "A", speakerEmbedding: nil),
         ]
-        vm.confirmedText = "A: Hello World"
 
         vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
 
@@ -865,7 +865,6 @@ final class TranscriptionViewModelTests: XCTestCase {
             ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8, speakerEmbedding: emb),
             ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7, speakerEmbedding: emb),
         ]
-        vm.confirmedText = "A: Hello\nB: World"
 
         // Build a segment map matching "A: Hello\nB: World"
         let (_, segmentMap) = TranscriptionTextView.buildAttributedStringFromSegments(
@@ -896,5 +895,70 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(engine.correctedAssignments.count, 1)
         XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
         XCTAssertEqual(engine.correctedAssignments[0].newLabel, "C")
+    }
+
+    // MARK: - confirmedText as computed property (A-3)
+
+    func testConfirmedTextDerivedFromSegments() {
+        let (vm, _) = makeViewModel()
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0),
+            ConfirmedSegment(text: "world", precedingSilence: 0.5),
+        ]
+        // English: space-separated (precedingSilence < threshold)
+        XCTAssertEqual(vm.confirmedText, "Hello world")
+    }
+
+    func testConfirmedTextReflectsDisplayNames() {
+        let (vm, _) = makeViewModel()
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", precedingSilence: 0, speaker: "B", speakerConfidence: 0.7),
+        ]
+        vm.labelDisplayNames = ["A": "Alice", "B": "Bob"]
+        XCTAssertTrue(vm.confirmedText.contains("Alice:"))
+        XCTAssertTrue(vm.confirmedText.contains("Bob:"))
+    }
+
+    func testConfirmedTextEmptyWhenNoSegments() {
+        let (vm, _) = makeViewModel()
+        XCTAssertEqual(vm.confirmedText, "")
+    }
+
+    func testSaveUnconfirmedAddsSegment() async {
+        let (vm, _) = makeViewModel()
+        await vm.loadModel()
+
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello")]
+        vm.unconfirmedText = "World"
+
+        // Stop recording to trigger saveUnconfirmedText
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        vm.toggleRecording() // stop
+
+        XCTAssertEqual(vm.unconfirmedText, "")
+        XCTAssertTrue(vm.confirmedSegments.contains { $0.text == "World" },
+                      "Unconfirmed text should be promoted to a segment")
+    }
+
+    func testStateCallbackFallbackCreatesSegment() async {
+        let (vm, engine) = makeViewModel()
+        await vm.loadModel()
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Send state with text but no segments (backward compat)
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Fallback text",
+            unconfirmedText: "",
+            isRecording: true
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.confirmedSegments.count, 1)
+        XCTAssertEqual(vm.confirmedSegments[0].text, "Fallback text")
+        XCTAssertEqual(vm.confirmedText, "Fallback text")
     }
 }

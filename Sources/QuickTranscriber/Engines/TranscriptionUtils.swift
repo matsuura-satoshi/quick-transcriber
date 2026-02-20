@@ -126,7 +126,8 @@ public enum TranscriptionUtils {
     /// Metadata-based filter: returns true if segment should be filtered out.
     /// Filters when noSpeechProb > 0.7 AND avgLogprob < -1.5 (likely noise hallucination).
     public static func shouldFilterByMetadata(_ segment: TranscribedSegment) -> Bool {
-        return segment.noSpeechProb > 0.7 && segment.avgLogprob < -1.5
+        return segment.noSpeechProb > Constants.QualityFilter.noSpeechProbThreshold
+            && segment.avgLogprob < Constants.QualityFilter.avgLogprobThreshold
     }
 
     /// Combined filter: returns true if segment should be filtered out.

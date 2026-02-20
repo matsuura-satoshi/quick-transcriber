@@ -56,12 +56,12 @@ private class BlockReassignInfo: NSObject {
     }
 }
 
-class InteractiveTranscriptionTextView: NSTextView {
-    var segmentMap: SegmentCharacterMap?
-    var confirmedSegments: [ConfirmedSegment] = []
-    var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
-    var onReassignBlock: ((Int, String, String?) -> Void)?
-    var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
+internal class InteractiveTranscriptionTextView: NSTextView {
+    internal var segmentMap: SegmentCharacterMap?
+    internal var confirmedSegments: [ConfirmedSegment] = []
+    internal var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
+    internal var onReassignBlock: ((Int, String, String?) -> Void)?
+    internal var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
 
     override func mouseDown(with event: NSEvent) {
         guard let map = segmentMap else {
@@ -373,7 +373,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
     // MARK: - Segment-Based Rendering
 
-    private static let lowConfidenceThreshold: Float = 0.5
+    private static let lowConfidenceThreshold: Float = Constants.Embedding.similarityThreshold
 
     /// Build an NSAttributedString from segments, coloring speaker labels by confidence.
     /// Mirrors the logic of TranscriptionUtils.joinSegments but produces attributed text.

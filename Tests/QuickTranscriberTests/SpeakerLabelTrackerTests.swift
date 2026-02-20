@@ -229,6 +229,64 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
         XCTAssertEqual(textAfterConfirm, "A: Hello\nB: New topic More talk")
     }
 
+    // MARK: - Empty state safety (S-1: force unwrap removal)
+
+    func testProcessLabelAfterResetDoesNotCrash() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.processLabel(id("A"))
+        _ = smoother.processLabel(id("B", 0.8))
+        smoother.reset()
+        // After reset, should handle new input safely
+        let result = smoother.processLabel(id("C"))
+        XCTAssertEqual(result?.label, "C")
+    }
+
+    func testProcessLabelWithVeryLowConfidence() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Confidence at minimum clamp boundary (0.01)
+        let result = smoother.processLabel(SpeakerIdentification(label: "A", confidence: 0.001))
+        XCTAssertEqual(result?.label, "A")
+    }
+
+    func testProcessLabelWithVeryHighConfidence() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Confidence at maximum clamp boundary (0.99)
+        let result = smoother.processLabel(SpeakerIdentification(label: "A", confidence: 1.0))
+        XCTAssertEqual(result?.label, "A")
+    }
+
+    func testRapidSpeakerAlternation() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.processLabel(id("A"))
+        // Rapid alternation should not crash
+        for _ in 0..<20 {
+            _ = smoother.processLabel(id("B", 0.5))
+            _ = smoother.processLabel(id("A", 0.5))
+        }
+        let result = smoother.processLabel(id("A", 0.9))
+        XCTAssertNotNil(result)
+    }
+
+    func testManySpeakers() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Register many speakers — should not crash due to state complexity
+        _ = smoother.processLabel(id("A"))
+        for i in 1..<10 {
+            let label = String(UnicodeScalar(65 + i)!)
+            _ = smoother.processLabel(id(label, 0.95))
+            _ = smoother.processLabel(id(label, 0.95))
+            _ = smoother.processLabel(id(label, 0.95))
+        }
+        // Returning to A may require confirmation steps with many speakers
+        _ = smoother.processLabel(id("A", 0.95))
+        _ = smoother.processLabel(id("A", 0.95))
+        let result = smoother.processLabel(id("A", 0.95))
+        // Either confirmed back to A or still pending — no crash is the key assertion
+        if let result {
+            XCTAssertEqual(result.label, "A")
+        }
+    }
+
     // MARK: - Integration: false alarm pipeline
 
     func testIntegrationFalseAlarm() {

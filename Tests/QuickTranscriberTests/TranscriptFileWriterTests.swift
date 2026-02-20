@@ -259,6 +259,46 @@ final class TranscriptFileWriterTests: XCTestCase {
         writer.endSession()
     }
 
+    // MARK: - Safety improvements (S-4)
+
+    func testDeinitClosesFileHandle() {
+        var writer: TranscriptFileWriter? = makeWriter()
+        writer!.startSession(language: .english, initialText: "Deinit test")
+        writer!.updateText("Deinit test with more")
+        // Don't call endSession — deinit should handle it
+        writer = nil
+
+        let files = try! FileManager.default.contentsOfDirectory(
+            at: tmpDir, includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent != symlinkName }
+        XCTAssertEqual(files.count, 1)
+        let content = try! String(contentsOf: files[0], encoding: .utf8)
+        XCTAssertTrue(content.contains("Deinit test with more"))
+    }
+
+    func testSynchronizePreservesDataOnDeltaAppend() {
+        let writer = makeWriter()
+        writer.startSession(language: .english, initialText: "")
+        writer.updateText("Line 1")
+        writer.updateText("Line 1\nLine 2")
+
+        // Read immediately — synchronize should ensure data is flushed
+        let content = try! String(contentsOf: symlinkURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("Line 2"))
+
+        writer.endSession()
+    }
+
+    func testUpdateTextAfterEndSessionIsNoOp() {
+        let writer = makeWriter()
+        writer.startSession(language: .english, initialText: "Initial")
+        writer.endSession()
+        writer.updateText("After end")
+
+        let content = try! String(contentsOf: symlinkURL, encoding: .utf8)
+        XCTAssertFalse(content.contains("After end"))
+    }
+
     func testExplicitDirectoryOverridesUserDefaults() {
         let customDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("CustomTranscripts-\(UUID().uuidString)")

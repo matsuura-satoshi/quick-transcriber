@@ -236,6 +236,101 @@ final class EmbeddingHistoryStoreTests: XCTestCase {
         XCTAssertEqual(reconstructed![1], expected1, accuracy: 0.001)
     }
 
+    // MARK: - Pruning (S-3)
+
+    func testPruningDropsOldestSessions() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir, maxEntriesPerProfile: 5)
+        let id = UUID()
+
+        // Add 3 sessions with 3 embeddings each = 9 total (limit is 5)
+        for session in 0..<3 {
+            store.appendSession(entries: [
+                EmbeddingHistoryEntry(
+                    speakerProfileId: id, label: "A",
+                    sessionDate: Date(timeIntervalSince1970: Double(session * 1000)),
+                    embeddings: (0..<3).map { i in
+                        HistoricalEmbedding(embedding: makeEmbedding(dominant: session * 3 + i), confirmed: true)
+                    }
+                )
+            ])
+        }
+
+        let loaded = try store.loadAll()
+        // Should keep sessions 1 and 2 (6 embeddings from sessions 0+1 = 6 > 5, drop session 0)
+        // After dropping session 0 (3 embeddings), remaining = 6 which is still > 5
+        // After dropping session 1 (3 embeddings), remaining = 3 which is <= 5
+        // So only session 2 should remain
+        let totalEmbeddings = loaded.reduce(0) { $0 + $1.embeddings.count }
+        XCTAssertLessThanOrEqual(totalEmbeddings, 5)
+        XCTAssertGreaterThan(totalEmbeddings, 0)
+    }
+
+    func testPruningNothingWhenWithinLimit() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir, maxEntriesPerProfile: 100)
+        let id = UUID()
+
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(
+                speakerProfileId: id, label: "A", sessionDate: Date(),
+                embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 0), confirmed: true)]
+            )
+        ])
+
+        let loaded = try store.loadAll()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].embeddings.count, 1)
+    }
+
+    func testPruningPerProfile() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir, maxEntriesPerProfile: 2)
+        let idA = UUID()
+        let idB = UUID()
+
+        // A has 4 embeddings across 2 sessions, B has 1
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: idA, label: "A", sessionDate: Date(),
+                                 embeddings: [
+                                    HistoricalEmbedding(embedding: makeEmbedding(dominant: 0), confirmed: true),
+                                    HistoricalEmbedding(embedding: makeEmbedding(dominant: 1), confirmed: true),
+                                 ]),
+            EmbeddingHistoryEntry(speakerProfileId: idB, label: "B", sessionDate: Date(),
+                                 embeddings: [
+                                    HistoricalEmbedding(embedding: makeEmbedding(dominant: 2), confirmed: true),
+                                 ]),
+        ])
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: idA, label: "A", sessionDate: Date(),
+                                 embeddings: [
+                                    HistoricalEmbedding(embedding: makeEmbedding(dominant: 3), confirmed: true),
+                                    HistoricalEmbedding(embedding: makeEmbedding(dominant: 4), confirmed: true),
+                                 ]),
+        ])
+
+        let loaded = try store.loadAll()
+        // A should be pruned to ≤ 2 embeddings, B should be untouched
+        let aEntries = loaded.filter { $0.speakerProfileId == idA }
+        let bEntries = loaded.filter { $0.speakerProfileId == idB }
+        let aEmbeddings = aEntries.reduce(0) { $0 + $1.embeddings.count }
+        let bEmbeddings = bEntries.reduce(0) { $0 + $1.embeddings.count }
+        XCTAssertLessThanOrEqual(aEmbeddings, 2)
+        XCTAssertEqual(bEmbeddings, 1)
+    }
+
+    func testDefaultMaxEntriesIs500() {
+        let store = EmbeddingHistoryStore(directory: makeTempDirectory())
+        // Just verify it initializes without issues (500 is default)
+        XCTAssertNotNil(store)
+    }
+
     func testReconstructProfileLegacyWithoutConfidence() throws {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

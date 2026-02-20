@@ -18,7 +18,7 @@ public struct ChunkAccumulator {
     /// Minimum chunk duration in seconds (won't cut shorter than this).
     public var minimumChunkDuration: TimeInterval
 
-    private let sampleRate: Double = 16000.0
+    private let sampleRate: Double = Constants.Audio.sampleRate
     private var buffer: [Float] = []
     /// Duration of continuous silence at the end of buffer, in seconds.
     private var trailingSilenceDuration: TimeInterval = 0

@@ -152,7 +152,11 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 }
                 if !filteredProfiles.isEmpty {
                     store.mergeSessionProfiles(filteredProfiles)
-                    try? store.save()
+                    do {
+                        try store.save()
+                    } catch {
+                        NSLog("[ChunkedWhisperEngine] Failed to save speaker profiles: \(error)")
+                    }
                     NSLog("[ChunkedWhisperEngine] Saved \(filteredProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - filteredProfiles.count))")
                 }
             }
@@ -209,14 +213,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     /// RMS energy threshold for skipping silent chunks.
     /// Lower than ChunkAccumulator.silenceEnergyThreshold (0.01) to be more conservative.
-    private static let silenceSkipThreshold: Float = 0.005
+    private static let silenceSkipThreshold: Float = Constants.Audio.silenceSkipThreshold
 
     private func processChunk(
         _ chunkResult: ChunkResult,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async {
         let chunk = chunkResult.samples
-        let chunkDuration = Double(chunk.count) / 16000.0
+        let chunkDuration = Double(chunk.count) / Constants.Audio.sampleRate
         let energy = ChunkAccumulator.rmsEnergy(of: chunk)
 
         if energy < Self.silenceSkipThreshold {

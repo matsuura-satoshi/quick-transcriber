@@ -8,7 +8,7 @@ public final class SpeakerProfileStore {
     private let fileURL: URL
     public var profiles: [StoredSpeakerProfile] = []
 
-    private let mergeThreshold: Float = 0.5
+    private let mergeThreshold: Float = Constants.Embedding.similarityThreshold
     private let updateAlpha: Float = 0.3
 
     public init(directory: URL? = nil) {

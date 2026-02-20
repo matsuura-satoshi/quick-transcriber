@@ -6,7 +6,7 @@ public final class AVAudioCaptureService: AudioCaptureService {
     public private(set) var isCapturing = false
 
     /// Target format: 16kHz mono Float32
-    private static let targetSampleRate: Double = 16000.0
+    private static let targetSampleRate: Double = Constants.Audio.sampleRate
     /// Requested buffer size for tap (~100ms at 48kHz). Actual size may vary.
     private static let bufferFrameCount: AVAudioFrameCount = 4800
 

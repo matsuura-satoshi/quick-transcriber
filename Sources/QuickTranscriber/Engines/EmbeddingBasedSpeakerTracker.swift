@@ -57,7 +57,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     ///   - updateAlpha: Unused, kept for backward compatibility (default: 0.3)
     ///   - expectedSpeakerCount: Maximum number of speakers to track (nil = unlimited)
     ///   - strategy: Profile maintenance strategy (default: .none)
-    public init(similarityThreshold: Float = 0.5, updateAlpha: Float = 0.3,
+    public init(similarityThreshold: Float = Constants.Embedding.similarityThreshold, updateAlpha: Float = 0.3,
                 expectedSpeakerCount: Int? = nil, strategy: ProfileStrategy = .none) {
         self.similarityThreshold = similarityThreshold
         self.updateAlpha = updateAlpha

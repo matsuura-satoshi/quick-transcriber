@@ -12,7 +12,6 @@ public enum ModelState: Equatable {
 
 @MainActor
 public final class TranscriptionViewModel: ObservableObject {
-    @Published public var confirmedText: String = ""
     @Published public var unconfirmedText: String = ""
     @Published public var isRecording: Bool = false
     @Published public var currentLanguage: Language = {
@@ -26,6 +25,16 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var fontSize: CGFloat = 15.0
     @Published public var confirmedSegments: [ConfirmedSegment] = [] {
         didSet { sessionSpeakerCache = nil }
+    }
+
+    public var confirmedText: String {
+        guard !confirmedSegments.isEmpty else { return "" }
+        return TranscriptionUtils.joinSegments(
+            confirmedSegments,
+            language: currentLanguage.rawValue,
+            silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
+            labelDisplayNames: labelDisplayNames
+        )
     }
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
     @Published public var labelDisplayNames: [String: String] = [:]
@@ -47,7 +56,6 @@ public final class TranscriptionViewModel: ObservableObject {
     private let speakerProfileStore: SpeakerProfileStore
     private let fileWriter: TranscriptFileWriter
     private var fileSessionActive: Bool = false
-    private var previousSessionText: String = ""
     private var previousSessionSegments: [ConfirmedSegment] = []
     private var sessionRenamedLabels: Set<String> = []
     private var sessionSpeakerCache: [SessionSpeakerInfo]?
@@ -64,7 +72,11 @@ public final class TranscriptionViewModel: ObservableObject {
         let resolvedStore = parametersStore ?? ParametersStore.shared
         let profileStore = speakerProfileStore ?? {
             let store = SpeakerProfileStore()
-            try? store.load()
+            do {
+                try store.load()
+            } catch {
+                NSLog("[QuickTranscriber] Failed to load speaker profiles: \(error)")
+            }
             return store
         }()
         self.speakerProfileStore = profileStore
@@ -144,17 +156,15 @@ public final class TranscriptionViewModel: ObservableObject {
             isRecording = false
         }
 
-        if !previousSessionText.isEmpty {
+        if !previousSessionSegments.isEmpty {
             let previousLang = currentLanguage.displayName
             let newLang = language.displayName
-            previousSessionText += "\n--- \(previousLang) → \(newLang) ---\n"
-            confirmedText = previousSessionText
             previousSessionSegments.append(ConfirmedSegment(
                 text: "--- \(previousLang) → \(newLang) ---",
                 precedingSilence: 1.0
             ))
             confirmedSegments = previousSessionSegments
-            fileWriter.updateText(resolvedFileText())
+            fileWriter.updateText(confirmedText)
         }
 
         currentLanguage = language
@@ -177,9 +187,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
         fileWriter.endSession()
         fileSessionActive = false
-        previousSessionText = ""
         previousSessionSegments = []
-        confirmedText = ""
         confirmedSegments = []
         unconfirmedText = ""
         meetingParticipants = []
@@ -257,7 +265,7 @@ public final class TranscriptionViewModel: ObservableObject {
             var storedProfile: StoredSpeakerProfile?
             if let emb = segment.speakerEmbedding {
                 storedProfile = speakerProfileStore.profiles.first { profile in
-                    EmbeddingBasedSpeakerTracker.cosineSimilarity(emb, profile.embedding) >= 0.5
+                    EmbeddingBasedSpeakerTracker.cosineSimilarity(emb, profile.embedding) >= Constants.Embedding.similarityThreshold
                 }
             }
             if storedProfile == nil {
@@ -277,7 +285,11 @@ public final class TranscriptionViewModel: ObservableObject {
         labelDisplayNames[label] = displayName.isEmpty ? nil : displayName
         sessionRenamedLabels.insert(label)
         if let profile = speakerProfileStore.profiles.first(where: { $0.label == label }) {
-            try? speakerProfileStore.rename(id: profile.id, to: displayName)
+            do {
+                try speakerProfileStore.rename(id: profile.id, to: displayName)
+            } catch {
+                NSLog("[QuickTranscriber] Failed to rename session speaker '\(label)': \(error)")
+            }
             speakerProfiles = speakerProfileStore.profiles
         }
         regenerateText()
@@ -326,6 +338,18 @@ public final class TranscriptionViewModel: ObservableObject {
         confirmedSegments.replaceSubrange(index...index, with: [first, second])
     }
 
+    private func reassignSegment(at index: Int, to newSpeaker: String) {
+        guard index < confirmedSegments.count else { return }
+        let originalSpeaker = confirmedSegments[index].speaker
+        if let embedding = confirmedSegments[index].speakerEmbedding, let oldLabel = originalSpeaker {
+            service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
+        }
+        confirmedSegments[index].originalSpeaker = originalSpeaker
+        confirmedSegments[index].speaker = newSpeaker
+        confirmedSegments[index].speakerConfidence = 1.0
+        confirmedSegments[index].isUserCorrected = true
+    }
+
     public func reassignSpeakerForBlock(segmentIndex: Int, newSpeaker: String) {
         guard segmentIndex < confirmedSegments.count else { return }
         let targetSpeaker = confirmedSegments[segmentIndex].speaker
@@ -341,15 +365,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         for i in startIdx...endIdx {
-            let originalSpeaker = confirmedSegments[i].speaker
-            // Update tracker profiles for real-time correction feedback
-            if let embedding = confirmedSegments[i].speakerEmbedding, let oldLabel = originalSpeaker {
-                service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
-            }
-            confirmedSegments[i].originalSpeaker = originalSpeaker
-            confirmedSegments[i].speaker = newSpeaker
-            confirmedSegments[i].speakerConfidence = 1.0
-            confirmedSegments[i].isUserCorrected = true
+            reassignSegment(at: i, to: newSpeaker)
         }
 
         regenerateText()
@@ -378,14 +394,7 @@ public final class TranscriptionViewModel: ObservableObject {
 
             if overlapStart <= charRange.location && overlapEnd >= NSMaxRange(charRange) {
                 // Fully selected — just reassign
-                let originalSpeaker = confirmedSegments[idx].speaker
-                if let embedding = confirmedSegments[idx].speakerEmbedding, let oldLabel = originalSpeaker {
-                    service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
-                }
-                confirmedSegments[idx].originalSpeaker = originalSpeaker
-                confirmedSegments[idx].speaker = newSpeaker
-                confirmedSegments[idx].speakerConfidence = 1.0
-                confirmedSegments[idx].isUserCorrected = true
+                reassignSegment(at: idx, to: newSpeaker)
             } else {
                 // Partially selected — need to split
                 let localStart = overlapStart - charRange.location
@@ -400,24 +409,9 @@ public final class TranscriptionViewModel: ObservableObject {
                 if localStart > 0 {
                     splitSegment(at: splitIdx, offset: localStart)
                     // The selected portion is now at splitIdx + 1
-                    let targetIdx = splitIdx + 1
-                    let originalSpeaker = confirmedSegments[targetIdx].speaker
-                    if let embedding = confirmedSegments[targetIdx].speakerEmbedding, let oldLabel = originalSpeaker {
-                        service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
-                    }
-                    confirmedSegments[targetIdx].originalSpeaker = originalSpeaker
-                    confirmedSegments[targetIdx].speaker = newSpeaker
-                    confirmedSegments[targetIdx].speakerConfidence = 1.0
-                    confirmedSegments[targetIdx].isUserCorrected = true
+                    reassignSegment(at: splitIdx + 1, to: newSpeaker)
                 } else {
-                    let originalSpeaker = confirmedSegments[splitIdx].speaker
-                    if let embedding = confirmedSegments[splitIdx].speakerEmbedding, let oldLabel = originalSpeaker {
-                        service.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newSpeaker)
-                    }
-                    confirmedSegments[splitIdx].originalSpeaker = originalSpeaker
-                    confirmedSegments[splitIdx].speaker = newSpeaker
-                    confirmedSegments[splitIdx].speakerConfidence = 1.0
-                    confirmedSegments[splitIdx].isUserCorrected = true
+                    reassignSegment(at: splitIdx, to: newSpeaker)
                 }
             }
         }
@@ -427,25 +421,27 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func regenerateText() {
-        confirmedText = TranscriptionUtils.joinSegments(
-            confirmedSegments,
-            language: currentLanguage.rawValue,
-            silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
-            labelDisplayNames: labelDisplayNames
-        )
-        fileWriter.updateText(resolvedFileText())
+        fileWriter.updateText(confirmedText)
     }
 
     // MARK: - Speaker Profile Management
 
     public func renameSpeaker(id: UUID, to name: String) {
-        try? speakerProfileStore.rename(id: id, to: name)
+        do {
+            try speakerProfileStore.rename(id: id, to: name)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to rename speaker \(id): \(error)")
+        }
         speakerProfiles = speakerProfileStore.profiles
         labelDisplayNames = speakerProfileStore.labelDisplayNames
     }
 
     public func deleteSpeaker(id: UUID) {
-        try? speakerProfileStore.delete(id: id)
+        do {
+            try speakerProfileStore.delete(id: id)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to delete speaker \(id): \(error)")
+        }
         speakerProfiles = speakerProfileStore.profiles
         labelDisplayNames = speakerProfileStore.labelDisplayNames
     }
@@ -467,12 +463,20 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func addTag(_ tag: String, to profileId: UUID) {
-        try? speakerProfileStore.addTag(tag, to: profileId)
+        do {
+            try speakerProfileStore.addTag(tag, to: profileId)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to add tag '\(tag)' to profile \(profileId): \(error)")
+        }
         speakerProfiles = speakerProfileStore.profiles
     }
 
     public func removeTag(_ tag: String, from profileId: UUID) {
-        try? speakerProfileStore.removeTag(tag, from: profileId)
+        do {
+            try speakerProfileStore.removeTag(tag, from: profileId)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to remove tag '\(tag)' from profile \(profileId): \(error)")
+        }
         speakerProfiles = speakerProfileStore.profiles
     }
 
@@ -562,7 +566,6 @@ public final class TranscriptionViewModel: ObservableObject {
             participantProfiles = nil
         }
 
-        let sessionPrefix = self.previousSessionText
         let sessionSegments = self.previousSessionSegments
         Task {
             do {
@@ -574,28 +577,25 @@ public final class TranscriptionViewModel: ObservableObject {
                     NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
                         guard let self else { return }
-                        if sessionPrefix.isEmpty {
-                            self.confirmedText = state.confirmedText
-                        } else if state.confirmedText.isEmpty {
-                            self.confirmedText = sessionPrefix
-                        } else {
-                            self.confirmedText = sessionPrefix + "\n" + state.confirmedText
-                        }
                         self.unconfirmedText = state.unconfirmedText
+                        // Derive segments from text if engine didn't provide them
+                        var stateSegments = state.confirmedSegments
+                        if stateSegments.isEmpty && !state.confirmedText.isEmpty {
+                            stateSegments = [ConfirmedSegment(text: state.confirmedText)]
+                        }
                         let newSegments: [ConfirmedSegment]
                         if sessionSegments.isEmpty {
-                            newSegments = state.confirmedSegments
-                        } else if state.confirmedSegments.isEmpty {
+                            newSegments = stateSegments
+                        } else if stateSegments.isEmpty {
                             newSegments = sessionSegments
                         } else {
-                            newSegments = sessionSegments + state.confirmedSegments
+                            newSegments = sessionSegments + stateSegments
                         }
                         self.confirmedSegments = Self.mergePreservingUserCorrections(
                             existing: self.confirmedSegments,
                             incoming: newSegments
                         )
-                        let fileText = self.resolvedFileText()
-                        self.fileWriter.updateText(fileText)
+                        self.fileWriter.updateText(self.confirmedText)
                     }
                 }
             } catch {
@@ -607,13 +607,13 @@ public final class TranscriptionViewModel: ObservableObject {
 
     private func saveUnconfirmedText() {
         if !unconfirmedText.isEmpty {
-            if !confirmedText.isEmpty {
-                confirmedText += "\n"
-            }
-            confirmedText += unconfirmedText
+            let silence = confirmedSegments.isEmpty ? 0.0 : parametersStore.parameters.silenceLineBreakThreshold
+            confirmedSegments.append(ConfirmedSegment(
+                text: unconfirmedText,
+                precedingSilence: silence
+            ))
             unconfirmedText = ""
         }
-        previousSessionText = confirmedText
         previousSessionSegments = confirmedSegments
     }
 
@@ -634,7 +634,7 @@ public final class TranscriptionViewModel: ObservableObject {
     private func stopRecording() {
         isRecording = false
         saveUnconfirmedText()
-        fileWriter.updateText(resolvedFileText())
+        fileWriter.updateText(confirmedText)
         let pendingNames = self.labelDisplayNames
         let renamedLabels = self.sessionRenamedLabels
         let participants = self.meetingParticipants
@@ -644,7 +644,11 @@ public final class TranscriptionViewModel: ObservableObject {
             for (label, name) in pendingNames {
                 guard renamedLabels.contains(label) else { continue }
                 if let profile = self.speakerProfileStore.profiles.first(where: { $0.label == label }) {
-                    try? self.speakerProfileStore.rename(id: profile.id, to: name)
+                    do {
+                        try self.speakerProfileStore.rename(id: profile.id, to: name)
+                    } catch {
+                        NSLog("[QuickTranscriber] Failed to rename speaker '\(label)' on stop: \(error)")
+                    }
                 }
             }
             // Apply display names from new participants (no embedding yet) to newly created profiles
@@ -652,7 +656,11 @@ public final class TranscriptionViewModel: ObservableObject {
                 if let newProfile = self.speakerProfileStore.profiles.first(where: {
                     $0.label == participant.assignedLabel && ($0.displayName == nil || $0.displayName!.isEmpty)
                 }) {
-                    try? self.speakerProfileStore.rename(id: newProfile.id, to: participant.displayName)
+                    do {
+                        try self.speakerProfileStore.rename(id: newProfile.id, to: participant.displayName)
+                    } catch {
+                        NSLog("[QuickTranscriber] Failed to rename new participant '\(participant.displayName)': \(error)")
+                    }
                 }
             }
             self.speakerProfiles = self.speakerProfileStore.profiles
@@ -660,15 +668,4 @@ public final class TranscriptionViewModel: ObservableObject {
         }
     }
 
-    private func resolvedFileText() -> String {
-        guard !confirmedSegments.isEmpty, !labelDisplayNames.isEmpty else {
-            return confirmedText
-        }
-        return TranscriptionUtils.joinSegments(
-            confirmedSegments,
-            language: currentLanguage.rawValue,
-            silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
-            labelDisplayNames: labelDisplayNames
-        )
-    }
 }

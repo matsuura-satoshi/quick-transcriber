@@ -80,7 +80,7 @@ public final class TranscriptFileWriter {
     }
 
     public func updateText(_ newText: String) {
-        guard let fileHandle = fileHandle, currentFileURL != nil else { return }
+        guard let fileHandle = fileHandle, let fileURL = currentFileURL else { return }
 
         if newText == lastWrittenText { return }
 
@@ -90,6 +90,7 @@ public final class TranscriptFileWriter {
             if let data = delta.data(using: .utf8) {
                 do {
                     try fileHandle.write(contentsOf: data)
+                    try fileHandle.synchronize()
                 } catch {
                     NSLog("[QuickTranscriber] TranscriptFileWriter: write error: \(error)")
                 }
@@ -98,10 +99,10 @@ public final class TranscriptFileWriter {
             // Prefix mismatch — rewrite file preserving frontmatter
             let content = frontmatter + newText
             do {
-                try content.write(to: currentFileURL!, atomically: true, encoding: .utf8)
+                try content.write(to: fileURL, atomically: true, encoding: .utf8)
                 // Reopen file handle at end
                 self.fileHandle?.closeFile()
-                self.fileHandle = try FileHandle(forWritingTo: currentFileURL!)
+                self.fileHandle = try FileHandle(forWritingTo: fileURL)
                 self.fileHandle?.seekToEndOfFile()
             } catch {
                 NSLog("[QuickTranscriber] TranscriptFileWriter: rewrite error: \(error)")
@@ -118,6 +119,10 @@ public final class TranscriptFileWriter {
         currentSessionDirectory = nil
         lastWrittenText = ""
         frontmatter = ""
+    }
+
+    deinit {
+        endSession()
     }
 
     private func updateSymlink(at symlinkURL: URL, to target: URL) {
