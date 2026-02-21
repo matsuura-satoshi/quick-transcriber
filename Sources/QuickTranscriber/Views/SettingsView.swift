@@ -312,25 +312,27 @@ private struct SpeakersSettingsTab: View {
                     }
                 }
 
-                ForEach(filteredProfiles, id: \.id) { profile in
-                    SpeakerProfileRow(
-                        profile: profile,
-                        allTags: viewModel.allTags,
-                        onRename: { name in
-                            viewModel.renameSpeaker(id: profile.id, to: name)
-                        },
-                        onDelete: {
-                            viewModel.deleteSpeaker(id: profile.id)
-                        },
-                        onAddTag: { tag in
-                            viewModel.addTag(tag, to: profile.id)
-                        },
-                        onRemoveTag: { tag in
-                            viewModel.removeTag(tag, from: profile.id)
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filteredProfiles, id: \.id) { profile in
+                            DisclosureGroup {
+                                SpeakerProfileDetailView(
+                                    profile: profile,
+                                    allTags: viewModel.allTags,
+                                    onRename: { name in viewModel.renameSpeaker(id: profile.id, to: name) },
+                                    onDelete: { viewModel.deleteSpeaker(id: profile.id) },
+                                    onAddTag: { tag in viewModel.addTag(tag, to: profile.id) },
+                                    onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) }
+                                )
+                            } label: {
+                                SpeakerProfileSummaryView(profile: profile)
+                            }
+                            Divider()
                         }
-                    )
-                    .id("\(profile.id)-\(profile.displayName ?? "")-\(profile.tags.joined())")
+                    }
                 }
+                .frame(maxHeight: 350)
+
                 Button("Delete All Profiles", role: .destructive) {
                     showDeleteAllConfirmation = true
                 }
@@ -539,9 +541,30 @@ private struct OutputSettingsTab: View {
     }
 }
 
-// MARK: - Speaker Profile Row
+// MARK: - Speaker Profile Summary (DisclosureGroup label)
 
-private struct SpeakerProfileRow: View {
+private struct SpeakerProfileSummaryView: View {
+    let profile: StoredSpeakerProfile
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(profile.displayLabel)
+                .lineLimit(1)
+            ForEach(profile.tags, id: \.self) { tag in
+                Text(tag)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.secondary.opacity(0.15))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+        }
+    }
+}
+
+// MARK: - Speaker Profile Detail (DisclosureGroup content)
+
+private struct SpeakerProfileDetailView: View {
     let profile: StoredSpeakerProfile
     let allTags: [String]
     let onRename: (String) -> Void
@@ -553,7 +576,11 @@ private struct SpeakerProfileRow: View {
     @State private var showTagPopover = false
     @State private var newTagText = ""
 
-    init(profile: StoredSpeakerProfile, allTags: [String] = [], onRename: @escaping (String) -> Void, onDelete: @escaping () -> Void, onAddTag: @escaping (String) -> Void = { _ in }, onRemoveTag: @escaping (String) -> Void = { _ in }) {
+    init(profile: StoredSpeakerProfile, allTags: [String],
+         onRename: @escaping (String) -> Void,
+         onDelete: @escaping () -> Void,
+         onAddTag: @escaping (String) -> Void,
+         onRemoveTag: @escaping (String) -> Void) {
         self.profile = profile
         self.allTags = allTags
         self.onRename = onRename
@@ -570,98 +597,90 @@ private struct SpeakerProfileRow: View {
         return f
     }()
 
-    private var idPrefix: String {
-        String(profile.id.uuidString.prefix(8).lowercased())
-    }
-
-    private var lastUsedText: String {
-        Self.dateFormatter.string(from: profile.lastUsed)
-    }
-
     private var suggestedTags: [String] {
         allTags.filter { !profile.tags.contains($0) }
     }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 4) {
-                    Text("Speaker \(profile.label)")
+        VStack(alignment: .leading, spacing: 8) {
+            // Name editing
+            HStack {
+                Text("Name")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Display name for \(profile.label)...", text: $editingName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { onRename(editingName) }
+            }
+
+            // Session info
+            HStack(spacing: 4) {
+                Text("\(profile.sessionCount) sessions")
+                Text("\u{00B7}")
+                Text("Last: \(Self.dateFormatter.string(from: profile.lastUsed))")
+            }
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+
+            // Tag editing
+            HStack(spacing: 4) {
+                Text("Tags")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(profile.tags, id: \.self) { tag in
+                    TagPill(tag: tag) { onRemoveTag(tag) }
+                }
+                Button {
+                    newTagText = ""
+                    showTagPopover = true
+                } label: {
+                    Image(systemName: "plus.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("#\(idPrefix)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Text("\u{00B7}")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Text("\(profile.sessionCount) sessions")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Text("\u{00B7}")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    Text("Last: \(lastUsedText)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
-                TextField("Speaker \(profile.label)", text: $editingName)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit {
-                        onRename(editingName)
-                    }
-                HStack(spacing: 4) {
-                    ForEach(profile.tags, id: \.self) { tag in
-                        TagPill(tag: tag) { onRemoveTag(tag) }
-                    }
-                    Button {
-                        newTagText = ""
-                        showTagPopover = true
-                    } label: {
-                        Image(systemName: "plus.circle")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.borderless)
-                    .popover(isPresented: $showTagPopover) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextField("New tag...", text: $newTagText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 150)
-                                .onSubmit {
-                                    let trimmed = newTagText.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if !trimmed.isEmpty {
-                                        onAddTag(trimmed)
+                .buttonStyle(.borderless)
+                .popover(isPresented: $showTagPopover) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("New tag...", text: $newTagText)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 150)
+                            .onSubmit {
+                                let trimmed = newTagText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !trimmed.isEmpty {
+                                    onAddTag(trimmed)
+                                    showTagPopover = false
+                                }
+                            }
+                        if !suggestedTags.isEmpty {
+                            Text("Existing tags:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            FlowLayout(spacing: 4) {
+                                ForEach(suggestedTags, id: \.self) { tag in
+                                    Button(tag) {
+                                        onAddTag(tag)
                                         showTagPopover = false
                                     }
-                                }
-                            if !suggestedTags.isEmpty {
-                                Text("Existing tags:")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                FlowLayout(spacing: 4) {
-                                    ForEach(suggestedTags, id: \.self) { tag in
-                                        Button(tag) {
-                                            onAddTag(tag)
-                                            showTagPopover = false
-                                        }
-                                        .font(.caption)
-                                        .buttonStyle(.bordered)
-                                    }
+                                    .buttonStyle(.bordered)
                                 }
                             }
                         }
-                        .padding(8)
                     }
+                    .padding(8)
                 }
             }
-            Spacer()
-            Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
+
+            // Delete button
+            HStack {
+                Spacer()
+                Button("Delete Profile", role: .destructive) {
+                    onDelete()
+                }
+                .font(.caption)
             }
-            .buttonStyle(.borderless)
         }
+        .padding(.leading, 4)
     }
 }
 
