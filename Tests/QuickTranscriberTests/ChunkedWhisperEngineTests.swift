@@ -227,7 +227,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
     func testStopStreamingExportsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
-        mockDiarizer.exportedProfiles = [("A", [Float](repeating: 0.1, count: 256))]
+        let exportedId = UUID()
+        mockDiarizer.exportedProfiles = [(speakerId: exportedId, embedding: [Float](repeating: 0.1, count: 256))]
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = SpeakerProfileStore(directory: dir)
@@ -245,7 +246,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
 
         XCTAssertEqual(store.profiles.count, 1)
-        XCTAssertEqual(store.profiles[0].label, "A")
+        XCTAssertEqual(store.profiles[0].label, exportedId.uuidString)
     }
 
     func testCorrectSpeakerAssignmentForwardsToDiarizer() async throws {
@@ -257,11 +258,13 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         )
 
         let embedding: [Float] = [1.0, 2.0, 3.0]
-        engine.correctSpeakerAssignment(embedding: embedding, from: "A", to: "B")
+        let oldId = UUID()
+        let newId = UUID()
+        engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
 
         XCTAssertEqual(mockDiarizer.correctedAssignments.count, 1)
-        XCTAssertEqual(mockDiarizer.correctedAssignments[0].oldLabel, "A")
-        XCTAssertEqual(mockDiarizer.correctedAssignments[0].newLabel, "B")
+        XCTAssertEqual(mockDiarizer.correctedAssignments[0].oldId, oldId)
+        XCTAssertEqual(mockDiarizer.correctedAssignments[0].newId, newId)
         XCTAssertEqual(mockDiarizer.correctedAssignments[0].embedding, embedding)
     }
 
@@ -271,7 +274,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             transcriber: MockChunkTranscriber()
         )
         // Should not crash when no diarizer
-        engine.correctSpeakerAssignment(embedding: [1.0], from: "A", to: "B")
+        engine.correctSpeakerAssignment(embedding: [1.0], from: UUID(), to: UUID())
     }
 
     func testProcessChunkStoresEmbeddingInSegments() async throws {
@@ -282,7 +285,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let mockDiarizer = MockSpeakerDiarizer()
         let testEmbedding: [Float] = [Float](repeating: 0.42, count: 256)
         mockDiarizer.speakerResults = [
-            SpeakerIdentification(label: "A", confidence: 0.8, embedding: testEmbedding)
+            SpeakerIdentification(speakerId: UUID(), confidence: 0.8, embedding: testEmbedding)
         ]
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
@@ -326,8 +329,9 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let historyStore = EmbeddingHistoryStore(directory: tmpDir)
         let mockDiarizer = MockSpeakerDiarizer()
         let emb = [Float](repeating: 0.1, count: 256)
+        let historyProfileId = UUID()
         mockDiarizer.detailedProfiles = [
-            (label: "A", embedding: emb, embeddingHistory: [
+            (speakerId: historyProfileId, embedding: emb, embeddingHistory: [
                 WeightedEmbedding(embedding: emb, confidence: 1.0),
                 WeightedEmbedding(embedding: emb, confidence: 0.8)
             ])
@@ -346,7 +350,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         let loaded = try historyStore.loadAll()
         XCTAssertEqual(loaded.count, 1)
-        XCTAssertEqual(loaded[0].label, "A")
+        XCTAssertEqual(loaded[0].label, historyProfileId.uuidString)
         XCTAssertEqual(loaded[0].embeddings.count, 2)
     }
 
@@ -389,7 +393,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         XCTAssertNotNil(mockDiarizer.loadedProfiles)
         XCTAssertEqual(mockDiarizer.loadedProfiles?.count, 1)
-        XCTAssertEqual(mockDiarizer.loadedProfiles?.first?.label, "A")
+        // The engine maps StoredSpeakerProfile.id to speakerId
+        XCTAssertEqual(mockDiarizer.loadedProfiles?.first?.speakerId, store2.profiles.first?.id)
 
         await engine.stopStreaming()
     }

@@ -298,7 +298,7 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         let profiles = engine.startStreamingParticipantProfiles
         XCTAssertNotNil(profiles, "Manual mode should pass participant profiles")
         XCTAssertTrue(
-            profiles?.contains(where: { $0.label == "B" }) == true,
+            profiles?.contains(where: { $0.speakerId == profile.id }) == true,
             "Auto-detected speaker should be included in participant profiles"
         )
     }

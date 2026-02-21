@@ -860,28 +860,30 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
+        let oldSpeakerId = UUID()
+        let newSpeakerId = UUID()
         let vm = TranscriptionViewModel(
             engine: engine,
             parametersStore: ParametersStore(),
             speakerProfileStore: SpeakerProfileStore(directory: dir)
         )
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerEmbedding: emb),
-            ConfirmedSegment(text: "World", speaker: "A", speakerEmbedding: nil),
+            ConfirmedSegment(text: "Hello", speaker: oldSpeakerId.uuidString, speakerEmbedding: emb),
+            ConfirmedSegment(text: "World", speaker: oldSpeakerId.uuidString, speakerEmbedding: nil),
         ]
 
-        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: newSpeakerId.uuidString)
 
         // Both segments should be reassigned
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, "B")
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, newSpeakerId.uuidString)
         XCTAssertEqual(vm.confirmedSegments[0].isUserCorrected, true)
-        XCTAssertEqual(vm.confirmedSegments[1].speaker, "B")
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, newSpeakerId.uuidString)
         XCTAssertEqual(vm.confirmedSegments[1].isUserCorrected, true)
 
         // Only segment with embedding should trigger correction call
         XCTAssertEqual(engine.correctedAssignments.count, 1)
-        XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
-        XCTAssertEqual(engine.correctedAssignments[0].newLabel, "B")
+        XCTAssertEqual(engine.correctedAssignments[0].oldId, oldSpeakerId)
+        XCTAssertEqual(engine.correctedAssignments[0].newId, newSpeakerId)
         XCTAssertEqual(engine.correctedAssignments[0].embedding, emb)
     }
 
@@ -893,17 +895,20 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
+        let speakerIdA = UUID()
+        let speakerIdB = UUID()
+        let speakerIdC = UUID()
         let vm = TranscriptionViewModel(
             engine: engine,
             parametersStore: ParametersStore(),
             speakerProfileStore: SpeakerProfileStore(directory: dir)
         )
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8, speakerEmbedding: emb),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7, speakerEmbedding: emb),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA.uuidString, speakerConfidence: 0.8, speakerEmbedding: emb),
+            ConfirmedSegment(text: "World", speaker: speakerIdB.uuidString, speakerConfidence: 0.7, speakerEmbedding: emb),
         ]
 
-        // Build a segment map matching "A: Hello\nB: World"
+        // Build a segment map
         let (_, segmentMap) = TranscriptionTextView.buildAttributedStringFromSegments(
             vm.confirmedSegments,
             language: "en",
@@ -918,20 +923,20 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         vm.reassignSpeakerForSelection(
             selectionRange: selectionRange,
-            newSpeaker: "C",
+            newSpeaker: speakerIdC.uuidString,
             segmentMap: segmentMap
         )
 
         // First segment should be reassigned
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, "C")
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, speakerIdC.uuidString)
         XCTAssertEqual(vm.confirmedSegments[0].isUserCorrected, true)
         // Second segment should be unchanged
-        XCTAssertEqual(vm.confirmedSegments[1].speaker, "B")
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, speakerIdB.uuidString)
 
         // Only first segment correction should be sent to engine
         XCTAssertEqual(engine.correctedAssignments.count, 1)
-        XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
-        XCTAssertEqual(engine.correctedAssignments[0].newLabel, "C")
+        XCTAssertEqual(engine.correctedAssignments[0].oldId, speakerIdA)
+        XCTAssertEqual(engine.correctedAssignments[0].newId, speakerIdC)
     }
 
     // MARK: - confirmedText as computed property (A-3)

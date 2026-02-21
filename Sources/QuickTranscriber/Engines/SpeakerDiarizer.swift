@@ -6,10 +6,10 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
     func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification?
     func updateExpectedSpeakerCount(_ count: Int?)
-    func exportSpeakerProfiles() -> [(label: String, embedding: [Float])]
-    func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [WeightedEmbedding])]
-    func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])])
-    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String)
+    func exportSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float])]
+    func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])]
+    func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])])
+    func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -127,7 +127,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
                 pacer.lastResult = identification
                 pacer.reset()
             }
-            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(identification.label) conf=\(String(format: "%.3f", identification.confidence)) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
+            NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(identification.speakerId.uuidString) conf=\(String(format: "%.3f", identification.confidence)) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
             return identification
         } catch {
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
@@ -136,15 +136,15 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         }
     }
 
-    public func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
-        speakerTracker.exportProfiles().map { ($0.label, $0.embedding) }
+    public func exportSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float])] {
+        speakerTracker.exportProfiles().map { ($0.speakerId, $0.embedding) }
     }
 
-    public func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [WeightedEmbedding])] {
-        speakerTracker.exportDetailedProfiles().map { ($0.label, $0.embedding, $0.embeddingHistory) }
+    public func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])] {
+        speakerTracker.exportDetailedProfiles().map { ($0.speakerId, $0.embedding, $0.embeddingHistory) }
     }
 
-    public func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {
+    public func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])]) {
         speakerTracker.loadProfiles(profiles)
         lock.withLock {
             rollingBuffer = []
@@ -155,8 +155,8 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         }
     }
 
-    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
-        speakerTracker.correctAssignment(embedding: embedding, from: oldLabel, to: newLabel)
+    public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
+        speakerTracker.correctAssignment(embedding: embedding, from: oldId, to: newId)
     }
 
     /// Find the segment with the most overlap with the latest chunk's time range.

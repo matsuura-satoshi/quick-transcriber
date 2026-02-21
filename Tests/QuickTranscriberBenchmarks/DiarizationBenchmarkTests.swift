@@ -175,17 +175,17 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                     // Skip chunks where diarizer returns nil (accumulation period)
                     if let rawResult {
                         if let smoother {
-                            let smoothed = smoother.processLabel(rawResult)
+                            let smoothed = smoother.process(rawResult)
                             if let smoothed {
                                 // Confirmed: retroactively update any pending labels
                                 if let startIdx = pendingStartIndex {
                                     for i in startIdx..<predictedLabels.count {
-                                        predictedLabels[i] = smoothed.label
+                                        predictedLabels[i] = smoothed.speakerId.uuidString
                                     }
                                     pendingStartIndex = nil
                                 }
                                 groundTruthLabels.append(gtLabel)
-                                predictedLabels.append(smoothed.label)
+                                predictedLabels.append(smoothed.speakerId.uuidString)
                             } else {
                                 // Pending: use placeholder, will be retroactively updated
                                 if pendingStartIndex == nil {
@@ -196,7 +196,7 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                             }
                         } else {
                             groundTruthLabels.append(gtLabel)
-                            predictedLabels.append(rawResult.label)
+                            predictedLabels.append(rawResult.speakerId.uuidString)
                         }
                     }
                 }

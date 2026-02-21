@@ -43,8 +43,9 @@ final class DiarizationChunkAccumulationTests: XCTestCase {
     func testPacerLastResultCaching() {
         var pacer = DiarizationPacer(diarizationChunkDuration: 6.0, sampleRate: 16000)
         XCTAssertNil(pacer.lastResult)
-        pacer.lastResult = SpeakerIdentification(label: "A", confidence: 0.85)
-        XCTAssertEqual(pacer.lastResult?.label, "A")
+        let testId = UUID()
+        pacer.lastResult = SpeakerIdentification(speakerId: testId, confidence: 0.85)
+        XCTAssertEqual(pacer.lastResult?.speakerId, testId)
         XCTAssertEqual(pacer.lastResult?.confidence, 0.85)
     }
 

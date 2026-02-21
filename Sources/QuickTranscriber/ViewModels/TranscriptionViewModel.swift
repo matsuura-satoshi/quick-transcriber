@@ -641,13 +641,13 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         // Resolve participant profiles for manual mode
-        let participantProfiles: [(label: String, embedding: [Float])]?
+        let participantProfiles: [(speakerId: UUID, embedding: [Float])]?
         if params.diarizationMode == .manual {
-            let speakersWithProfiles = activeSpeakers.compactMap { speaker -> (label: String, embedding: [Float])? in
+            let speakersWithProfiles = activeSpeakers.compactMap { speaker -> (speakerId: UUID, embedding: [Float])? in
                 guard let profileId = speaker.speakerProfileId,
                       let stored = speakerProfileStore.profiles.first(where: { $0.id == profileId })
                 else { return nil }
-                return (speaker.sessionLabel, stored.embedding)
+                return (speakerId: stored.id, embedding: stored.embedding)
             }
             participantProfiles = speakersWithProfiles.isEmpty ? nil : speakersWithProfiles
         } else {

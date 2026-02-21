@@ -21,25 +21,25 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
 
     func updateExpectedSpeakerCount(_ count: Int?) {}
 
-    var exportedProfiles: [(label: String, embedding: [Float])] = []
-    var loadedProfiles: [(label: String, embedding: [Float])]?
-    var detailedProfiles: [(label: String, embedding: [Float], embeddingHistory: [WeightedEmbedding])] = []
+    var exportedProfiles: [(speakerId: UUID, embedding: [Float])] = []
+    var loadedProfiles: [(speakerId: UUID, embedding: [Float])]?
+    var detailedProfiles: [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])] = []
 
-    func exportSpeakerProfiles() -> [(label: String, embedding: [Float])] {
+    func exportSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float])] {
         exportedProfiles
     }
 
-    func exportDetailedSpeakerProfiles() -> [(label: String, embedding: [Float], embeddingHistory: [WeightedEmbedding])] {
+    func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])] {
         detailedProfiles
     }
 
-    func loadSpeakerProfiles(_ profiles: [(label: String, embedding: [Float])]) {
+    func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])]) {
         loadedProfiles = profiles
     }
 
-    var correctedAssignments: [(embedding: [Float], oldLabel: String, newLabel: String)] = []
+    var correctedAssignments: [(embedding: [Float], oldId: UUID, newId: UUID)] = []
 
-    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
-        correctedAssignments.append((embedding: embedding, oldLabel: oldLabel, newLabel: newLabel))
+    func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
+        correctedAssignments.append((embedding: embedding, oldId: oldId, newId: newId))
     }
 }
