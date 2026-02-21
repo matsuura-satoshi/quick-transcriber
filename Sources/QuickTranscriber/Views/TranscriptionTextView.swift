@@ -60,8 +60,8 @@ internal class InteractiveTranscriptionTextView: NSTextView {
     internal var segmentMap: SegmentCharacterMap?
     internal var confirmedSegments: [ConfirmedSegment] = []
     internal var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
-    internal var onReassignBlock: ((Int, String, String?) -> Void)?
-    internal var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
+    internal var onReassignBlock: ((Int, String) -> Void)?
+    internal var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
     private var lastEventLocation: NSPoint = .zero
 
     override func mouseDown(with event: NSEvent) {
@@ -151,7 +151,7 @@ internal class InteractiveTranscriptionTextView: NSTextView {
         guard let info = sender.representedObject as? BlockReassignInfo else { return }
         let segmentIndex = info.segmentIndex
         let label = info.label
-        onReassignBlock?(segmentIndex, label, nil)
+        onReassignBlock?(segmentIndex, label)
     }
 
     @objc private func reassignSelectionAction(_ sender: NSMenuItem) {
@@ -159,7 +159,7 @@ internal class InteractiveTranscriptionTextView: NSTextView {
               let map = segmentMap else { return }
         let range = selectedRange()
         guard range.length > 0 else { return }
-        onReassignSelection?(range, label, nil, map)
+        onReassignSelection?(range, label, map)
     }
 
 }
@@ -173,8 +173,8 @@ struct TranscriptionTextView: NSViewRepresentable {
     var silenceThreshold: TimeInterval = 1.0
     var labelDisplayNames: [String: String] = [:]
     var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
-    var onReassignBlock: ((Int, String, String?) -> Void)?
-    var onReassignSelection: ((NSRange, String, String?, SegmentCharacterMap) -> Void)?
+    var onReassignBlock: ((Int, String) -> Void)?
+    var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
