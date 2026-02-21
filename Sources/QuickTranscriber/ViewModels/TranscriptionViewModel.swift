@@ -483,7 +483,7 @@ public final class TranscriptionViewModel: ObservableObject {
         else { return }
         let speaker = ActiveSpeaker(
             speakerProfileId: profileId,
-            displayName: profile.displayName ?? profile.displayLabel,
+            displayName: profile.displayName,
             source: .manual
         )
         activeSpeakers.append(speaker)
@@ -575,7 +575,7 @@ public final class TranscriptionViewModel: ObservableObject {
         let displayName: String
         if let profileId = matchedProfileId,
            let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) {
-            displayName = profile.displayName ?? profile.displayLabel
+            displayName = profile.displayName
         } else {
             displayName = "Speaker-\(nextSpeakerNumber)"
             nextSpeakerNumber += 1
@@ -722,7 +722,7 @@ public final class TranscriptionViewModel: ObservableObject {
         saveUnconfirmedText()
         fileWriter.updateText(confirmedText)
         Task {
-            await service.stopTranscription()
+            await service.stopTranscription(speakerDisplayNames: self.speakerDisplayNames)
             self.speakerProfiles = self.speakerProfileStore.profiles
             if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
                 self.showPostMeetingTagging = true

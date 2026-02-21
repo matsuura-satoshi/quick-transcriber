@@ -558,7 +558,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         let id = UUID()
         let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Speaker-A", embedding: [Float](repeating: 0.1, count: 256))]
         try! store.save()
 
         let engine = MockTranscriptionEngine()
@@ -578,8 +578,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         let idA = UUID()
         let store = SpeakerProfileStore(directory: dir)
         store.profiles = [
-            StoredSpeakerProfile(id: idA, label: "A", embedding: [Float](repeating: 0.1, count: 256)),
-            StoredSpeakerProfile(label: "B", embedding: [Float](repeating: 0.2, count: 256)),
+            StoredSpeakerProfile(id: idA, displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(displayName: "Bob", embedding: [Float](repeating: 0.2, count: 256)),
         ]
         try! store.save()
 
@@ -589,7 +589,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.deleteSpeaker(id: idA)
 
         XCTAssertEqual(vm.speakerProfiles.count, 1)
-        XCTAssertEqual(vm.speakerProfiles[0].label, "B")
+        XCTAssertEqual(vm.speakerProfiles[0].displayName, "Bob")
     }
 
     func testRenameAffectsFileOutput() async {
@@ -600,7 +600,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         let id = UUID()
         let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Speaker-A", embedding: [Float](repeating: 0.1, count: 256))]
         try! store.save()
 
         let engine = MockTranscriptionEngine()
@@ -657,8 +657,8 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: [Float](repeating: 0.1, count: 256)),
-            StoredSpeakerProfile(label: "B", embedding: [Float](repeating: 0.2, count: 256)),
+            StoredSpeakerProfile(displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(displayName: "Bob", embedding: [Float](repeating: 0.2, count: 256)),
         ]
         try! store.save()
 
@@ -852,7 +852,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         let profileId = UUID()
         let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(id: profileId, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Speaker-A", embedding: [Float](repeating: 0.1, count: 256))]
         try! store.save()
 
         let engine = MockTranscriptionEngine()
@@ -1029,7 +1029,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         let profileId = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)
         store.profiles = [
-            StoredSpeakerProfile(id: profileId, label: "X", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice")
+            StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256))
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.confirmedSegments = [
@@ -1073,7 +1073,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         let profileId = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)
         store.profiles = [
-            StoredSpeakerProfile(id: profileId, label: "A", embedding: Array(repeating: 0.1, count: 256))
+            StoredSpeakerProfile(id: profileId, displayName: "Speaker-A", embedding: Array(repeating: 0.1, count: 256))
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.activeSpeakers = [
@@ -1105,8 +1105,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         let id2 = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "X", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice"),
-            StoredSpeakerProfile(id: id2, label: "Y", embedding: Array(repeating: 0.2, count: 256), displayName: "Bob"),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: Array(repeating: 0.2, count: 256)),
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
 
@@ -1121,8 +1121,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         let id2 = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "X", embedding: Array(repeating: 0.1, count: 256)),
-            StoredSpeakerProfile(id: id2, label: "Y", embedding: Array(repeating: 0.2, count: 256)),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: Array(repeating: 0.2, count: 256)),
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.addManualSpeaker(fromProfile: id1)  // already active
@@ -1139,8 +1139,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         let id2 = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "X", embedding: Array(repeating: 0.1, count: 256)),
-            StoredSpeakerProfile(id: id2, label: "Y", embedding: Array(repeating: 0.2, count: 256)),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: Array(repeating: 0.2, count: 256)),
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.addManualSpeaker(fromProfile: id1)
@@ -1161,9 +1161,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         let id3 = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: Array(repeating: 0.1, count: 256)),
-            StoredSpeakerProfile(id: id2, label: "B", embedding: Array(repeating: 0.2, count: 256)),
-            StoredSpeakerProfile(id: id3, label: "C", embedding: Array(repeating: 0.3, count: 256)),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: Array(repeating: 0.2, count: 256)),
+            StoredSpeakerProfile(id: id3, displayName: "Carol", embedding: Array(repeating: 0.3, count: 256)),
         ]
         try! store.save()
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)

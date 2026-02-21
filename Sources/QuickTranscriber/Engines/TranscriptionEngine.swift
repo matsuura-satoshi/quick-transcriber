@@ -31,7 +31,7 @@ public struct TranscriptionState: Sendable {
 public protocol TranscriptionEngine: AnyObject {
     func setup(model: String) async throws
     func startStreaming(language: String, parameters: TranscriptionParameters, participantProfiles: [(speakerId: UUID, embedding: [Float])]?, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
-    func stopStreaming() async
+    func stopStreaming(speakerDisplayNames: [String: String]) async
     func cleanup()
     var isStreaming: Bool { get async }
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
@@ -44,6 +44,10 @@ extension TranscriptionEngine {
 
     public func startStreaming(language: String, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws {
         try await startStreaming(language: language, parameters: .default, participantProfiles: nil, onStateChange: onStateChange)
+    }
+
+    public func stopStreaming() async {
+        await stopStreaming(speakerDisplayNames: [:])
     }
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
