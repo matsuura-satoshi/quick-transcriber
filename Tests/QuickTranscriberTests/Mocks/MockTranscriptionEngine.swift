@@ -50,7 +50,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         _isStreaming = true
     }
 
-    func stopStreaming(speakerDisplayNames: [String: String] = [:]) async {
+    func stopStreaming(speakerDisplayNames: [String: String]) async {
         stopStreamingCalled = true
         stopStreamingCallCount += 1
         stopStreamingSpeakerDisplayNames = speakerDisplayNames

@@ -115,7 +115,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         NSLog("[ChunkedWhisperEngine] Streaming started")
     }
 
-    public func stopStreaming(speakerDisplayNames: [String: String] = [:]) async {
+    public func stopStreaming(speakerDisplayNames: [String: String]) async {
         _isStreaming = false
         audioCaptureService.stopCapture()
 
