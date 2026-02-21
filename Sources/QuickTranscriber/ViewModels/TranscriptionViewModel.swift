@@ -31,7 +31,7 @@ public final class TranscriptionViewModel: ObservableObject {
             confirmedSegments,
             language: currentLanguage.rawValue,
             silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
-            labelDisplayNames: speakerDisplayNames
+            speakerDisplayNames: speakerDisplayNames
         )
     }
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []

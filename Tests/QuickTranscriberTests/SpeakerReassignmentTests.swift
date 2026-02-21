@@ -122,10 +122,11 @@ final class SpeakerReassignmentTests: XCTestCase {
             ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
             ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
+        let names = [speakerIdA: "A", speakerIdB: "B"]
         // Build map to get selection ranges
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             vm.confirmedSegments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: names
         )
         // Select the second segment's text
         let secondEntry = map.entries[1]
@@ -147,14 +148,15 @@ final class SpeakerReassignmentTests: XCTestCase {
         vm.confirmedSegments = [
             ConfirmedSegment(text: "Hello World", speaker: speakerIdA, speakerConfidence: 0.8),
         ]
-        let (result, map) = TranscriptionTextView.buildAttributedStringFromSegments(
+        let names = [speakerIdA: "SpeakerA", speakerIdB: "SpeakerB"]
+        let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             vm.confirmedSegments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: names
         )
 
         // Select "World" part only
-        // The label is the UUID string + ": ", then "Hello World"
-        let labelLen = (speakerIdA + ": ").count
+        // The label is "SpeakerA: " (10 chars), then "Hello World"
+        let labelLen = "SpeakerA: ".count
         let selectionRange = NSRange(location: labelLen + 6, length: 5)
 
         vm.reassignSpeakerForSelection(

@@ -68,12 +68,14 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testBuildAttributedStringSingleSegmentWithSpeaker() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8)]
+        let names = ["A": "A"]
         let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
             fontSize: 15,
-            unconfirmed: ""
+            unconfirmed: "",
+            speakerDisplayNames: names
         )
         XCTAssertEqual(result.string, "A: Hello")
     }
@@ -83,12 +85,14 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.9),
             ConfirmedSegment(text: "Hi there", speaker: "B", speakerConfidence: 0.7),
         ]
+        let names = ["A": "A", "B": "B"]
         let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
             fontSize: 15,
-            unconfirmed: ""
+            unconfirmed: "",
+            speakerDisplayNames: names
         )
         XCTAssertEqual(result.string, "A: Hello\nB: Hi there")
     }
@@ -169,12 +173,14 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testHighConfidenceSpeakerLabelUsesLabelColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8)]
+        let names = ["A": "A"]
         let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
             fontSize: 15,
-            unconfirmed: ""
+            unconfirmed: "",
+            speakerDisplayNames: names
         )
         // "A: Hello" — check attributes of "A: " (range 0..<3)
         var range = NSRange(location: 0, length: 0)
@@ -188,12 +194,14 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testLowConfidenceSpeakerLabelUsesSecondaryColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.3)]
+        let names = ["A": "A"]
         let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
             fontSize: 15,
-            unconfirmed: ""
+            unconfirmed: "",
+            speakerDisplayNames: names
         )
         // "A: Hello" — check attributes of "A: " (range 0..<3)
         var range = NSRange(location: 0, length: 0)
@@ -205,12 +213,14 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testNilConfidenceSpeakerLabelUsesLabelColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: nil)]
+        let names = ["A": "A"]
         let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
             fontSize: 15,
-            unconfirmed: ""
+            unconfirmed: "",
+            speakerDisplayNames: names
         )
         var range = NSRange(location: 0, length: 0)
         let attrs = result.attributes(at: 0, effectiveRange: &range)
@@ -221,12 +231,14 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testTextBodyAlwaysUsesLabelColor() {
         let segments = [ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.3)]
+        let names = ["A": "A"]
         let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments,
             language: "en",
             silenceThreshold: 1.0,
             fontSize: 15,
-            unconfirmed: ""
+            unconfirmed: "",
+            speakerDisplayNames: names
         )
         // "A: Hello" — text body starts at index 3 ("Hello")
         var range = NSRange(location: 0, length: 0)
@@ -278,6 +290,7 @@ final class ConfidenceColoringTests: XCTestCase {
         let coordinator = TranscriptionTextView.Coordinator()
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         coordinator.textView = textView
+        let names = ["A": "A"]
 
         // Initial segments
         let segments1 = [
@@ -285,7 +298,8 @@ final class ConfidenceColoringTests: XCTestCase {
         ]
         coordinator.applySegmentUpdate(
             segments: segments1, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: ""
+            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: "",
+            speakerDisplayNames: names
         )
         // "A: Hello world" → select "Hello" (position 3, length 5)
         textView.setSelectedRange(NSRange(location: 3, length: 5))
@@ -296,7 +310,8 @@ final class ConfidenceColoringTests: XCTestCase {
         ]
         coordinator.applySegmentUpdate(
             segments: segments2, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: ""
+            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: "",
+            speakerDisplayNames: names
         )
 
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 5),
@@ -307,20 +322,23 @@ final class ConfidenceColoringTests: XCTestCase {
         let coordinator = TranscriptionTextView.Coordinator()
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
         coordinator.textView = textView
+        let names = ["A": "A"]
 
         let segments = [
             ConfirmedSegment(text: "Hello world", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
         ]
         coordinator.applySegmentUpdate(
             segments: segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: ""
+            fontSize: 15, unconfirmed: "", oldFontSize: 15, oldUnconfirmed: "",
+            speakerDisplayNames: names
         )
         textView.setSelectedRange(NSRange(location: 3, length: 5))
 
         // Unconfirmed text change triggers full rebuild
         coordinator.applySegmentUpdate(
             segments: segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: "typing...", oldFontSize: 15, oldUnconfirmed: ""
+            fontSize: 15, unconfirmed: "typing...", oldFontSize: 15, oldUnconfirmed: "",
+            speakerDisplayNames: names
         )
 
         XCTAssertEqual(textView.selectedRange(), NSRange(location: 3, length: 5),

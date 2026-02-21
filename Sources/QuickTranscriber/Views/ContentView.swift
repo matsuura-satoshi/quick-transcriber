@@ -172,7 +172,7 @@ public struct ContentView: View {
             confirmedSegments: viewModel.confirmedSegments,
             language: viewModel.currentLanguage.rawValue,
             silenceThreshold: viewModel.silenceLineBreakThreshold,
-            labelDisplayNames: viewModel.speakerDisplayNames,
+            speakerDisplayNames: viewModel.speakerDisplayNames,
             availableSpeakers: viewModel.availableSpeakers,
             onReassignBlock: { segmentIndex, newSpeaker in
                 viewModel.reassignSpeakerForBlock(segmentIndex: segmentIndex, newSpeaker: newSpeaker)
@@ -190,7 +190,7 @@ public struct ContentView: View {
             fontSize: viewModel.fontSize,
             language: viewModel.translationTargetLanguage.rawValue,
             silenceThreshold: viewModel.silenceLineBreakThreshold,
-            labelDisplayNames: viewModel.speakerDisplayNames
+            speakerDisplayNames: viewModel.speakerDisplayNames
         )
         .frame(maxHeight: .infinity)
     }
