@@ -174,25 +174,11 @@ public struct ContentView: View {
             silenceThreshold: viewModel.silenceLineBreakThreshold,
             labelDisplayNames: viewModel.labelDisplayNames,
             availableSpeakers: viewModel.availableSpeakers,
-            registeredSpeakers: viewModel.registeredSpeakersForMenu,
-            allTags: viewModel.allTags,
-            onReassignBlock: { segmentIndex, newSpeaker, displayName in
-                if let displayName {
-                    viewModel.renameActiveSpeaker(label: newSpeaker, displayName: displayName)
-                }
+            onReassignBlock: { segmentIndex, newSpeaker in
                 viewModel.reassignSpeakerForBlock(segmentIndex: segmentIndex, newSpeaker: newSpeaker)
             },
-            onReassignSelection: { range, newSpeaker, displayName, map in
-                if let displayName {
-                    viewModel.renameActiveSpeaker(label: newSpeaker, displayName: displayName)
-                }
+            onReassignSelection: { range, newSpeaker, map in
                 viewModel.reassignSpeakerForSelection(selectionRange: range, newSpeaker: newSpeaker, segmentMap: map)
-            },
-            onAddAndReassignBlock: { profileId, segmentIndex in
-                viewModel.addAndReassignBlock(profileId: profileId, segmentIndex: segmentIndex)
-            },
-            onAddAndReassignSelection: { profileId, range, map in
-                viewModel.addAndReassignSelection(profileId: profileId, selectionRange: range, segmentMap: map)
             }
         )
         .frame(maxHeight: .infinity)

@@ -37,6 +37,7 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
     @Published public var labelDisplayNames: [String: String] = [:]
     @Published public var activeSpeakers: [ActiveSpeaker] = []
+    public var speakerMenuOrder: [String] = []
     @Published public var showPostMeetingTagging: Bool = false
     @Published public var translationEnabled: Bool = UserDefaults.standard.bool(forKey: "translationEnabled")
     public let translationService = TranslationService()
@@ -249,9 +250,23 @@ public final class TranscriptionViewModel: ObservableObject {
     // MARK: - Active Speakers
 
     public var availableSpeakers: [SpeakerMenuItem] {
-        activeSpeakers.sorted(by: { $0.sessionLabel < $1.sessionLabel }).map {
-            SpeakerMenuItem(label: $0.sessionLabel, displayName: $0.displayName)
+        let activeLabels = Set(activeSpeakers.map { $0.sessionLabel })
+        let speakersByLabel = Dictionary(
+            uniqueKeysWithValues: activeSpeakers.map { ($0.sessionLabel, $0) }
+        )
+
+        var ordered: [SpeakerMenuItem] = []
+        var seen = Set<String>()
+        for label in speakerMenuOrder {
+            guard activeLabels.contains(label), !seen.contains(label),
+                  let speaker = speakersByLabel[label] else { continue }
+            ordered.append(SpeakerMenuItem(label: speaker.sessionLabel, displayName: speaker.displayName))
+            seen.insert(label)
         }
+        for speaker in activeSpeakers where !seen.contains(speaker.sessionLabel) {
+            ordered.append(SpeakerMenuItem(label: speaker.sessionLabel, displayName: speaker.displayName))
+        }
+        return ordered
     }
 
     public struct SpeakerMenuItem: Equatable {
@@ -259,17 +274,9 @@ public final class TranscriptionViewModel: ObservableObject {
         public let displayName: String?
     }
 
-    public var registeredSpeakersForMenu: [RegisteredSpeakerInfo] {
-        let activeIds = Set(activeSpeakers.compactMap { $0.speakerProfileId })
-        return speakerProfileStore.profiles.map {
-            RegisteredSpeakerInfo(
-                profileId: $0.id,
-                label: $0.label,
-                displayName: $0.displayName,
-                tags: $0.tags,
-                isAlreadyActive: activeIds.contains($0.id)
-            )
-        }
+    public func recordSpeakerSelection(_ label: String) {
+        speakerMenuOrder.removeAll { $0 == label }
+        speakerMenuOrder.insert(label, at: 0)
     }
 
     public func renameActiveSpeaker(label: String, displayName: String) {
@@ -345,6 +352,7 @@ public final class TranscriptionViewModel: ObservableObject {
             reassignSegment(at: i, to: newSpeaker)
         }
 
+        recordSpeakerSelection(newSpeaker)
         regenerateText()
         translationService.syncSpeakerMetadata(from: confirmedSegments)
     }
@@ -393,6 +401,7 @@ public final class TranscriptionViewModel: ObservableObject {
             }
         }
 
+        recordSpeakerSelection(newSpeaker)
         regenerateText()
         translationService.syncSpeakerMetadata(from: confirmedSegments)
     }

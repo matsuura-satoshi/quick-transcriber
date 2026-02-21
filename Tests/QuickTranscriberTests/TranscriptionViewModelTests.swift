@@ -734,6 +734,75 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(vm.availableSpeakers.isEmpty)
     }
 
+    // MARK: - Speaker Menu Order
+
+    func testRecordSpeakerSelectionMovesLabelToFront() async {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.addManualSpeaker(displayName: "Carol")  // C
+
+        vm.recordSpeakerSelection("C")
+        XCTAssertEqual(vm.speakerMenuOrder, ["C"])
+
+        vm.recordSpeakerSelection("A")
+        XCTAssertEqual(vm.speakerMenuOrder, ["A", "C"])
+
+        vm.recordSpeakerSelection("C")
+        XCTAssertEqual(vm.speakerMenuOrder, ["C", "A"])
+    }
+
+    func testAvailableSpeakersSortedByMenuOrder() async {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.addManualSpeaker(displayName: "Carol")  // C
+
+        // Default: registration order (A, B, C)
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A", "B", "C"])
+
+        vm.recordSpeakerSelection("C")
+        // C first, then remaining in registration order (A, B)
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["C", "A", "B"])
+
+        vm.recordSpeakerSelection("B")
+        // B, C first, then remaining (A)
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["B", "C", "A"])
+    }
+
+    func testAvailableSpeakersIgnoresStaleMenuOrder() async {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.speakerMenuOrder = ["Z", "A"]  // Z doesn't exist
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A"])
+    }
+
+    func testReassignSpeakerForBlockRecordsSpeakerSelection() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "World", speaker: "A"),
+        ]
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+        XCTAssertEqual(vm.speakerMenuOrder.first, "B")
+    }
+
+    func testReassignSpeakerForSelectionRecordsSpeakerSelection() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+        ]
+        let map = SegmentCharacterMap(entries: [
+            SegmentCharacterMap.Entry(segmentIndex: 0, characterRange: NSRange(location: 0, length: 5), labelRange: nil)
+        ])
+        vm.reassignSpeakerForSelection(selectionRange: NSRange(location: 0, length: 5), newSpeaker: "B", segmentMap: map)
+        XCTAssertEqual(vm.speakerMenuOrder.first, "B")
+    }
+
     // MARK: - Rename Active Speaker
 
     func testRenameActiveSpeakerUpdatesLabelDisplayNames() async {
@@ -1098,20 +1167,4 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertNil(vm.labelDisplayNames["A"])
     }
 
-    func testRegisteredSpeakersForMenuExcludesActiveSpeakers() {
-        let profileId = UUID()
-        let store = SpeakerProfileStore(directory: tmpDir)
-        store.profiles = [
-            StoredSpeakerProfile(id: profileId, label: "A", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice", tags: ["eng"]),
-            StoredSpeakerProfile(id: UUID(), label: "B", embedding: Array(repeating: 0.2, count: 256), displayName: "Bob", tags: [])
-        ]
-        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
-        vm.activeSpeakers = [
-            ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", displayName: "Alice", source: .manual)
-        ]
-        let menuItems = vm.registeredSpeakersForMenu
-        XCTAssertEqual(menuItems.count, 2)
-        XCTAssertTrue(menuItems.first { $0.profileId == profileId }!.isAlreadyActive)
-        XCTAssertFalse(menuItems.first { $0.profileId != profileId }!.isAlreadyActive)
-    }
 }
