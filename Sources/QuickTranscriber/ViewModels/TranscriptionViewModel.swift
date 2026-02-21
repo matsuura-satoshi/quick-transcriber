@@ -683,6 +683,25 @@ public final class TranscriptionViewModel: ObservableObject {
         return merged
     }
 
+    /// Update activeSpeakers that have no speakerProfileId by matching their sessionLabel
+    /// against stored profiles. Called after mergeSessionProfiles so newly created profiles
+    /// can be linked back to their activeSpeakers for PostMeetingTagSheet.
+    func syncActiveSpeakerProfileIds() {
+        for i in activeSpeakers.indices {
+            guard activeSpeakers[i].speakerProfileId == nil else { continue }
+            let label = activeSpeakers[i].sessionLabel
+            if let profile = speakerProfileStore.profiles.first(where: { $0.label == label }) {
+                activeSpeakers[i] = ActiveSpeaker(
+                    id: activeSpeakers[i].id,
+                    speakerProfileId: profile.id,
+                    sessionLabel: activeSpeakers[i].sessionLabel,
+                    displayName: activeSpeakers[i].displayName,
+                    source: activeSpeakers[i].source
+                )
+            }
+        }
+    }
+
     private func stopRecording() {
         isRecording = false
         saveUnconfirmedText()
@@ -718,6 +737,7 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             self.speakerProfiles = self.speakerProfileStore.profiles
             self.labelDisplayNames = self.speakerProfileStore.labelDisplayNames
+            self.syncActiveSpeakerProfileIds()
             if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
                 self.showPostMeetingTagging = true
             }

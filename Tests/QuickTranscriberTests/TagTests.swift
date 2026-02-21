@@ -423,4 +423,89 @@ final class PostMeetingTagTests: XCTestCase {
 
         XCTAssertEqual(vm.speakerProfiles[0].tags, ["standup"])
     }
+
+    // MARK: - syncActiveSpeakerProfileIds
+
+    func testSyncActiveSpeakerProfileIdsSetsProfileIdForNewSpeakers() {
+        let (vm, store) = makeViewModel()
+        let profileId = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        // Simulate auto-detected speaker with no profile link
+        vm.activeSpeakers = [
+            ActiveSpeaker(sessionLabel: "A", source: .autoDetected),
+        ]
+
+        vm.syncActiveSpeakerProfileIds()
+
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
+    }
+
+    func testSyncActiveSpeakerProfileIdsPreservesExistingProfileId() {
+        let (vm, store) = makeViewModel()
+        let existingProfileId = UUID()
+        let otherProfileId = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: existingProfileId, label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: otherProfileId, label: "B", embedding: makeEmbedding(dominant: 1)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        // Speaker already has a profileId
+        vm.activeSpeakers = [
+            ActiveSpeaker(speakerProfileId: existingProfileId, sessionLabel: "A", source: .manual),
+            ActiveSpeaker(sessionLabel: "B", source: .autoDetected),
+        ]
+
+        vm.syncActiveSpeakerProfileIds()
+
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, existingProfileId)
+        XCTAssertEqual(vm.activeSpeakers[1].speakerProfileId, otherProfileId)
+    }
+
+    func testSyncActiveSpeakerProfileIdsNoMatchLeavesNil() {
+        let (vm, store) = makeViewModel()
+        store.profiles = [
+            StoredSpeakerProfile(label: "X", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.activeSpeakers = [
+            ActiveSpeaker(sessionLabel: "A", source: .autoDetected),
+        ]
+
+        vm.syncActiveSpeakerProfileIds()
+
+        XCTAssertNil(vm.activeSpeakers[0].speakerProfileId)
+    }
+
+    func testSyncActiveSpeakerProfileIdsPreservesOtherFields() {
+        let (vm, store) = makeViewModel()
+        let profileId = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        let speakerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, sessionLabel: "A", displayName: "Alice", source: .manual),
+        ]
+
+        vm.syncActiveSpeakerProfileIds()
+
+        let speaker = vm.activeSpeakers[0]
+        XCTAssertEqual(speaker.id, speakerId)
+        XCTAssertEqual(speaker.sessionLabel, "A")
+        XCTAssertEqual(speaker.displayName, "Alice")
+        XCTAssertEqual(speaker.source, .manual)
+        XCTAssertEqual(speaker.speakerProfileId, profileId)
+    }
 }
