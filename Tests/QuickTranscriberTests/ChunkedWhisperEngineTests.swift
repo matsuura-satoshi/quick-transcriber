@@ -246,7 +246,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
 
         XCTAssertEqual(store.profiles.count, 1)
-        XCTAssertTrue(store.profiles[0].displayName.contains(exportedId.uuidString.prefix(4)))
+        XCTAssertEqual(store.profiles[0].displayName, "Speaker")
     }
 
     func testCorrectSpeakerAssignmentForwardsToDiarizer() async throws {

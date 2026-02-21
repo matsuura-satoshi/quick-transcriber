@@ -722,7 +722,7 @@ public final class TranscriptionViewModel: ObservableObject {
         saveUnconfirmedText()
         fileWriter.updateText(confirmedText)
         Task {
-            await service.stopTranscription()
+            await service.stopTranscription(speakerDisplayNames: self.speakerDisplayNames)
             self.speakerProfiles = self.speakerProfileStore.profiles
             if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
                 self.showPostMeetingTagging = true

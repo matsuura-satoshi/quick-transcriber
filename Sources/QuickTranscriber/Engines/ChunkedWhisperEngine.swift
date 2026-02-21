@@ -115,7 +115,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         NSLog("[ChunkedWhisperEngine] Streaming started")
     }
 
-    public func stopStreaming() async {
+    public func stopStreaming(speakerDisplayNames: [String: String] = [:]) async {
         _isStreaming = false
         audioCaptureService.stopCapture()
 
@@ -151,7 +151,13 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
                 }
                 if !filteredProfiles.isEmpty {
-                    let mergeProfiles = filteredProfiles.map { (speakerId: $0.speakerId, embedding: $0.embedding, displayName: "Speaker-\($0.speakerId.uuidString.prefix(4))") }
+                    let mergeProfiles = filteredProfiles.map { profile in
+                        (
+                            speakerId: profile.speakerId,
+                            embedding: profile.embedding,
+                            displayName: speakerDisplayNames[profile.speakerId.uuidString] ?? "Speaker"
+                        )
+                    }
                     store.mergeSessionProfiles(mergeProfiles)
                     do {
                         try store.save()

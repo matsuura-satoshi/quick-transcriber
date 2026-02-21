@@ -42,8 +42,8 @@ public final class TranscriptionService {
         try await engine.startStreaming(language: language, parameters: parameters, participantProfiles: participantProfiles, onStateChange: onStateChange)
     }
 
-    public func stopTranscription() async {
-        await engine.stopStreaming()
+    public func stopTranscription(speakerDisplayNames: [String: String] = [:]) async {
+        await engine.stopStreaming(speakerDisplayNames: speakerDisplayNames)
     }
 
     public func correctSpeakerAssignment(embedding: [Float], from oldSpeaker: String, to newSpeaker: String) {
