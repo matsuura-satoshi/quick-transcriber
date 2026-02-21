@@ -468,6 +468,14 @@ public final class TranscriptionViewModel: ObservableObject {
         }
     }
 
+    public func bulkAddTag(_ tag: String, to profileIds: [UUID]) {
+        let trimmed = tag.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !profileIds.isEmpty else { return }
+        for id in profileIds {
+            addTag(trimmed, to: id)
+        }
+    }
+
     // MARK: - Active Speaker Management
 
     public func addManualSpeaker(fromProfile profileId: UUID) {

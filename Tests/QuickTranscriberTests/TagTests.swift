@@ -304,3 +304,117 @@ final class TagViewModelTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers.count, 0)
     }
 }
+
+// MARK: - PostMeetingTagSheet Tests
+
+@MainActor
+final class PostMeetingTagTests: XCTestCase {
+
+    private var tmpDir: URL!
+
+    override func setUp() {
+        super.setUp()
+        UserDefaults.standard.removeObject(forKey: "selectedLanguage")
+        UserDefaults.standard.removeObject(forKey: "isRecording")
+        tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PostMeetingTagTests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: tmpDir)
+        super.tearDown()
+    }
+
+    private func makeEmbedding(dominant dim: Int, dimensions: Int = 256) -> [Float] {
+        var v = [Float](repeating: 0.01, count: dimensions)
+        v[dim] = 1.0
+        return v
+    }
+
+    private func makeViewModel() -> (TranscriptionViewModel, SpeakerProfileStore) {
+        let engine = MockTranscriptionEngine()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(
+            engine: engine,
+            modelName: "test-model",
+            speakerProfileStore: store
+        )
+        return (vm, store)
+    }
+
+    func testBulkAddTagAppliesTagToMultipleProfiles() {
+        let (vm, store) = makeViewModel()
+        let id1 = UUID()
+        let id2 = UUID()
+        let id3 = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(id: id3, label: "C", embedding: makeEmbedding(dominant: 2)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.bulkAddTag("standup", to: [id1, id2])
+
+        XCTAssertEqual(vm.speakerProfiles[0].tags, ["standup"])
+        XCTAssertEqual(vm.speakerProfiles[1].tags, ["standup"])
+        XCTAssertEqual(vm.speakerProfiles[2].tags, [])
+    }
+
+    func testBulkAddTagEmptyTagIsNoOp() {
+        let (vm, store) = makeViewModel()
+        let id = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.bulkAddTag("", to: [id])
+
+        XCTAssertEqual(vm.speakerProfiles[0].tags, [])
+    }
+
+    func testBulkAddTagWhitespaceOnlyIsNoOp() {
+        let (vm, store) = makeViewModel()
+        let id = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.bulkAddTag("   ", to: [id])
+
+        XCTAssertEqual(vm.speakerProfiles[0].tags, [])
+    }
+
+    func testBulkAddTagEmptyProfileIdsIsNoOp() {
+        let (vm, store) = makeViewModel()
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.bulkAddTag("standup", to: [])
+
+        XCTAssertEqual(vm.speakerProfiles[0].tags, [])
+    }
+
+    func testBulkAddTagSkipsDuplicates() {
+        let (vm, store) = makeViewModel()
+        let id = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0), tags: ["standup"]),
+        ]
+        try? store.save()
+        vm.speakerProfiles = store.profiles
+
+        vm.bulkAddTag("standup", to: [id])
+
+        XCTAssertEqual(vm.speakerProfiles[0].tags, ["standup"])
+    }
+}
