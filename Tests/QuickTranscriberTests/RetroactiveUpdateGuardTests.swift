@@ -10,11 +10,12 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         let mockDiarizer = MockSpeakerDiarizer()
 
         // First chunk: diarizer returns nil (pending)
-        // Second chunk: diarizer returns speaker "A" (triggers retroactive update)
+        // Second chunk: diarizer returns speaker (triggers retroactive update)
+        let testSpeakerId = UUID()
         mockDiarizer.speakerResults = [
             nil,
-            SpeakerIdentification(label: "A", confidence: 0.8),
-            SpeakerIdentification(label: "A", confidence: 0.8),
+            SpeakerIdentification(speakerId: testSpeakerId, confidence: 0.8),
+            SpeakerIdentification(speakerId: testSpeakerId, confidence: 0.8),
         ]
 
         mockTranscriber.transcribeResults = [
@@ -74,12 +75,13 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         let mockTranscriber = MockChunkTranscriber()
         let mockDiarizer = MockSpeakerDiarizer()
 
-        // ViterbiSpeakerSmoother needs consecutive same labels to confirm a speaker
-        // nil, A, A → confirms A, triggers retroactive update on pending segments
+        // ViterbiSpeakerSmoother needs consecutive same IDs to confirm a speaker
+        // nil, id, id → confirms speaker, triggers retroactive update on pending segments
+        let testSpeakerId2 = UUID()
         mockDiarizer.speakerResults = [
             nil,
-            SpeakerIdentification(label: "A", confidence: 0.8),
-            SpeakerIdentification(label: "A", confidence: 0.8),
+            SpeakerIdentification(speakerId: testSpeakerId2, confidence: 0.8),
+            SpeakerIdentification(speakerId: testSpeakerId2, confidence: 0.8),
         ]
 
         mockTranscriber.transcribeResults = [
@@ -136,9 +138,11 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         let mockTranscriber = MockChunkTranscriber()
         let mockDiarizer = MockSpeakerDiarizer()
 
+        let profileIdA = UUID()
+        let profileIdB = UUID()
         mockDiarizer.exportedProfiles = [
-            (label: "A", embedding: [Float](repeating: 0.1, count: 256)),
-            (label: "B", embedding: [Float](repeating: 0.2, count: 256)),
+            (speakerId: profileIdA, embedding: [Float](repeating: 0.1, count: 256)),
+            (speakerId: profileIdB, embedding: [Float](repeating: 0.2, count: 256)),
         ]
 
         mockTranscriber.transcribeResults = [
@@ -167,15 +171,15 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         mockCapture.simulateBuffer(speech)
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        // Mark segment as user-corrected (was originally "A", user changed to "C")
-        engine.markSegmentAsUserCorrected(at: 0, speaker: "C", originalSpeaker: "A")
+        // Mark segment as user-corrected (was originally profileIdA, user changed to some other speaker)
+        engine.markSegmentAsUserCorrected(at: 0, speaker: UUID().uuidString, originalSpeaker: profileIdA.uuidString)
 
         await engine.stopStreaming()
 
-        // Only "B" should have been merged (not "A" since it was the original speaker of a corrected segment)
+        // Only profileIdB should have been merged (not profileIdA since it was the original speaker of a corrected segment)
         let profiles = store.profiles
         let mergedLabels = profiles.map { $0.label }
-        XCTAssertTrue(mergedLabels.contains("B"), "Non-corrected speaker B should be merged")
-        XCTAssertFalse(mergedLabels.contains("A"), "Corrected speaker A should NOT be merged")
+        XCTAssertTrue(mergedLabels.contains(profileIdB.uuidString), "Non-corrected speaker B should be merged")
+        XCTAssertFalse(mergedLabels.contains(profileIdA.uuidString), "Corrected speaker A should NOT be merged")
     }
 }

@@ -207,7 +207,7 @@ private struct SpeakersSettingsTab: View {
                 ActiveSpeakerRow(
                     speaker: speaker,
                     onRename: { name in
-                        viewModel.renameActiveSpeaker(label: speaker.sessionLabel, displayName: name)
+                        viewModel.renameActiveSpeaker(id: speaker.id, displayName: name)
                     },
                     onRemove: {
                         viewModel.removeActiveSpeaker(id: speaker.id)
@@ -372,7 +372,7 @@ private struct ActiveSpeakerRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Text("Speaker \(speaker.sessionLabel)")
+                    Text(speaker.displayName ?? "Speaker")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     sourceBadge

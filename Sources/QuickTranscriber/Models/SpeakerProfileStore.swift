@@ -64,16 +64,6 @@ public final class SpeakerProfileStore {
         return label
     }
 
-    public var labelDisplayNames: [String: String] {
-        var result: [String: String] = [:]
-        for profile in profiles {
-            if let name = profile.displayName, !name.isEmpty {
-                result[profile.label] = name
-            }
-        }
-        return result
-    }
-
     // MARK: - Tags
 
     public var allTags: [String] {
@@ -118,7 +108,20 @@ public final class SpeakerProfileStore {
     }
 
     private func nextAvailableLabel() -> String {
-        LabelUtils.nextAvailableLabel(usedLabels: Set(profiles.map { $0.label }))
+        let usedLabels = Set(profiles.map { $0.label })
+        // Single letters A-Z
+        for i in 0..<26 {
+            let label = String(UnicodeScalar(UInt8(65 + i)))
+            if !usedLabels.contains(label) { return label }
+        }
+        // Double letters AA-ZZ
+        for i in 0..<26 {
+            for j in 0..<26 {
+                let label = String(UnicodeScalar(UInt8(65 + i))) + String(UnicodeScalar(UInt8(65 + j)))
+                if !usedLabels.contains(label) { return label }
+            }
+        }
+        return "Z\(usedLabels.count)"
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {

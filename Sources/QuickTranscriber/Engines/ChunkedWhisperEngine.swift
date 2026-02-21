@@ -57,7 +57,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     public func startStreaming(
         language: String,
         parameters: TranscriptionParameters = .default,
-        participantProfiles: [(label: String, embedding: [Float])]? = nil,
+        participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         accumulator = ChunkAccumulator(
@@ -79,7 +79,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 // Auto mode: load all profiles from store
                 diarizer.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
                 if let store = speakerProfileStore {
-                    let profiles = store.profiles.map { ($0.label, $0.embedding) }
+                    let profiles = store.profiles.map { (speakerId: $0.id, embedding: $0.embedding) }
                     if !profiles.isEmpty {
                         diarizer.loadSpeakerProfiles(profiles)
                         NSLog("[ChunkedWhisperEngine] Auto mode: loaded \(profiles.count) speaker profiles from store")
@@ -143,15 +143,16 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                         .filter { $0.isUserCorrected }
                         .compactMap { $0.originalSpeaker }
                 )
-                let filteredProfiles: [(label: String, embedding: [Float])]
+                let filteredProfiles: [(speakerId: UUID, embedding: [Float])]
                 if correctedOriginalSpeakers.isEmpty {
                     filteredProfiles = sessionProfiles
                 } else {
-                    filteredProfiles = sessionProfiles.filter { !correctedOriginalSpeakers.contains($0.label) }
+                    filteredProfiles = sessionProfiles.filter { !correctedOriginalSpeakers.contains($0.speakerId.uuidString) }
                     NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
                 }
                 if !filteredProfiles.isEmpty {
-                    store.mergeSessionProfiles(filteredProfiles)
+                    let mergeProfiles = filteredProfiles.map { (label: $0.speakerId.uuidString, embedding: $0.embedding) }
+                    store.mergeSessionProfiles(mergeProfiles)
                     do {
                         try store.save()
                     } catch {
@@ -167,11 +168,11 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             let entries = detailed.compactMap { profile -> EmbeddingHistoryEntry? in
                 guard !profile.embeddingHistory.isEmpty else { return nil }
                 // Match with stored profile to get UUID
-                let storedProfile = speakerProfileStore?.profiles.first { $0.label == profile.label }
-                let profileId = storedProfile?.id ?? UUID()
+                let storedProfile = speakerProfileStore?.profiles.first { $0.id == profile.speakerId }
+                let profileId = storedProfile?.id ?? profile.speakerId
                 return EmbeddingHistoryEntry(
                     speakerProfileId: profileId,
-                    label: profile.label,
+                    label: profile.speakerId.uuidString,
                     sessionDate: Date(),
                     embeddings: profile.embeddingHistory.map { entry in
                         HistoricalEmbedding(embedding: entry.embedding, confirmed: true, confidence: entry.confidence)
@@ -199,8 +200,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments[index].isUserCorrected = true
     }
 
-    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
-        diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newLabel)
+    public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
+        diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
     }
 
     public func cleanup() {
@@ -268,17 +269,17 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedResult: SpeakerIdentification?
             if currentParameters.enableSpeakerDiarization {
-                smoothedResult = speakerSmoother.processLabel(rawSpeakerResult)
+                smoothedResult = speakerSmoother.process(rawSpeakerResult)
 
                 // Retroactively update pending segments with confidence (skip user-corrected)
                 if let result = smoothedResult, let startIdx = pendingSegmentStartIndex {
                     for i in startIdx..<confirmedSegments.count {
                         guard !confirmedSegments[i].isUserCorrected else { continue }
-                        confirmedSegments[i].speaker = result.label
+                        confirmedSegments[i].speaker = result.speakerId.uuidString
                         confirmedSegments[i].speakerConfidence = result.confidence
                     }
                     pendingSegmentStartIndex = nil
-                    NSLog("[ChunkedWhisperEngine] Retroactively assigned speaker \(result.label) to \(confirmedSegments.count - startIdx) pending segments")
+                    NSLog("[ChunkedWhisperEngine] Retroactively assigned speaker \(result.speakerId.uuidString) to \(confirmedSegments.count - startIdx) pending segments")
                 }
             } else {
                 smoothedResult = nil
@@ -294,11 +295,11 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 confirmedSegments.append(ConfirmedSegment(
                     text: segment.text,
                     precedingSilence: precedingSilence,
-                    speaker: smoothedResult?.label,
+                    speaker: smoothedResult?.speakerId.uuidString,
                     speakerConfidence: smoothedResult?.confidence,
                     speakerEmbedding: rawSpeakerResult?.embedding
                 ))
-                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.label ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
+                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.speakerId.uuidString ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }
 
             // Track where pending segments start

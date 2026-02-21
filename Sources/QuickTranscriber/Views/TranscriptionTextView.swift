@@ -49,10 +49,10 @@ public struct SegmentCharacterMap {
 
 private class BlockReassignInfo: NSObject {
     let segmentIndex: Int
-    let label: String
-    init(segmentIndex: Int, label: String) {
+    let speakerIdString: String
+    init(segmentIndex: Int, speakerIdString: String) {
         self.segmentIndex = segmentIndex
-        self.label = label
+        self.speakerIdString = speakerIdString
     }
 }
 
@@ -111,7 +111,7 @@ internal class InteractiveTranscriptionTextView: NSTextView {
             let title = Self.menuTitle(for: speaker)
             let item = NSMenuItem(title: title, action: #selector(reassignSelectionAction(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = speaker.label
+            item.representedObject = speaker.id.uuidString
             speakerMenu.addItem(item)
         }
 
@@ -131,7 +131,7 @@ internal class InteractiveTranscriptionTextView: NSTextView {
             let title = Self.menuTitle(for: speaker)
             let item = NSMenuItem(title: title, action: #selector(reassignBlockAction(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = BlockReassignInfo(segmentIndex: firstIdx, label: speaker.label)
+            item.representedObject = BlockReassignInfo(segmentIndex: firstIdx, speakerIdString: speaker.id.uuidString)
             menu.addItem(item)
         }
 
@@ -141,25 +141,25 @@ internal class InteractiveTranscriptionTextView: NSTextView {
     }
 
     private static func menuTitle(for speaker: TranscriptionViewModel.SpeakerMenuItem) -> String {
-        if let name = speaker.displayName, name != speaker.label {
-            return "\(name) (\(speaker.label))"
+        if let name = speaker.displayName {
+            return name
         }
-        return speaker.label
+        return speaker.id.uuidString
     }
 
     @objc private func reassignBlockAction(_ sender: NSMenuItem) {
         guard let info = sender.representedObject as? BlockReassignInfo else { return }
         let segmentIndex = info.segmentIndex
-        let label = info.label
-        onReassignBlock?(segmentIndex, label)
+        let speakerId = info.speakerIdString
+        onReassignBlock?(segmentIndex, speakerId)
     }
 
     @objc private func reassignSelectionAction(_ sender: NSMenuItem) {
-        guard let label = sender.representedObject as? String,
+        guard let speakerId = sender.representedObject as? String,
               let map = segmentMap else { return }
         let range = selectedRange()
         guard range.length > 0 else { return }
-        onReassignSelection?(range, label, map)
+        onReassignSelection?(range, speakerId, map)
     }
 
 }
@@ -171,7 +171,7 @@ struct TranscriptionTextView: NSViewRepresentable {
     let confirmedSegments: [ConfirmedSegment]
     var language: String = "en"
     var silenceThreshold: TimeInterval = 1.0
-    var labelDisplayNames: [String: String] = [:]
+    var speakerDisplayNames: [String: String] = [:]
     var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
     var onReassignBlock: ((Int, String) -> Void)?
     var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
@@ -252,7 +252,7 @@ struct TranscriptionTextView: NSViewRepresentable {
                 unconfirmed: newUnconfirmed,
                 oldFontSize: oldFontSize,
                 oldUnconfirmed: oldUnconfirmed,
-                labelDisplayNames: labelDisplayNames
+                speakerDisplayNames: speakerDisplayNames
             )
         } else {
             // No confidence data: use efficient diff-append path
@@ -340,7 +340,7 @@ struct TranscriptionTextView: NSViewRepresentable {
         silenceThreshold: TimeInterval,
         fontSize: CGFloat,
         unconfirmed: String,
-        labelDisplayNames: [String: String] = [:]
+        speakerDisplayNames: [String: String] = [:]
     ) -> (NSAttributedString, SegmentCharacterMap) {
         let result = NSMutableAttributedString()
         var map = SegmentCharacterMap()
@@ -372,7 +372,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
             if isFirst {
                 if hasSpeakers, let speaker = segment.speaker {
-                    let displayName = labelDisplayNames[speaker] ?? speaker
+                    let displayName = speakerDisplayNames[speaker] ?? "Unknown"
                     let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
                     let labelStart = result.length
                     let labelStr = "\(displayName): "
@@ -400,7 +400,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
             // Priority 1: Speaker change
             if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
-                let displayName = labelDisplayNames[speaker] ?? speaker
+                let displayName = speakerDisplayNames[speaker] ?? "Unknown"
                 let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
                 result.append(NSAttributedString(string: "\n", attributes: normalAttrs))
                 let labelStart = result.length
@@ -508,13 +508,13 @@ struct TranscriptionTextView: NSViewRepresentable {
             unconfirmed: String,
             oldFontSize: CGFloat,
             oldUnconfirmed: String,
-            labelDisplayNames: [String: String] = [:]
+            speakerDisplayNames: [String: String] = [:]
         ) {
             guard let textView, let textStorage = textView.textStorage else { return }
 
             let (attributed, map) = TranscriptionTextView.buildAttributedStringFromSegments(
                 segments, language: language, silenceThreshold: silenceThreshold,
-                fontSize: fontSize, unconfirmed: unconfirmed, labelDisplayNames: labelDisplayNames
+                fontSize: fontSize, unconfirmed: unconfirmed, speakerDisplayNames: speakerDisplayNames
             )
 
             if let interactiveView = textView as? InteractiveTranscriptionTextView {

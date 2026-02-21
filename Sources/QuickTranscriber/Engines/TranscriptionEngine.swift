@@ -30,11 +30,11 @@ public struct TranscriptionState: Sendable {
 
 public protocol TranscriptionEngine: AnyObject {
     func setup(model: String) async throws
-    func startStreaming(language: String, parameters: TranscriptionParameters, participantProfiles: [(label: String, embedding: [Float])]?, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
+    func startStreaming(language: String, parameters: TranscriptionParameters, participantProfiles: [(speakerId: UUID, embedding: [Float])]?, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
     func stopStreaming() async
     func cleanup()
     var isStreaming: Bool { get async }
-    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String)
+    func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
 }
 
 extension TranscriptionEngine {
@@ -46,7 +46,7 @@ extension TranscriptionEngine {
         try await startStreaming(language: language, parameters: .default, participantProfiles: nil, onStateChange: onStateChange)
     }
 
-    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
+    public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         // Default no-op for engines without diarization
     }
 }

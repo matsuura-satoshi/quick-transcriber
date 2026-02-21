@@ -149,7 +149,7 @@ public enum TranscriptionUtils {
         _ segments: [ConfirmedSegment],
         language: String,
         silenceThreshold: TimeInterval = 1.0,
-        labelDisplayNames: [String: String] = [:]
+        speakerDisplayNames: [String: String] = [:]
     ) -> String {
         guard !segments.isEmpty else { return "" }
         let hasSpeakers = segments.contains { $0.speaker != nil }
@@ -165,7 +165,7 @@ public enum TranscriptionUtils {
 
             if index == 0 {
                 if hasSpeakers, let speaker = segment.speaker {
-                    let displayName = labelDisplayNames[speaker] ?? speaker
+                    let displayName = speakerDisplayNames[speaker] ?? "Unknown"
                     result = "\(displayName): \(segment.text)"
                     currentSpeaker = speaker
                 } else {
@@ -176,7 +176,7 @@ public enum TranscriptionUtils {
 
             // Priority 1: Speaker change
             if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
-                let displayName = labelDisplayNames[speaker] ?? speaker
+                let displayName = speakerDisplayNames[speaker] ?? "Unknown"
                 result += "\n\(displayName): \(segment.text)"
                 currentSpeaker = speaker
                 continue

@@ -69,13 +69,15 @@ final class SpeakerDiarizerTests: XCTestCase {
         let embB = [Float](repeating: 0.01, count: 256)
         var embB_modified = embB
         embB_modified[1] = 1.0
-        diarizer.loadSpeakerProfiles([("A", embA_modified), ("B", embB_modified)])
+        let idA = UUID()
+        let idB = UUID()
+        diarizer.loadSpeakerProfiles([(speakerId: idA, embedding: embA_modified), (speakerId: idB, embedding: embB_modified)])
 
-        diarizer.correctSpeakerAssignment(embedding: embA_modified, from: "A", to: "B")
+        diarizer.correctSpeakerAssignment(embedding: embA_modified, from: idA, to: idB)
 
         let profiles = diarizer.exportSpeakerProfiles()
         // A had only one embedding (from loadProfiles seed), now moved to B
         XCTAssertEqual(profiles.count, 1)
-        XCTAssertEqual(profiles[0].label, "B")
+        XCTAssertEqual(profiles[0].speakerId, idB)
     }
 }

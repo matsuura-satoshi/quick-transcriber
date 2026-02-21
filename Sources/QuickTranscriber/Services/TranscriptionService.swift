@@ -30,7 +30,7 @@ public final class TranscriptionService {
     public func startTranscription(
         language: String,
         parameters: TranscriptionParameters = .default,
-        participantProfiles: [(label: String, embedding: [Float])]? = nil,
+        participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         guard isReady else {
@@ -46,8 +46,9 @@ public final class TranscriptionService {
         await engine.stopStreaming()
     }
 
-    public func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
-        engine.correctSpeakerAssignment(embedding: embedding, from: oldLabel, to: newLabel)
+    public func correctSpeakerAssignment(embedding: [Float], from oldSpeaker: String, to newSpeaker: String) {
+        guard let oldId = UUID(uuidString: oldSpeaker), let newId = UUID(uuidString: newSpeaker) else { return }
+        engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
     }
 
     public func cleanup() {

@@ -6,7 +6,7 @@ struct TranslationTextView: NSViewRepresentable {
     let fontSize: CGFloat
     var language: String = "en"
     var silenceThreshold: TimeInterval = 1.0
-    var labelDisplayNames: [String: String] = [:]
+    var speakerDisplayNames: [String: String] = [:]
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -55,7 +55,7 @@ struct TranslationTextView: NSViewRepresentable {
             silenceThreshold: silenceThreshold,
             fontSize: fontSize,
             unconfirmed: "",
-            labelDisplayNames: labelDisplayNames
+            speakerDisplayNames: speakerDisplayNames
         )
 
         let newText = attributed.string

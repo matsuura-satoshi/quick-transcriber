@@ -219,7 +219,8 @@ final class TranscriptionUtilsTests: XCTestCase {
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
             ConfirmedSegment(text: "Hi there", precedingSilence: 0.5, speaker: "B"),
         ]
-        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        let names = ["A": "A", "B": "B"]
+        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
         XCTAssertEqual(result, "A: Hello\nB: Hi there")
     }
 
@@ -228,7 +229,8 @@ final class TranscriptionUtilsTests: XCTestCase {
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
             ConfirmedSegment(text: "how are you", precedingSilence: 0.3, speaker: "A"),
         ]
-        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        let names = ["A": "A"]
+        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
         XCTAssertEqual(result, "A: Hello how are you")
     }
 
@@ -238,7 +240,8 @@ final class TranscriptionUtilsTests: XCTestCase {
             ConfirmedSegment(text: "Hi", precedingSilence: 0.5, speaker: "B"),
             ConfirmedSegment(text: "Good morning", precedingSilence: 0.3, speaker: "A"),
         ]
-        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        let names = ["A": "A", "B": "B"]
+        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
         XCTAssertEqual(result, "A: Hello\nB: Hi\nA: Good morning")
     }
 
@@ -257,7 +260,8 @@ final class TranscriptionUtilsTests: XCTestCase {
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
             ConfirmedSegment(text: "continued", precedingSilence: 2.0, speaker: "A"),
         ]
-        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        let names = ["A": "A"]
+        let result = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
         // Same speaker but silence break → newline without new label
         XCTAssertEqual(result, "A: Hello\ncontinued")
     }
@@ -269,9 +273,10 @@ final class TranscriptionUtilsTests: XCTestCase {
             ConfirmedSegment(text: "new speaker", precedingSilence: 0.5, speaker: nil),  // pending
             ConfirmedSegment(text: "still talking", precedingSilence: 0.3, speaker: nil), // pending
         ]
+        let names = ["A": "A", "B": "B"]
 
         // Before update: pending segments have no label
-        let beforeUpdate = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        let beforeUpdate = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
         XCTAssertEqual(beforeUpdate, "A: Hello new speaker still talking")
 
         // Retroactive update: confirm speaker B
@@ -279,7 +284,7 @@ final class TranscriptionUtilsTests: XCTestCase {
             segments[i].speaker = "B"
         }
 
-        let afterUpdate = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
+        let afterUpdate = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
         XCTAssertEqual(afterUpdate, "A: Hello\nB: new speaker still talking")
     }
 
@@ -288,11 +293,12 @@ final class TranscriptionUtilsTests: XCTestCase {
             ConfirmedSegment(text: "おはようございます", precedingSilence: 0, speaker: "A"),
             ConfirmedSegment(text: "おはよう", precedingSilence: 0.5, speaker: "B"),
         ]
-        let result = TranscriptionUtils.joinSegments(segments, language: "ja", silenceThreshold: 1.0)
+        let names = ["A": "A", "B": "B"]
+        let result = TranscriptionUtils.joinSegments(segments, language: "ja", silenceThreshold: 1.0, speakerDisplayNames: names)
         XCTAssertEqual(result, "A: おはようございます\nB: おはよう")
     }
 
-    // MARK: - joinSegments with labelDisplayNames
+    // MARK: - joinSegments with display names
 
     func testJoinSegmentsResolvesDisplayNames() {
         let segments = [
@@ -301,32 +307,32 @@ final class TranscriptionUtilsTests: XCTestCase {
         ]
         let names = ["A": "Alice", "B": "Bob"]
         let result = TranscriptionUtils.joinSegments(
-            segments, language: "en", silenceThreshold: 1.0, labelDisplayNames: names
+            segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names
         )
         XCTAssertEqual(result, "Alice: Hello\nBob: Hi there")
     }
 
-    func testJoinSegmentsFallsBackToLabelWhenNoDisplayName() {
+    func testJoinSegmentsFallsBackToUnknownWhenNoDisplayName() {
         let segments = [
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
             ConfirmedSegment(text: "Hi", precedingSilence: 0.5, speaker: "C"),
         ]
         let names = ["A": "Alice"]  // C has no mapping
         let result = TranscriptionUtils.joinSegments(
-            segments, language: "en", silenceThreshold: 1.0, labelDisplayNames: names
+            segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names
         )
-        XCTAssertEqual(result, "Alice: Hello\nC: Hi")
+        XCTAssertEqual(result, "Alice: Hello\nUnknown: Hi")
     }
 
-    func testJoinSegmentsEmptyDisplayNamesUsesLabels() {
+    func testJoinSegmentsEmptyDisplayNamesUsesUnknown() {
         let segments = [
             ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A"),
             ConfirmedSegment(text: "Hi", precedingSilence: 0.5, speaker: "B"),
         ]
         let result = TranscriptionUtils.joinSegments(
-            segments, language: "en", silenceThreshold: 1.0, labelDisplayNames: [:]
+            segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: [:]
         )
-        XCTAssertEqual(result, "A: Hello\nB: Hi")
+        XCTAssertEqual(result, "Unknown: Hello\nUnknown: Hi")
     }
 
     // MARK: - ConfirmedSegment isUserCorrected and originalSpeaker

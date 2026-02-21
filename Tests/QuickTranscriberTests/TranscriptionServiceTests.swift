@@ -121,12 +121,24 @@ final class TranscriptionServiceTests: XCTestCase {
         let service = TranscriptionService(engine: engine)
 
         let embedding: [Float] = [1.0, 2.0, 3.0]
-        service.correctSpeakerAssignment(embedding: embedding, from: "A", to: "B")
+        let oldId = UUID()
+        let newId = UUID()
+        service.correctSpeakerAssignment(embedding: embedding, from: oldId.uuidString, to: newId.uuidString)
 
         XCTAssertEqual(engine.correctedAssignments.count, 1)
-        XCTAssertEqual(engine.correctedAssignments[0].oldLabel, "A")
-        XCTAssertEqual(engine.correctedAssignments[0].newLabel, "B")
+        XCTAssertEqual(engine.correctedAssignments[0].oldId, oldId)
+        XCTAssertEqual(engine.correctedAssignments[0].newId, newId)
         XCTAssertEqual(engine.correctedAssignments[0].embedding, embedding)
+    }
+
+    func testCorrectSpeakerAssignmentWithInvalidUUIDIsNoOp() {
+        let engine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: engine)
+
+        let embedding: [Float] = [1.0, 2.0, 3.0]
+        service.correctSpeakerAssignment(embedding: embedding, from: "not-a-uuid", to: "also-not-a-uuid")
+
+        XCTAssertEqual(engine.correctedAssignments.count, 0, "Invalid UUID strings should result in no-op")
     }
 
     func testServiceErrorDescriptions() {

@@ -234,30 +234,6 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.displayName(for: "Z"), "Z")
     }
 
-    func testLabelDisplayNames() {
-        let store = SpeakerProfileStore(directory: makeTempDirectory())
-        store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice"),
-            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1)),
-        ]
-        let names = store.labelDisplayNames
-        XCTAssertEqual(names["A"], "Alice")
-        // B has no displayName, so it should not appear in labelDisplayNames
-        XCTAssertNil(names["B"])
-    }
-
-    func testLabelDisplayNamesExcludesEmptyNames() {
-        let store = SpeakerProfileStore(directory: makeTempDirectory())
-        store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice"),
-            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1), displayName: ""),
-            StoredSpeakerProfile(label: "C", embedding: makeEmbedding(dominant: 2)),
-        ]
-        let names = store.labelDisplayNames
-        XCTAssertEqual(names.count, 1)
-        XCTAssertEqual(names["A"], "Alice")
-    }
-
     // MARK: - Label Collision Prevention
 
     func testMergeNewProfileWithDuplicateLabelGetsUniqueLabel() {

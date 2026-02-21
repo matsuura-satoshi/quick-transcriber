@@ -10,7 +10,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     var startStreamingCallCount: Int = 0
     var startStreamingLanguage: String?
     var startStreamingParameters: TranscriptionParameters?
-    var startStreamingParticipantProfiles: [(label: String, embedding: [Float])]?
+    var startStreamingParticipantProfiles: [(speakerId: UUID, embedding: [Float])]?
     var startStreamingError: Error?
     private var stateChangeCallback: (@Sendable (TranscriptionState) -> Void)?
 
@@ -34,7 +34,7 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     func startStreaming(
         language: String,
         parameters: TranscriptionParameters = .default,
-        participantProfiles: [(label: String, embedding: [Float])]? = nil,
+        participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         startStreamingCalled = true
@@ -62,10 +62,10 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         stateChangeCallback = nil
     }
 
-    var correctedAssignments: [(embedding: [Float], oldLabel: String, newLabel: String)] = []
+    var correctedAssignments: [(embedding: [Float], oldId: UUID, newId: UUID)] = []
 
-    func correctSpeakerAssignment(embedding: [Float], from oldLabel: String, to newLabel: String) {
-        correctedAssignments.append((embedding: embedding, oldLabel: oldLabel, newLabel: newLabel))
+    func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
+        correctedAssignments.append((embedding: embedding, oldId: oldId, newId: newId))
     }
 
     // Helper to simulate state changes from the engine

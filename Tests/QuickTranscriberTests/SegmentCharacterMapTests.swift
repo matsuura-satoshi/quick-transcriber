@@ -3,6 +3,8 @@ import XCTest
 
 final class SegmentCharacterMapTests: XCTestCase {
 
+    private let defaultNames = ["A": "A", "B": "B"]
+
     // MARK: - buildAttributedStringFromSegments returns map
 
     func testBuildReturnsMapWithCorrectEntryCount() {
@@ -12,7 +14,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         XCTAssertEqual(map.entries.count, 2)
     }
@@ -23,7 +25,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (result, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         // "A: Hello"
         XCTAssertEqual(result.string, "A: Hello")
@@ -53,7 +55,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (result, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         // "A: Hello\nB: World"
         XCTAssertEqual(result.string, "A: Hello\nB: World")
@@ -71,7 +73,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         // Select "Hello" part (range 3..<8)
         let indices = map.segmentIndices(overlapping: NSRange(location: 3, length: 5))
@@ -85,7 +87,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         // Select range spanning both segments
         let indices = map.segmentIndices(overlapping: NSRange(location: 3, length: 15))
@@ -102,7 +104,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         let block = map.consecutiveBlockIndices(from: 0, segments: segments)
         XCTAssertEqual(block, [0, 1])
@@ -117,7 +119,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         let block = map.consecutiveBlockIndices(from: 1, segments: segments)
         XCTAssertEqual(block, [1, 2])
@@ -131,7 +133,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         // Position 0 is within "A: " label
         let entry = map.labelEntry(at: 0)
@@ -145,7 +147,7 @@ final class SegmentCharacterMapTests: XCTestCase {
         ]
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
-            fontSize: 15, unconfirmed: ""
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: defaultNames
         )
         // Position 3 is within "Hello" text, not label
         let entry = map.labelEntry(at: 3)
@@ -171,11 +173,23 @@ final class SegmentCharacterMapTests: XCTestCase {
         let (result, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             segments, language: "en", silenceThreshold: 1.0,
             fontSize: 15, unconfirmed: "",
-            labelDisplayNames: ["A": "Alice"]
+            speakerDisplayNames: ["A": "Alice"]
         )
         // "Alice: Hello"
         XCTAssertEqual(result.string, "Alice: Hello")
         XCTAssertEqual(map.entries[0].labelRange, NSRange(location: 0, length: 7)) // "Alice: "
         XCTAssertEqual(map.entries[0].characterRange, NSRange(location: 7, length: 5)) // "Hello"
+    }
+
+    func testBuildWithoutDisplayNameFallsBackToUnknown() {
+        let segments = [
+            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
+        ]
+        let (result, _) = TranscriptionTextView.buildAttributedStringFromSegments(
+            segments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: ""
+        )
+        // No display name mapping → falls back to "Unknown"
+        XCTAssertEqual(result.string, "Unknown: Hello")
     }
 }
