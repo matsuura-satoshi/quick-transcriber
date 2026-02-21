@@ -316,6 +316,7 @@ final class PostMeetingTagTests: XCTestCase {
         super.setUp()
         UserDefaults.standard.removeObject(forKey: "selectedLanguage")
         UserDefaults.standard.removeObject(forKey: "isRecording")
+        UserDefaults.standard.removeObject(forKey: "showPostMeetingSheet")
         tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PostMeetingTagTests-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
@@ -402,6 +403,11 @@ final class PostMeetingTagTests: XCTestCase {
         vm.bulkAddTag("standup", to: [])
 
         XCTAssertEqual(vm.speakerProfiles[0].tags, [])
+    }
+
+    func testShowPostMeetingTaggingDefaultsFalse() {
+        let (vm, _) = makeViewModel()
+        XCTAssertFalse(vm.showPostMeetingTagging)
     }
 
     func testBulkAddTagSkipsDuplicates() {
