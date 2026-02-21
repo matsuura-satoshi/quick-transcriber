@@ -734,6 +734,49 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(vm.availableSpeakers.isEmpty)
     }
 
+    // MARK: - Speaker Menu Order
+
+    func testRecordSpeakerSelectionMovesLabelToFront() async {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.addManualSpeaker(displayName: "Carol")  // C
+
+        vm.recordSpeakerSelection("C")
+        XCTAssertEqual(vm.speakerMenuOrder, ["C"])
+
+        vm.recordSpeakerSelection("A")
+        XCTAssertEqual(vm.speakerMenuOrder, ["A", "C"])
+
+        vm.recordSpeakerSelection("C")
+        XCTAssertEqual(vm.speakerMenuOrder, ["C", "A"])
+    }
+
+    func testAvailableSpeakersSortedByMenuOrder() async {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.addManualSpeaker(displayName: "Carol")  // C
+
+        // Default: registration order (A, B, C)
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A", "B", "C"])
+
+        vm.recordSpeakerSelection("C")
+        // C first, then remaining in registration order (A, B)
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["C", "A", "B"])
+
+        vm.recordSpeakerSelection("B")
+        // B, C first, then remaining (A)
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["B", "C", "A"])
+    }
+
+    func testAvailableSpeakersIgnoresStaleMenuOrder() async {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.speakerMenuOrder = ["Z", "A"]  // Z doesn't exist
+        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A"])
+    }
+
     // MARK: - Rename Active Speaker
 
     func testRenameActiveSpeakerUpdatesLabelDisplayNames() async {
