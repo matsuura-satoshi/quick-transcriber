@@ -19,6 +19,13 @@ public struct StoredSpeakerProfile: Codable, Equatable, Sendable {
         self.tags = tags
     }
 
+    public var displayLabel: String {
+        if let name = displayName, !name.isEmpty {
+            return name
+        }
+        return "Speaker \(label)"
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(UUID.self, forKey: .id)

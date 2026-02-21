@@ -316,6 +316,35 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.profiles[0].sessionCount, 2)
     }
 
+    // MARK: - displayLabel
+
+    func testDisplayLabelWithDisplayName() {
+        let profile = StoredSpeakerProfile(
+            id: UUID(), label: "A", embedding: [0.1],
+            lastUsed: Date(), sessionCount: 3,
+            displayName: "Alice", tags: []
+        )
+        XCTAssertEqual(profile.displayLabel, "Alice")
+    }
+
+    func testDisplayLabelWithoutDisplayName() {
+        let profile = StoredSpeakerProfile(
+            id: UUID(), label: "A", embedding: [0.1],
+            lastUsed: Date(), sessionCount: 3,
+            displayName: nil, tags: []
+        )
+        XCTAssertEqual(profile.displayLabel, "Speaker A")
+    }
+
+    func testDisplayLabelWithEmptyDisplayName() {
+        let profile = StoredSpeakerProfile(
+            id: UUID(), label: "B", embedding: [0.1],
+            lastUsed: Date(), sessionCount: 1,
+            displayName: "", tags: []
+        )
+        XCTAssertEqual(profile.displayLabel, "Speaker B")
+    }
+
     func testNextAvailableLabelWrapsAround() {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
