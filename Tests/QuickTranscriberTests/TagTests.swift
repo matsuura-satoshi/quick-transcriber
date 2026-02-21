@@ -19,28 +19,19 @@ final class TagTests: XCTestCase {
     // MARK: - StoredSpeakerProfile Tags
 
     func testTagsDefaultsToEmpty() {
-        let profile = StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0))
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0))
         XCTAssertEqual(profile.tags, [])
     }
 
     func testTagsCodable() throws {
         let profile = StoredSpeakerProfile(
-            label: "A",
+            displayName: "Alice",
             embedding: makeEmbedding(dominant: 0),
             tags: ["team-alpha", "eng"]
         )
         let data = try JSONEncoder().encode(profile)
         let decoded = try JSONDecoder().decode(StoredSpeakerProfile.self, from: data)
         XCTAssertEqual(decoded.tags, ["team-alpha", "eng"])
-    }
-
-    func testTagsBackwardCompatibility() throws {
-        let json = """
-        {"id":"00000000-0000-0000-0000-000000000001","label":"A","embedding":[0.1],"lastUsed":0,"sessionCount":1}
-        """
-        let data = json.data(using: .utf8)!
-        let decoded = try JSONDecoder().decode(StoredSpeakerProfile.self, from: data)
-        XCTAssertEqual(decoded.tags, [])
     }
 
     // MARK: - SpeakerProfileStore Tag Operations
@@ -51,7 +42,7 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         let id = UUID()
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0))]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
         try store.save()
 
         try store.addTag("team-alpha", to: id)
@@ -69,7 +60,7 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         let id = UUID()
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0), tags: ["eng"])]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["eng"])]
         try store.save()
 
         try store.addTag("eng", to: id)
@@ -83,7 +74,7 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         let id = UUID()
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0))]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
         try store.save()
 
         try store.addTag("  ", to: id)
@@ -97,7 +88,7 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         let id = UUID()
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0), tags: ["eng", "team-alpha"])]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["eng", "team-alpha"])]
         try store.save()
 
         try store.removeTag("eng", from: id)
@@ -119,8 +110,8 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), tags: ["eng", "team-alpha"]),
-            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1), tags: ["team-alpha", "mgmt"]),
+            StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["eng", "team-alpha"]),
+            StoredSpeakerProfile(displayName: "Bob", embedding: makeEmbedding(dominant: 1), tags: ["team-alpha", "mgmt"]),
         ]
 
         let tags = store.allTags
@@ -133,14 +124,14 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), tags: ["eng"]),
-            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1), tags: ["mgmt"]),
-            StoredSpeakerProfile(label: "C", embedding: makeEmbedding(dominant: 2), tags: ["eng"]),
+            StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["eng"]),
+            StoredSpeakerProfile(displayName: "Bob", embedding: makeEmbedding(dominant: 1), tags: ["mgmt"]),
+            StoredSpeakerProfile(displayName: "Carol", embedding: makeEmbedding(dominant: 2), tags: ["eng"]),
         ]
 
         let result = store.profiles(withTag: "eng")
         XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result.map { $0.label }, ["A", "C"])
+        XCTAssertEqual(result.map { $0.displayName }, ["Alice", "Carol"])
     }
 
     func testProfilesMatchingSearch() {
@@ -149,15 +140,15 @@ final class TagTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice", tags: ["eng"]),
-            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1), displayName: "Bob"),
-            StoredSpeakerProfile(label: "C", embedding: makeEmbedding(dominant: 2), tags: ["eng"]),
+            StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["eng"]),
+            StoredSpeakerProfile(displayName: "Bob", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(displayName: "Carol", embedding: makeEmbedding(dominant: 2), tags: ["eng"]),
         ]
 
         // Search by displayName
         XCTAssertEqual(store.profiles(matching: "alice").count, 1)
-        // Search by label
-        XCTAssertEqual(store.profiles(matching: "B").count, 1)
+        // Search by displayName
+        XCTAssertEqual(store.profiles(matching: "Bob").count, 1)
         // Search by tag
         XCTAssertEqual(store.profiles(matching: "eng").count, 2)
         // Empty search returns all
@@ -204,7 +195,7 @@ final class TagViewModelTests: XCTestCase {
     func testAddAndRemoveTag() {
         let (vm, store) = makeViewModel()
         let id = UUID()
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0))]
+        store.profiles = [StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
         try? store.save()
         vm.speakerProfiles = store.profiles
 
@@ -221,9 +212,9 @@ final class TagViewModelTests: XCTestCase {
         let id2 = UUID()
         let id3 = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice", tags: ["team"]),
-            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1), displayName: "Bob", tags: ["team"]),
-            StoredSpeakerProfile(id: id3, label: "C", embedding: makeEmbedding(dominant: 2), displayName: "Charlie"),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["team"]),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: makeEmbedding(dominant: 1), tags: ["team"]),
+            StoredSpeakerProfile(id: id3, displayName: "Charlie", embedding: makeEmbedding(dominant: 2)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -238,7 +229,7 @@ final class TagViewModelTests: XCTestCase {
         let (vm, store) = makeViewModel()
         let id1 = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0), tags: ["team"]),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["team"]),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -252,8 +243,8 @@ final class TagViewModelTests: XCTestCase {
     func testAllTags() {
         let (vm, store) = makeViewModel()
         store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), tags: ["eng", "team"]),
-            StoredSpeakerProfile(label: "B", embedding: makeEmbedding(dominant: 1), tags: ["mgmt"]),
+            StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["eng", "team"]),
+            StoredSpeakerProfile(displayName: "Bob", embedding: makeEmbedding(dominant: 1), tags: ["mgmt"]),
         ]
         vm.speakerProfiles = store.profiles
 
@@ -266,9 +257,9 @@ final class TagViewModelTests: XCTestCase {
         let id2 = UUID()
         let id3 = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice"),
-            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1), displayName: "Bob"),
-            StoredSpeakerProfile(id: id3, label: "C", embedding: makeEmbedding(dominant: 2), displayName: "Charlie"),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(id: id3, displayName: "Charlie", embedding: makeEmbedding(dominant: 2)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -284,8 +275,8 @@ final class TagViewModelTests: XCTestCase {
         let id1 = UUID()
         let id2 = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice"),
-            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1), displayName: "Bob"),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: makeEmbedding(dominant: 1)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -350,9 +341,9 @@ final class PostMeetingTagTests: XCTestCase {
         let id2 = UUID()
         let id3 = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0)),
-            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1)),
-            StoredSpeakerProfile(id: id3, label: "C", embedding: makeEmbedding(dominant: 2)),
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(id: id3, displayName: "Carol", embedding: makeEmbedding(dominant: 2)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -368,7 +359,7 @@ final class PostMeetingTagTests: XCTestCase {
         let (vm, store) = makeViewModel()
         let id = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -382,7 +373,7 @@ final class PostMeetingTagTests: XCTestCase {
         let (vm, store) = makeViewModel()
         let id = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -395,7 +386,7 @@ final class PostMeetingTagTests: XCTestCase {
     func testBulkAddTagEmptyProfileIdsIsNoOp() {
         let (vm, store) = makeViewModel()
         store.profiles = [
-            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles
@@ -414,7 +405,7 @@ final class PostMeetingTagTests: XCTestCase {
         let (vm, store) = makeViewModel()
         let id = UUID()
         store.profiles = [
-            StoredSpeakerProfile(id: id, label: "A", embedding: makeEmbedding(dominant: 0), tags: ["standup"]),
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0), tags: ["standup"]),
         ]
         try? store.save()
         vm.speakerProfiles = store.profiles

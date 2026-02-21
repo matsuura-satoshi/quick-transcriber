@@ -246,7 +246,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
 
         XCTAssertEqual(store.profiles.count, 1)
-        XCTAssertEqual(store.profiles[0].label, exportedId.uuidString)
+        XCTAssertTrue(store.profiles[0].displayName.contains(exportedId.uuidString.prefix(4)))
     }
 
     func testCorrectSpeakerAssignmentForwardsToDiarizer() async throws {
@@ -372,7 +372,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        store.profiles = [StoredSpeakerProfile(displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256))]
         try store.save()
 
         // Create new store instance (simulating app restart)

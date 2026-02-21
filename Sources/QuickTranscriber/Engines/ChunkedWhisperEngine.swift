@@ -151,7 +151,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
                 }
                 if !filteredProfiles.isEmpty {
-                    let mergeProfiles = filteredProfiles.map { (label: $0.speakerId.uuidString, embedding: $0.embedding) }
+                    let mergeProfiles = filteredProfiles.map { (speakerId: $0.speakerId, embedding: $0.embedding, displayName: "Speaker-\($0.speakerId.uuidString.prefix(4))") }
                     store.mergeSessionProfiles(mergeProfiles)
                     do {
                         try store.save()

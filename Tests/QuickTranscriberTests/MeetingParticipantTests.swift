@@ -62,7 +62,7 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
 
     func testAddManualSpeakerFromProfile() {
         let (vm, _, store) = makeViewModel()
-        let profile = StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0), displayName: "Alice")
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0))
         store.profiles = [profile]
         vm.speakerProfiles = store.profiles
 
@@ -76,7 +76,7 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
 
     func testAddManualSpeakerFromProfileNoDuplicate() {
         let (vm, _, store) = makeViewModel()
-        let profile = StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0))
+        let profile = StoredSpeakerProfile(displayName: "Speaker-A", embedding: makeEmbedding(dominant: 0))
         store.profiles = [profile]
 
         vm.addManualSpeaker(fromProfile: profile.id)
@@ -101,7 +101,7 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
 
     func testAddMultipleSpeakersAssignsUniqueIds() {
         let (vm, _, store) = makeViewModel()
-        let profile = StoredSpeakerProfile(label: "X", embedding: makeEmbedding(dominant: 0), displayName: "Alice")
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0))
         store.profiles = [profile]
 
         vm.addManualSpeaker(fromProfile: profile.id)
@@ -269,9 +269,8 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         let (vm, engine, paramsStore) = makeViewModelWithStore()
         let profileStore = vm.speakerProfileStore
         let profile = StoredSpeakerProfile(
-            label: "B",
-            embedding: makeEmbedding(dominant: 1),
-            displayName: "Bob"
+            displayName: "Bob",
+            embedding: makeEmbedding(dominant: 1)
         )
         profileStore.profiles = [profile]
 

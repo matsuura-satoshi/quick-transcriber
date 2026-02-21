@@ -44,7 +44,9 @@ public final class SpeakerProfileStore {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw SpeakerProfileStoreError.profileNotFound
         }
-        profiles[index].displayName = name.isEmpty ? nil : name
+        if !name.isEmpty {
+            profiles[index].displayName = name
+        }
         try save()
     }
 
@@ -54,14 +56,6 @@ public final class SpeakerProfileStore {
         }
         profiles.remove(at: index)
         try save()
-    }
-
-    public func displayName(for label: String) -> String {
-        if let profile = profiles.first(where: { $0.label == label }),
-           let name = profile.displayName, !name.isEmpty {
-            return name
-        }
-        return label
     }
 
     // MARK: - Tags
@@ -101,31 +95,13 @@ public final class SpeakerProfileStore {
     public func profiles(matching search: String) -> [StoredSpeakerProfile] {
         guard !search.isEmpty else { return profiles }
         return profiles.filter {
-            ($0.displayName ?? "").localizedCaseInsensitiveContains(search)
-            || $0.label.localizedCaseInsensitiveContains(search)
+            $0.displayName.localizedCaseInsensitiveContains(search)
             || $0.tags.contains { $0.localizedCaseInsensitiveContains(search) }
         }
     }
 
-    private func nextAvailableLabel() -> String {
-        let usedLabels = Set(profiles.map { $0.label })
-        // Single letters A-Z
-        for i in 0..<26 {
-            let label = String(UnicodeScalar(UInt8(65 + i)))
-            if !usedLabels.contains(label) { return label }
-        }
-        // Double letters AA-ZZ
-        for i in 0..<26 {
-            for j in 0..<26 {
-                let label = String(UnicodeScalar(UInt8(65 + i))) + String(UnicodeScalar(UInt8(65 + j)))
-                if !usedLabels.contains(label) { return label }
-            }
-        }
-        return "Z\(usedLabels.count)"
-    }
-
-    public func mergeSessionProfiles(_ sessionProfiles: [(label: String, embedding: [Float])]) {
-        for (label, embedding) in sessionProfiles {
+    public func mergeSessionProfiles(_ sessionProfiles: [(speakerId: UUID, embedding: [Float], displayName: String)]) {
+        for (_, embedding, displayName) in sessionProfiles {
             var bestIndex = -1
             var bestSimilarity: Float = -1
 
@@ -145,10 +121,7 @@ public final class SpeakerProfileStore {
                 profiles[bestIndex].lastUsed = Date()
                 profiles[bestIndex].sessionCount += 1
             } else {
-                let uniqueLabel = profiles.contains(where: { $0.label == label })
-                    ? nextAvailableLabel()
-                    : label
-                profiles.append(StoredSpeakerProfile(label: uniqueLabel, embedding: embedding))
+                profiles.append(StoredSpeakerProfile(displayName: displayName, embedding: embedding))
             }
         }
     }

@@ -242,8 +242,7 @@ private struct SpeakersSettingsTab: View {
         }
         if !searchText.isEmpty {
             result = result.filter {
-                ($0.displayName ?? "").localizedCaseInsensitiveContains(searchText)
-                || $0.label.localizedCaseInsensitiveContains(searchText)
+                $0.displayName.localizedCaseInsensitiveContains(searchText)
                 || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
             }
         }
@@ -504,7 +503,7 @@ private struct SpeakerProfileSummaryView: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(profile.displayLabel)
+            Text(profile.displayName)
                 .lineLimit(1)
             ForEach(profile.tags, id: \.self) { tag in
                 Text(tag)
@@ -552,7 +551,7 @@ private struct SpeakerProfileDetailView: View {
         self.onDelete = onDelete
         self.onAddTag = onAddTag
         self.onRemoveTag = onRemoveTag
-        self._editingName = State(initialValue: profile.displayName ?? "")
+        self._editingName = State(initialValue: profile.displayName)
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -573,7 +572,7 @@ private struct SpeakerProfileDetailView: View {
                 Text("Name")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                TextField("Display name for \(profile.label)...", text: $editingName)
+                TextField("Display name...", text: $editingName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { onRename(editingName) }
             }

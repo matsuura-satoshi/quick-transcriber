@@ -178,8 +178,8 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
 
         // Only profileIdB should have been merged (not profileIdA since it was the original speaker of a corrected segment)
         let profiles = store.profiles
-        let mergedLabels = profiles.map { $0.label }
-        XCTAssertTrue(mergedLabels.contains(profileIdB.uuidString), "Non-corrected speaker B should be merged")
-        XCTAssertFalse(mergedLabels.contains(profileIdA.uuidString), "Corrected speaker A should NOT be merged")
+        let mergedNames = profiles.map { $0.displayName }
+        XCTAssertTrue(mergedNames.contains(where: { $0.contains(profileIdB.uuidString.prefix(4)) }), "Non-corrected speaker B should be merged")
+        XCTAssertFalse(mergedNames.contains(where: { $0.contains(profileIdA.uuidString.prefix(4)) }), "Corrected speaker A should NOT be merged")
     }
 }
