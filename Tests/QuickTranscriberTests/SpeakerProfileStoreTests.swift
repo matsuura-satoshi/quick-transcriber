@@ -345,6 +345,64 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(profile.displayLabel, "Speaker B")
     }
 
+    // MARK: - Delete Multiple
+
+    func testDeleteMultipleRemovesMatchingProfiles() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let id1 = UUID()
+        let id2 = UUID()
+        let id3 = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(id: id2, label: "B", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(id: id3, label: "C", embedding: makeEmbedding(dominant: 2)),
+        ]
+        try store.save()
+
+        try store.deleteMultiple(ids: Set([id1, id3]))
+
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, id2)
+        // Verify persisted
+        let store2 = SpeakerProfileStore(directory: dir)
+        try store2.load()
+        XCTAssertEqual(store2.profiles.count, 1)
+    }
+
+    func testDeleteMultipleEmptySetDoesNothing() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [
+            StoredSpeakerProfile(label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try store.save()
+
+        try store.deleteMultiple(ids: Set())
+
+        XCTAssertEqual(store.profiles.count, 1)
+    }
+
+    func testDeleteMultipleIgnoresNonexistentIds() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let id1 = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: makeEmbedding(dominant: 0)),
+        ]
+        try store.save()
+
+        try store.deleteMultiple(ids: Set([UUID(), UUID()]))
+
+        XCTAssertEqual(store.profiles.count, 1)
+    }
+
     func testNextAvailableLabelWrapsAround() {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

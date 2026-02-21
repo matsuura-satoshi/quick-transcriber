@@ -524,6 +524,41 @@ public final class TranscriptionViewModel: ObservableObject {
         activeSpeakers.removeAll { $0.id == id }
     }
 
+    public var activeProfileIds: Set<UUID> {
+        Set(activeSpeakers.compactMap { $0.speakerProfileId })
+    }
+
+    public func deactivateSpeaker(profileId: UUID) {
+        activeSpeakers.removeAll { $0.speakerProfileId == profileId }
+    }
+
+    public func bulkActivateProfiles(ids: [UUID]) {
+        for id in ids {
+            addManualSpeaker(fromProfile: id)
+        }
+    }
+
+    public func bulkDeactivateProfiles(ids: Set<UUID>) {
+        activeSpeakers.removeAll { speaker in
+            guard let pid = speaker.speakerProfileId else { return false }
+            return ids.contains(pid)
+        }
+    }
+
+    public func deleteSpeakers(ids: Set<UUID>) {
+        do {
+            try speakerProfileStore.deleteMultiple(ids: ids)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to delete speakers: \(error)")
+        }
+        speakerProfiles = speakerProfileStore.profiles
+        labelDisplayNames = speakerProfileStore.labelDisplayNames
+        activeSpeakers.removeAll { speaker in
+            guard let pid = speaker.speakerProfileId else { return false }
+            return ids.contains(pid)
+        }
+    }
+
     public func clearActiveSpeakers(source: ActiveSpeaker.Source? = nil) {
         if let source {
             activeSpeakers.removeAll { $0.source == source }

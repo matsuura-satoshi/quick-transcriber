@@ -139,13 +139,11 @@ private struct SpeakersSettingsTab: View {
     @ObservedObject var store: ParametersStore
     @ObservedObject var viewModel: TranscriptionViewModel
 
-    @State private var showDeleteAllConfirmation = false
-    @State private var showAddFromRegistered = false
     @State private var showNewSpeakerAlert = false
     @State private var newSpeakerName = ""
     @State private var searchText = ""
     @State private var selectedTag: String?
-    @State private var showTagFilter = false
+    @State private var showBulkDeleteConfirmation = false
 
     var body: some View {
         Form {
@@ -156,27 +154,6 @@ private struct SpeakersSettingsTab: View {
             registeredSpeakersSection
         }
         .formStyle(.grouped)
-        .sheet(isPresented: $showAddFromRegistered) {
-            AddFromRegisteredSheet(
-                profiles: viewModel.speakerProfiles,
-                existingProfileIds: Set(viewModel.activeSpeakers.compactMap { $0.speakerProfileId }),
-                onAdd: { profileId in
-                    viewModel.addManualSpeaker(fromProfile: profileId)
-                }
-            )
-        }
-        .sheet(isPresented: $showTagFilter) {
-            TagFilterSheet(
-                allTags: viewModel.allTags,
-                profiles: viewModel.registeredSpeakersForMenu,
-                onAdd: { profileId in
-                    viewModel.addManualSpeaker(fromProfile: profileId)
-                },
-                onBulkAdd: { profileIds in
-                    viewModel.addManualSpeakers(profileIds: profileIds)
-                }
-            )
-        }
     }
 
     // MARK: - Speaker Detection
@@ -237,24 +214,9 @@ private struct SpeakersSettingsTab: View {
                     }
                 )
             }
-            HStack(spacing: 8) {
-                Button("Add from Registered...") {
-                    showAddFromRegistered = true
-                }
-                .disabled(viewModel.speakerProfiles.isEmpty)
-                Button("Add by Tag...") {
-                    showTagFilter = true
-                }
-                .disabled(viewModel.allTags.isEmpty)
-                Button("New Speaker...") {
-                    newSpeakerName = ""
-                    showNewSpeakerAlert = true
-                }
-                if !viewModel.activeSpeakers.isEmpty {
-                    Button("Clear All", role: .destructive) {
-                        viewModel.clearActiveSpeakers()
-                    }
-                }
+            Button("New Speaker...") {
+                newSpeakerName = ""
+                showNewSpeakerAlert = true
             }
             .alert("New Speaker", isPresented: $showNewSpeakerAlert) {
                 TextField("Name", text: $newSpeakerName)
@@ -288,6 +250,46 @@ private struct SpeakersSettingsTab: View {
         return result
     }
 
+    private var filteredProfileIds: Set<UUID> {
+        Set(filteredProfiles.map { $0.id })
+    }
+
+    private var allFilteredAreActive: Bool {
+        let ids = filteredProfileIds
+        guard !ids.isEmpty else { return false }
+        return ids.isSubset(of: viewModel.activeProfileIds)
+    }
+
+    @ViewBuilder
+    private var bulkActionButtons: some View {
+        HStack(spacing: 8) {
+            if allFilteredAreActive {
+                Button("Deactivate (\(filteredProfiles.count))") {
+                    viewModel.bulkDeactivateProfiles(ids: filteredProfileIds)
+                }
+                .disabled(filteredProfiles.isEmpty || !store.parameters.enableSpeakerDiarization)
+            } else {
+                Button("Activate (\(filteredProfiles.count))") {
+                    viewModel.bulkActivateProfiles(ids: filteredProfiles.map { $0.id })
+                }
+                .disabled(filteredProfiles.isEmpty || !store.parameters.enableSpeakerDiarization)
+            }
+            Button("Delete (\(filteredProfiles.count))...", role: .destructive) {
+                showBulkDeleteConfirmation = true
+            }
+            .disabled(filteredProfiles.isEmpty)
+            .confirmationDialog(
+                "Delete \(filteredProfiles.count) speaker profile(s)?",
+                isPresented: $showBulkDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete \(filteredProfiles.count) Profile(s)", role: .destructive) {
+                    viewModel.deleteSpeakers(ids: filteredProfileIds)
+                }
+            }
+        }
+    }
+
     private var registeredSpeakersSection: some View {
         Section("Registered Speakers (\(viewModel.speakerProfiles.count))") {
             if viewModel.speakerProfiles.isEmpty {
@@ -312,6 +314,8 @@ private struct SpeakersSettingsTab: View {
                     }
                 }
 
+                bulkActionButtons
+
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(filteredProfiles, id: \.id) { profile in
@@ -325,77 +329,26 @@ private struct SpeakersSettingsTab: View {
                                     onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) }
                                 )
                             } label: {
-                                SpeakerProfileSummaryView(profile: profile)
+                                SpeakerProfileSummaryView(
+                                    profile: profile,
+                                    isActive: viewModel.activeProfileIds.contains(profile.id),
+                                    isDiarizationEnabled: store.parameters.enableSpeakerDiarization,
+                                    onToggleActive: { newValue in
+                                        if newValue {
+                                            viewModel.addManualSpeaker(fromProfile: profile.id)
+                                        } else {
+                                            viewModel.deactivateSpeaker(profileId: profile.id)
+                                        }
+                                    }
+                                )
                             }
                             Divider()
                         }
                     }
                 }
                 .frame(maxHeight: 350)
-
-                Button("Delete All Profiles", role: .destructive) {
-                    showDeleteAllConfirmation = true
-                }
-                .confirmationDialog(
-                    "Delete all speaker profiles?",
-                    isPresented: $showDeleteAllConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Delete All", role: .destructive) {
-                        viewModel.deleteAllSpeakers()
-                    }
-                }
             }
         }
-    }
-}
-
-// MARK: - Add from Registered Sheet
-
-private struct AddFromRegisteredSheet: View {
-    let profiles: [StoredSpeakerProfile]
-    let existingProfileIds: Set<UUID>
-    let onAdd: (UUID) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("Add from Registered Speakers")
-                    .font(.headline)
-                Spacer()
-                Button("Done") { dismiss() }
-            }
-            .padding()
-
-            if profiles.isEmpty {
-                Text("No registered speakers.")
-                    .foregroundStyle(.secondary)
-                    .padding()
-            } else {
-                List(profiles, id: \.id) { profile in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(profile.displayName ?? profile.label)
-                            Text("Speaker \(profile.label) · \(profile.sessionCount) sessions")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        if existingProfileIds.contains(profile.id) {
-                            Text("Added")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Button("Add") {
-                                onAdd(profile.id)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .frame(minWidth: 350, minHeight: 300)
     }
 }
 
@@ -545,6 +498,9 @@ private struct OutputSettingsTab: View {
 
 private struct SpeakerProfileSummaryView: View {
     let profile: StoredSpeakerProfile
+    let isActive: Bool
+    let isDiarizationEnabled: Bool
+    let onToggleActive: (Bool) -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -557,6 +513,15 @@ private struct SpeakerProfileSummaryView: View {
                     .padding(.vertical, 2)
                     .background(.secondary.opacity(0.15))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
+            }
+            Spacer()
+            if isDiarizationEnabled {
+                Toggle("", isOn: Binding(
+                    get: { isActive },
+                    set: { onToggleActive($0) }
+                ))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
             }
         }
     }
