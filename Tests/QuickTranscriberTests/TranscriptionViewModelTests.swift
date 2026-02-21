@@ -955,6 +955,149 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.confirmedSegments[1].speaker, newLabel)
     }
 
+    // MARK: - Active Profile IDs
+
+    func testActiveProfileIdsReturnsProfileIdsFromActiveSpeakers() {
+        let (vm, _) = makeViewModel()
+        let id1 = UUID()
+        let id2 = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(speakerProfileId: id1, sessionLabel: "A", source: .manual),
+            ActiveSpeaker(sessionLabel: "B", source: .autoDetected),  // no profileId
+            ActiveSpeaker(speakerProfileId: id2, sessionLabel: "C", source: .manual),
+        ]
+        XCTAssertEqual(vm.activeProfileIds, Set([id1, id2]))
+    }
+
+    func testActiveProfileIdsEmptyWhenNoActiveSpeakers() {
+        let (vm, _) = makeViewModel()
+        XCTAssertTrue(vm.activeProfileIds.isEmpty)
+    }
+
+    // MARK: - Deactivate Speaker by Profile ID
+
+    func testDeactivateSpeakerRemovesMatchingActiveSpeaker() {
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, label: "A", embedding: Array(repeating: 0.1, count: 256))
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.activeSpeakers = [
+            ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", source: .manual),
+            ActiveSpeaker(sessionLabel: "B", source: .autoDetected),
+        ]
+
+        vm.deactivateSpeaker(profileId: profileId)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "B")
+    }
+
+    func testDeactivateSpeakerNoOpForNonexistentProfileId() {
+        let (vm, _) = makeViewModel()
+        vm.activeSpeakers = [
+            ActiveSpeaker(sessionLabel: "A", source: .manual),
+        ]
+
+        vm.deactivateSpeaker(profileId: UUID())
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+    }
+
+    // MARK: - Bulk Activate Profiles
+
+    func testBulkActivateProfilesAddsMultipleSpeakers() {
+        let id1 = UUID()
+        let id2 = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "X", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice"),
+            StoredSpeakerProfile(id: id2, label: "Y", embedding: Array(repeating: 0.2, count: 256), displayName: "Bob"),
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+
+        vm.bulkActivateProfiles(ids: [id1, id2])
+
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+        XCTAssertEqual(Set(vm.activeSpeakers.compactMap { $0.speakerProfileId }), Set([id1, id2]))
+    }
+
+    func testBulkActivateProfilesSkipsAlreadyActive() {
+        let id1 = UUID()
+        let id2 = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "X", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, label: "Y", embedding: Array(repeating: 0.2, count: 256)),
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.addManualSpeaker(fromProfile: id1)  // already active
+
+        vm.bulkActivateProfiles(ids: [id1, id2])
+
+        XCTAssertEqual(vm.activeSpeakers.count, 2)  // id1 not duplicated
+    }
+
+    // MARK: - Bulk Deactivate Profiles
+
+    func testBulkDeactivateProfilesRemovesMatchingSpeakers() {
+        let id1 = UUID()
+        let id2 = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "X", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, label: "Y", embedding: Array(repeating: 0.2, count: 256)),
+        ]
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.addManualSpeaker(fromProfile: id1)
+        vm.addManualSpeaker(fromProfile: id2)
+        vm.activeSpeakers.append(ActiveSpeaker(sessionLabel: "Z", source: .autoDetected))
+
+        vm.bulkDeactivateProfiles(ids: Set([id1, id2]))
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "Z")
+    }
+
+    // MARK: - Delete Speakers (bulk)
+
+    func testDeleteSpeakersRemovesProfilesAndActiveSpeakers() {
+        let id1 = UUID()
+        let id2 = UUID()
+        let id3 = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, label: "B", embedding: Array(repeating: 0.2, count: 256)),
+            StoredSpeakerProfile(id: id3, label: "C", embedding: Array(repeating: 0.3, count: 256)),
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.addManualSpeaker(fromProfile: id1)
+
+        vm.deleteSpeakers(ids: Set([id1, id2]))
+
+        XCTAssertEqual(vm.speakerProfiles.count, 1)
+        XCTAssertEqual(vm.speakerProfiles[0].id, id3)
+        XCTAssertTrue(vm.activeSpeakers.isEmpty)
+    }
+
+    func testDeleteSpeakersUpdatesLabelDisplayNames() {
+        let id1 = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, label: "A", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice"),
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
+
+        vm.deleteSpeakers(ids: Set([id1]))
+
+        XCTAssertNil(vm.labelDisplayNames["A"])
+    }
+
     func testRegisteredSpeakersForMenuExcludesActiveSpeakers() {
         let profileId = UUID()
         let store = SpeakerProfileStore(directory: tmpDir)

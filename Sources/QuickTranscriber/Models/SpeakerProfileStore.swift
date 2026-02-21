@@ -98,6 +98,12 @@ public final class SpeakerProfileStore {
         try save()
     }
 
+    public func deleteMultiple(ids: Set<UUID>) throws {
+        guard !ids.isEmpty else { return }
+        profiles.removeAll { ids.contains($0.id) }
+        try save()
+    }
+
     public func profiles(withTag tag: String) -> [StoredSpeakerProfile] {
         profiles.filter { $0.tags.contains(tag) }
     }
