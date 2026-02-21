@@ -94,6 +94,19 @@ public struct ContentView: View {
                 callback(viewModel.isRecording)
             }
         }
+        .sheet(isPresented: $viewModel.showPostMeetingTagging) {
+            PostMeetingTagSheet(
+                activeSpeakers: viewModel.activeSpeakers,
+                allTags: viewModel.allTags,
+                onApply: { tag, profileIds in
+                    viewModel.bulkAddTag(tag, to: profileIds)
+                    viewModel.showPostMeetingTagging = false
+                },
+                onSkip: {
+                    viewModel.showPostMeetingTagging = false
+                }
+            )
+        }
     }
 
     @ViewBuilder
