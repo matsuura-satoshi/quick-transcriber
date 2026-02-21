@@ -777,6 +777,32 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A"])
     }
 
+    func testReassignSpeakerForBlockRecordsSpeakerSelection() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "World", speaker: "A"),
+        ]
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
+        XCTAssertEqual(vm.speakerMenuOrder.first, "B")
+    }
+
+    func testReassignSpeakerForSelectionRecordsSpeakerSelection() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")  // A
+        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+        ]
+        let map = SegmentCharacterMap(entries: [
+            SegmentCharacterMap.Entry(segmentIndex: 0, characterRange: NSRange(location: 0, length: 5), labelRange: nil)
+        ])
+        vm.reassignSpeakerForSelection(selectionRange: NSRange(location: 0, length: 5), newSpeaker: "B", segmentMap: map)
+        XCTAssertEqual(vm.speakerMenuOrder.first, "B")
+    }
+
     // MARK: - Rename Active Speaker
 
     func testRenameActiveSpeakerUpdatesLabelDisplayNames() async {

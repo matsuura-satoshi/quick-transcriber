@@ -365,6 +365,7 @@ public final class TranscriptionViewModel: ObservableObject {
             reassignSegment(at: i, to: newSpeaker)
         }
 
+        recordSpeakerSelection(newSpeaker)
         regenerateText()
         translationService.syncSpeakerMetadata(from: confirmedSegments)
     }
@@ -413,6 +414,7 @@ public final class TranscriptionViewModel: ObservableObject {
             }
         }
 
+        recordSpeakerSelection(newSpeaker)
         regenerateText()
         translationService.syncSpeakerMetadata(from: confirmedSegments)
     }
