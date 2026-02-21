@@ -5,20 +5,20 @@ final class ActiveSpeakerTests: XCTestCase {
 
     func testIdIsAlwaysUUID() {
         let profileId = UUID()
-        let speaker = ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", displayName: "Alice", source: .manual)
+        let speaker = ActiveSpeaker(speakerProfileId: profileId, displayName: "Alice", source: .manual)
         XCTAssertNotEqual(speaker.id, profileId) // id is independent UUID
     }
 
     func testEquatable() {
         let id = UUID()
-        let s1 = ActiveSpeaker(id: id, sessionLabel: "A", displayName: "Alice", source: .manual)
-        let s2 = ActiveSpeaker(id: id, sessionLabel: "A", displayName: "Alice", source: .manual)
+        let s1 = ActiveSpeaker(id: id, displayName: "Alice", source: .manual)
+        let s2 = ActiveSpeaker(id: id, displayName: "Alice", source: .manual)
         XCTAssertEqual(s1, s2)
     }
 
     func testSourceValues() {
-        let manual = ActiveSpeaker(sessionLabel: "A", source: .manual)
-        let auto = ActiveSpeaker(sessionLabel: "B", source: .autoDetected)
+        let manual = ActiveSpeaker(source: .manual)
+        let auto = ActiveSpeaker(source: .autoDetected)
         XCTAssertEqual(manual.source, .manual)
         XCTAssertEqual(auto.source, .autoDetected)
     }
@@ -71,7 +71,6 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers.count, 1)
         XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profile.id)
         XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice")
-        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "A")
         XCTAssertEqual(vm.activeSpeakers[0].source, .manual)
     }
 
@@ -94,12 +93,13 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers.count, 1)
         XCTAssertNil(vm.activeSpeakers[0].speakerProfileId)
         XCTAssertEqual(vm.activeSpeakers[0].displayName, "Bob")
-        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "A")
         XCTAssertEqual(vm.activeSpeakers[0].source, .manual)
-        XCTAssertEqual(vm.labelDisplayNames["A"], "Bob")
+        // speakerDisplayNames should have the UUID -> name mapping
+        let speakerId = vm.activeSpeakers[0].id.uuidString
+        XCTAssertEqual(vm.speakerDisplayNames[speakerId], "Bob")
     }
 
-    func testAddMultipleSpeakersAssignsSequentialLabels() {
+    func testAddMultipleSpeakersAssignsUniqueIds() {
         let (vm, _, store) = makeViewModel()
         let profile = StoredSpeakerProfile(label: "X", embedding: makeEmbedding(dominant: 0), displayName: "Alice")
         store.profiles = [profile]
@@ -107,8 +107,7 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         vm.addManualSpeaker(fromProfile: profile.id)
         vm.addManualSpeaker(displayName: "Bob")
 
-        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "A")
-        XCTAssertEqual(vm.activeSpeakers[1].sessionLabel, "B")
+        XCTAssertNotEqual(vm.activeSpeakers[0].id, vm.activeSpeakers[1].id)
     }
 
     func testRemoveActiveSpeaker() {
@@ -136,9 +135,8 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
     func testClearActiveSpeakersBySource() {
         let (vm, _, _) = makeViewModel()
         vm.addManualSpeaker(displayName: "Alice")
-        // Simulate auto-detected speaker via confirmedSegments
+        // Simulate auto-detected speaker
         vm.activeSpeakers.append(ActiveSpeaker(
-            sessionLabel: "B",
             displayName: "Auto Speaker",
             source: .autoDetected
         ))
@@ -166,20 +164,19 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
 
         let speakers = vm.availableSpeakers
         XCTAssertEqual(speakers.count, 2)
-        XCTAssertEqual(speakers[0].label, "A")
         XCTAssertEqual(speakers[0].displayName, "Alice")
-        XCTAssertEqual(speakers[1].label, "B")
         XCTAssertEqual(speakers[1].displayName, "Bob")
     }
 
     func testRenameActiveSpeaker() {
         let (vm, _, _) = makeViewModel()
         vm.addManualSpeaker(displayName: "Alice")
+        let speakerId = vm.activeSpeakers[0].id
 
-        vm.renameActiveSpeaker(label: "A", displayName: "Alicia")
+        vm.renameActiveSpeaker(id: speakerId, displayName: "Alicia")
 
         XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alicia")
-        XCTAssertEqual(vm.labelDisplayNames["A"], "Alicia")
+        XCTAssertEqual(vm.speakerDisplayNames[speakerId.uuidString], "Alicia")
     }
 
     // MARK: - Active speaker change auto-restart
@@ -256,7 +253,6 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
 
         // Simulate auto-detected speaker addition (not manual)
         vm.activeSpeakers.append(ActiveSpeaker(
-            sessionLabel: "B",
             displayName: nil,
             source: .autoDetected
         ))
@@ -282,7 +278,6 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         // Add an auto-detected speaker with a known profile
         vm.activeSpeakers.append(ActiveSpeaker(
             speakerProfileId: profile.id,
-            sessionLabel: "B",
             displayName: "Bob",
             source: .autoDetected
         ))

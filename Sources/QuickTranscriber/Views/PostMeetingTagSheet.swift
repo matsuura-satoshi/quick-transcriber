@@ -71,9 +71,7 @@ struct PostMeetingTagSheet: View {
                         }
                     )) {
                         HStack(spacing: 6) {
-                            Text(speaker.displayName ?? "Speaker \(speaker.sessionLabel)")
-                            Text("(\(speaker.sessionLabel))")
-                                .foregroundStyle(.secondary)
+                            Text(speaker.displayName ?? "Speaker")
                             if speaker.speakerProfileId == nil {
                                 Text("new")
                                     .font(.caption2)

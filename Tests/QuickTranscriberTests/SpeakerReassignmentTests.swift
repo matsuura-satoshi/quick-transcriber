@@ -31,8 +31,9 @@ final class SpeakerReassignmentTests: XCTestCase {
 
     func testSplitSegmentAtOffset() {
         let (vm, _) = makeViewModel()
+        let speakerId = UUID().uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello World", precedingSilence: 1.0, speaker: "A", speakerConfidence: 0.8),
+            ConfirmedSegment(text: "Hello World", precedingSilence: 1.0, speaker: speakerId, speakerConfidence: 0.8),
         ]
 
         vm.splitSegment(at: 0, offset: 5)
@@ -40,16 +41,16 @@ final class SpeakerReassignmentTests: XCTestCase {
         XCTAssertEqual(vm.confirmedSegments.count, 2)
         XCTAssertEqual(vm.confirmedSegments[0].text, "Hello")
         XCTAssertEqual(vm.confirmedSegments[0].precedingSilence, 1.0)
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, "A")
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, speakerId)
         XCTAssertEqual(vm.confirmedSegments[1].text, " World")
         XCTAssertEqual(vm.confirmedSegments[1].precedingSilence, 0)
-        XCTAssertEqual(vm.confirmedSegments[1].speaker, "A")
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, speakerId)
     }
 
     func testSplitSegmentAtBeginningDoesNothing() {
         let (vm, _) = makeViewModel()
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "Hello", speaker: UUID().uuidString),
         ]
 
         vm.splitSegment(at: 0, offset: 0)
@@ -60,7 +61,7 @@ final class SpeakerReassignmentTests: XCTestCase {
     func testSplitSegmentAtEndDoesNothing() {
         let (vm, _) = makeViewModel()
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "Hello", speaker: UUID().uuidString),
         ]
 
         vm.splitSegment(at: 0, offset: 5)
@@ -72,35 +73,41 @@ final class SpeakerReassignmentTests: XCTestCase {
 
     func testReassignSpeakerForBlockUpdatesConsecutiveSegments() {
         let (vm, _) = makeViewModel()
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
+        let speakerIdC = UUID().uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "world", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "foo", speaker: "B", speakerConfidence: 0.7),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "world", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "foo", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
 
-        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "C")
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: speakerIdC)
 
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, "C")
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, speakerIdC)
         XCTAssertEqual(vm.confirmedSegments[0].speakerConfidence, 1.0)
         XCTAssertTrue(vm.confirmedSegments[0].isUserCorrected)
-        XCTAssertEqual(vm.confirmedSegments[0].originalSpeaker, "A")
-        XCTAssertEqual(vm.confirmedSegments[1].speaker, "C")
+        XCTAssertEqual(vm.confirmedSegments[0].originalSpeaker, speakerIdA)
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, speakerIdC)
         XCTAssertTrue(vm.confirmedSegments[1].isUserCorrected)
         // B segment unchanged
-        XCTAssertEqual(vm.confirmedSegments[2].speaker, "B")
+        XCTAssertEqual(vm.confirmedSegments[2].speaker, speakerIdB)
         XCTAssertFalse(vm.confirmedSegments[2].isUserCorrected)
     }
 
     func testReassignSpeakerForBlockUpdatesConfirmedText() {
         let (vm, _) = makeViewModel()
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
+        let speakerIdC = UUID().uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
 
-        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "C")
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: speakerIdC)
 
-        XCTAssertTrue(vm.confirmedText.contains("C:"))
+        // confirmedText should use UUID strings as labels (no display name)
         XCTAssertTrue(vm.confirmedText.contains("Hello"))
     }
 
@@ -108,9 +115,12 @@ final class SpeakerReassignmentTests: XCTestCase {
 
     func testReassignSpeakerForSelectionWholeSegment() {
         let (vm, _) = makeViewModel()
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
+        let speakerIdC = UUID().uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
         // Build map to get selection ranges
         let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
@@ -122,38 +132,40 @@ final class SpeakerReassignmentTests: XCTestCase {
 
         vm.reassignSpeakerForSelection(
             selectionRange: secondEntry.characterRange,
-            newSpeaker: "C",
+            newSpeaker: speakerIdC,
             segmentMap: map
         )
 
-        XCTAssertEqual(vm.confirmedSegments[1].speaker, "C")
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, speakerIdC)
         XCTAssertTrue(vm.confirmedSegments[1].isUserCorrected)
     }
 
     func testReassignSpeakerForSelectionPartialSplitsSegment() {
         let (vm, _) = makeViewModel()
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello World", speaker: "A", speakerConfidence: 0.8),
+            ConfirmedSegment(text: "Hello World", speaker: speakerIdA, speakerConfidence: 0.8),
         ]
-        let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
+        let (result, map) = TranscriptionTextView.buildAttributedStringFromSegments(
             vm.confirmedSegments, language: "en", silenceThreshold: 1.0,
             fontSize: 15, unconfirmed: ""
         )
 
-        // Select "World" part only (characters 9-14 in "A: Hello World")
-        // "A: " is label (0-2), "Hello World" is text starting at 3
-        // "World" starts at offset 6 within segment text
-        let selectionRange = NSRange(location: 9, length: 5)
+        // Select "World" part only
+        // The label is the UUID string + ": ", then "Hello World"
+        let labelLen = (speakerIdA + ": ").count
+        let selectionRange = NSRange(location: labelLen + 6, length: 5)
 
         vm.reassignSpeakerForSelection(
             selectionRange: selectionRange,
-            newSpeaker: "B",
+            newSpeaker: speakerIdB,
             segmentMap: map
         )
 
         // Should split into "Hello " (A) and "World" (B)
         XCTAssertGreaterThanOrEqual(vm.confirmedSegments.count, 2)
-        let bSegments = vm.confirmedSegments.filter { $0.speaker == "B" }
+        let bSegments = vm.confirmedSegments.filter { $0.speaker == speakerIdB }
         XCTAssertFalse(bSegments.isEmpty)
         let bText = bSegments.map { $0.text }.joined()
         XCTAssertTrue(bText.contains("World"))
@@ -163,13 +175,12 @@ final class SpeakerReassignmentTests: XCTestCase {
 
     func testAvailableSpeakersFromActiveSpeakers() {
         let (vm, _) = makeViewModel()
-        // availableSpeakers now derives from activeSpeakers, not confirmedSegments
         vm.addManualSpeaker(displayName: "Alice")
         vm.addManualSpeaker(displayName: "Bob")
 
         let speakers = vm.availableSpeakers
-        XCTAssertTrue(speakers.contains { $0.label == "A" && $0.displayName == "Alice" })
-        XCTAssertTrue(speakers.contains { $0.label == "B" && $0.displayName == "Bob" })
+        XCTAssertTrue(speakers.contains { $0.displayName == "Alice" })
+        XCTAssertTrue(speakers.contains { $0.displayName == "Bob" })
     }
 
     func testAvailableSpeakersIncludesAutoDetected() {
@@ -177,24 +188,27 @@ final class SpeakerReassignmentTests: XCTestCase {
         vm.addManualSpeaker(displayName: "Alice")
         // Simulate auto-detected speaker
         vm.activeSpeakers.append(ActiveSpeaker(
-            sessionLabel: "B",
             displayName: "Bob",
             source: .autoDetected
         ))
 
         let speakers = vm.availableSpeakers
-        XCTAssertTrue(speakers.contains { $0.label == "A" && $0.displayName == "Alice" })
-        XCTAssertTrue(speakers.contains { $0.label == "B" && $0.displayName == "Bob" })
+        XCTAssertTrue(speakers.contains { $0.displayName == "Alice" })
+        XCTAssertTrue(speakers.contains { $0.displayName == "Bob" })
     }
 
     // MARK: - regenerateText
 
     func testRegenerateTextFromSegments() {
         let (vm, _) = makeViewModel()
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
+        // Set display names so output is predictable
+        vm.speakerDisplayNames = [speakerIdA: "A", speakerIdB: "B"]
 
         vm.regenerateText()
 
@@ -210,13 +224,17 @@ final class SpeakerReassignmentTests: XCTestCase {
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
+        let speakerIdC = UUID().uuidString
+
         // Engine sends initial segments
         let segments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "A: Hello\nB: World",
+            confirmedText: "Hello World",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: segments
@@ -225,19 +243,19 @@ final class SpeakerReassignmentTests: XCTestCase {
 
         XCTAssertEqual(vm.confirmedSegments.count, 2)
 
-        // User corrects first segment's speaker from A to C
-        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "C")
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, "C")
+        // User corrects first segment's speaker
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: speakerIdC)
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, speakerIdC)
         XCTAssertTrue(vm.confirmedSegments[0].isUserCorrected)
 
         // Engine sends next state update with appended segment (engine doesn't know about correction)
         let engineSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.7),
-            ConfirmedSegment(text: "New text", speaker: "A", speakerConfidence: 0.9),
+            ConfirmedSegment(text: "Hello", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
+            ConfirmedSegment(text: "New text", speaker: speakerIdA, speakerConfidence: 0.9),
         ]
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "A: Hello\nB: World\nA: New text",
+            confirmedText: "Hello World New text",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: engineSegments
@@ -245,7 +263,7 @@ final class SpeakerReassignmentTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         // User correction should be preserved
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, "C",
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, speakerIdC,
                        "User-corrected speaker should survive engine state updates")
         XCTAssertTrue(vm.confirmedSegments[0].isUserCorrected)
         // New segment should appear

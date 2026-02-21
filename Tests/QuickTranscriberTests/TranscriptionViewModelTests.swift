@@ -434,9 +434,11 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
+        let speakerIdA = UUID()
+        let speakerIdB = UUID()
         let segments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "world", precedingSilence: 0.5, speaker: "B", speakerConfidence: 0.6),
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: speakerIdA.uuidString, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "world", precedingSilence: 0.5, speaker: speakerIdB.uuidString, speakerConfidence: 0.6),
         ]
         engine.simulateStateChange(TranscriptionState(
             confirmedText: "Hello world",
@@ -481,12 +483,13 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
+        let speakerId = UUID()
         engine.simulateStateChange(TranscriptionState(
             confirmedText: "Some text",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
-                ConfirmedSegment(text: "Some text", precedingSilence: 0, speaker: "A", speakerConfidence: 0.9),
+                ConfirmedSegment(text: "Some text", precedingSilence: 0, speaker: speakerId.uuidString, speakerConfidence: 0.9),
             ]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -542,12 +545,12 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertNotNil(vm.speakerProfiles)
     }
 
-    func testLabelDisplayNamesInitiallyEmpty() async {
+    func testSpeakerDisplayNamesInitiallyEmpty() async {
         let (vm, _) = makeViewModel()
-        XCTAssertNotNil(vm.labelDisplayNames)
+        XCTAssertTrue(vm.speakerDisplayNames.isEmpty)
     }
 
-    func testRenameSpeakerUpdatesDisplayNames() async {
+    func testRenameSpeakerUpdatesProfiles() async {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("VMSpeakerTest-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -563,7 +566,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         vm.renameSpeaker(id: id, to: "Alice")
 
-        XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
         XCTAssertEqual(vm.speakerProfiles[0].displayName, "Alice")
     }
 
@@ -609,30 +611,34 @@ final class TranscriptionViewModelTests: XCTestCase {
         )
         await vm.loadModel()
 
+        // Add speaker so we get display name mapping
+        vm.addManualSpeaker(fromProfile: id)
+        let speakerId = vm.activeSpeakers[0].id
+
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
-        // Simulate segments with speaker
+        // Simulate segments with speaker UUID
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "A: Hello",
+            confirmedText: "Hello",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
-                ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+                ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: speakerId.uuidString, speakerConfidence: 0.8),
             ]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         // Rename speaker
-        vm.renameSpeaker(id: id, to: "Alice")
+        vm.renameActiveSpeaker(id: speakerId, displayName: "Alice")
 
         // Next state change should write with resolved name
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "A: Hello world",
+            confirmedText: "Hello world",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
-                ConfirmedSegment(text: "Hello world", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
+                ConfirmedSegment(text: "Hello world", precedingSilence: 0, speaker: speakerId.uuidString, speakerConfidence: 0.8),
             ]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -662,7 +668,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.deleteAllSpeakers()
 
         XCTAssertTrue(vm.speakerProfiles.isEmpty)
-        XCTAssertTrue(vm.labelDisplayNames.isEmpty)
+        XCTAssertTrue(vm.speakerDisplayNames.isEmpty)
     }
 
     func testDirectoryChangeCreatesNewFileWithExistingText() async {
@@ -723,9 +729,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         let speakers = vm.availableSpeakers
         XCTAssertEqual(speakers.count, 2)
-        XCTAssertEqual(speakers[0].label, "A")
         XCTAssertEqual(speakers[0].displayName, "Alice")
-        XCTAssertEqual(speakers[1].label, "B")
         XCTAssertEqual(speakers[1].displayName, "Bob")
     }
 
@@ -736,96 +740,108 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     // MARK: - Speaker Menu Order
 
-    func testRecordSpeakerSelectionMovesLabelToFront() async {
+    func testRecordSpeakerSelectionMovesIdToFront() async {
         let (vm, _) = makeViewModel()
-        vm.addManualSpeaker(displayName: "Alice")  // A
-        vm.addManualSpeaker(displayName: "Bob")    // B
-        vm.addManualSpeaker(displayName: "Carol")  // C
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
+        vm.addManualSpeaker(displayName: "Carol")
 
-        vm.recordSpeakerSelection("C")
-        XCTAssertEqual(vm.speakerMenuOrder, ["C"])
+        let idA = vm.activeSpeakers[0].id.uuidString
+        let idB = vm.activeSpeakers[1].id.uuidString
+        let idC = vm.activeSpeakers[2].id.uuidString
 
-        vm.recordSpeakerSelection("A")
-        XCTAssertEqual(vm.speakerMenuOrder, ["A", "C"])
+        vm.recordSpeakerSelection(idC)
+        XCTAssertEqual(vm.speakerMenuOrder, [idC])
 
-        vm.recordSpeakerSelection("C")
-        XCTAssertEqual(vm.speakerMenuOrder, ["C", "A"])
+        vm.recordSpeakerSelection(idA)
+        XCTAssertEqual(vm.speakerMenuOrder, [idA, idC])
+
+        vm.recordSpeakerSelection(idC)
+        XCTAssertEqual(vm.speakerMenuOrder, [idC, idA])
     }
 
     func testAvailableSpeakersSortedByMenuOrder() async {
         let (vm, _) = makeViewModel()
-        vm.addManualSpeaker(displayName: "Alice")  // A
-        vm.addManualSpeaker(displayName: "Bob")    // B
-        vm.addManualSpeaker(displayName: "Carol")  // C
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
+        vm.addManualSpeaker(displayName: "Carol")
 
-        // Default: registration order (A, B, C)
-        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A", "B", "C"])
+        let idA = vm.activeSpeakers[0].id.uuidString
+        let idB = vm.activeSpeakers[1].id.uuidString
+        let idC = vm.activeSpeakers[2].id.uuidString
 
-        vm.recordSpeakerSelection("C")
-        // C first, then remaining in registration order (A, B)
-        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["C", "A", "B"])
+        // Default: registration order
+        XCTAssertEqual(vm.availableSpeakers.map(\.displayName), ["Alice", "Bob", "Carol"])
 
-        vm.recordSpeakerSelection("B")
-        // B, C first, then remaining (A)
-        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["B", "C", "A"])
+        vm.recordSpeakerSelection(idC)
+        // C first, then remaining in registration order
+        XCTAssertEqual(vm.availableSpeakers.map(\.displayName), ["Carol", "Alice", "Bob"])
+
+        vm.recordSpeakerSelection(idB)
+        // B, C first, then remaining
+        XCTAssertEqual(vm.availableSpeakers.map(\.displayName), ["Bob", "Carol", "Alice"])
     }
 
     func testAvailableSpeakersIgnoresStaleMenuOrder() async {
         let (vm, _) = makeViewModel()
-        vm.addManualSpeaker(displayName: "Alice")  // A
-        vm.speakerMenuOrder = ["Z", "A"]  // Z doesn't exist
-        XCTAssertEqual(vm.availableSpeakers.map(\.label), ["A"])
+        vm.addManualSpeaker(displayName: "Alice")
+        let idA = vm.activeSpeakers[0].id.uuidString
+        vm.speakerMenuOrder = ["nonexistent-uuid", idA]
+        XCTAssertEqual(vm.availableSpeakers.map(\.displayName), ["Alice"])
     }
 
     func testReassignSpeakerForBlockRecordsSpeakerSelection() {
         let (vm, _) = makeViewModel()
-        vm.addManualSpeaker(displayName: "Alice")  // A
-        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
+        let idA = vm.activeSpeakers[0].id.uuidString
+        let idB = vm.activeSpeakers[1].id.uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A"),
-            ConfirmedSegment(text: "World", speaker: "A"),
+            ConfirmedSegment(text: "Hello", speaker: idA),
+            ConfirmedSegment(text: "World", speaker: idA),
         ]
-        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: "B")
-        XCTAssertEqual(vm.speakerMenuOrder.first, "B")
+        vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: idB)
+        XCTAssertEqual(vm.speakerMenuOrder.first, idB)
     }
 
     func testReassignSpeakerForSelectionRecordsSpeakerSelection() {
         let (vm, _) = makeViewModel()
-        vm.addManualSpeaker(displayName: "Alice")  // A
-        vm.addManualSpeaker(displayName: "Bob")    // B
+        vm.addManualSpeaker(displayName: "Alice")
+        vm.addManualSpeaker(displayName: "Bob")
+        let idA = vm.activeSpeakers[0].id.uuidString
+        let idB = vm.activeSpeakers[1].id.uuidString
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "Hello", speaker: idA),
         ]
         let map = SegmentCharacterMap(entries: [
             SegmentCharacterMap.Entry(segmentIndex: 0, characterRange: NSRange(location: 0, length: 5), labelRange: nil)
         ])
-        vm.reassignSpeakerForSelection(selectionRange: NSRange(location: 0, length: 5), newSpeaker: "B", segmentMap: map)
-        XCTAssertEqual(vm.speakerMenuOrder.first, "B")
+        vm.reassignSpeakerForSelection(selectionRange: NSRange(location: 0, length: 5), newSpeaker: idB, segmentMap: map)
+        XCTAssertEqual(vm.speakerMenuOrder.first, idB)
     }
 
     // MARK: - Rename Active Speaker
 
-    func testRenameActiveSpeakerUpdatesLabelDisplayNames() async {
+    func testRenameActiveSpeakerUpdatesSpeakerDisplayNames() async {
         let (vm, _) = makeViewModel()
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
-        ]
+        vm.addManualSpeaker(displayName: "Alice")
+        let speakerId = vm.activeSpeakers[0].id
 
-        vm.renameActiveSpeaker(label: "A", displayName: "Alice")
+        vm.renameActiveSpeaker(id: speakerId, displayName: "Alicia")
 
-        XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alicia")
+        XCTAssertEqual(vm.speakerDisplayNames[speakerId.uuidString], "Alicia")
     }
 
     func testRenameActiveSpeakerEmptyNameClearsDisplayName() async {
         let (vm, _) = makeViewModel()
-        vm.labelDisplayNames = ["A": "Alice"]
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
-        ]
+        vm.addManualSpeaker(displayName: "Alice")
+        let speakerId = vm.activeSpeakers[0].id
 
-        vm.renameActiveSpeaker(label: "A", displayName: "")
+        vm.renameActiveSpeaker(id: speakerId, displayName: "")
 
-        XCTAssertNil(vm.labelDisplayNames["A"])
+        XCTAssertNil(vm.activeSpeakers[0].displayName)
+        XCTAssertNil(vm.speakerDisplayNames[speakerId.uuidString])
     }
 
     func testRenameActiveSpeakerUpdatesStoreIfProfileExists() async {
@@ -834,18 +850,19 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let id = UUID()
+        let profileId = UUID()
         let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(id: id, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
+        store.profiles = [StoredSpeakerProfile(id: profileId, label: "A", embedding: [Float](repeating: 0.1, count: 256))]
         try! store.save()
 
         let engine = MockTranscriptionEngine()
         let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
-        vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
-        ]
 
-        vm.renameActiveSpeaker(label: "A", displayName: "Alice")
+        // Add active speaker from profile
+        vm.addManualSpeaker(fromProfile: profileId)
+        let speakerId = vm.activeSpeakers[0].id
+
+        vm.renameActiveSpeaker(id: speakerId, displayName: "Alice")
 
         XCTAssertEqual(vm.speakerProfiles[0].displayName, "Alice")
     }
@@ -953,11 +970,13 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     func testConfirmedTextReflectsDisplayNames() {
         let (vm, _) = makeViewModel()
+        let speakerIdA = UUID()
+        let speakerIdB = UUID()
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: "A", speakerConfidence: 0.8),
-            ConfirmedSegment(text: "World", precedingSilence: 0, speaker: "B", speakerConfidence: 0.7),
+            ConfirmedSegment(text: "Hello", precedingSilence: 0, speaker: speakerIdA.uuidString, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "World", precedingSilence: 0, speaker: speakerIdB.uuidString, speakerConfidence: 0.7),
         ]
-        vm.labelDisplayNames = ["A": "Alice", "B": "Bob"]
+        vm.speakerDisplayNames = [speakerIdA.uuidString: "Alice", speakerIdB.uuidString: "Bob"]
         XCTAssertTrue(vm.confirmedText.contains("Alice:"))
         XCTAssertTrue(vm.confirmedText.contains("Bob:"))
     }
@@ -1014,8 +1033,8 @@ final class TranscriptionViewModelTests: XCTestCase {
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "Hello", speaker: "A"),
-            ConfirmedSegment(text: "World", speaker: "A")
+            ConfirmedSegment(text: "Hello", speaker: "old-speaker"),
+            ConfirmedSegment(text: "World", speaker: "old-speaker")
         ]
 
         vm.addAndReassignBlock(profileId: profileId, segmentIndex: 0)
@@ -1023,10 +1042,10 @@ final class TranscriptionViewModelTests: XCTestCase {
         // Should have added an active speaker
         XCTAssertEqual(vm.activeSpeakers.count, 1)
         XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
-        // Segments in the block should be reassigned to the new label
-        let newLabel = vm.activeSpeakers[0].sessionLabel
-        XCTAssertEqual(vm.confirmedSegments[0].speaker, newLabel)
-        XCTAssertEqual(vm.confirmedSegments[1].speaker, newLabel)
+        // Segments in the block should be reassigned to the new speaker's UUID
+        let newSpeakerIdStr = vm.activeSpeakers[0].id.uuidString
+        XCTAssertEqual(vm.confirmedSegments[0].speaker, newSpeakerIdStr)
+        XCTAssertEqual(vm.confirmedSegments[1].speaker, newSpeakerIdStr)
     }
 
     // MARK: - Active Profile IDs
@@ -1036,9 +1055,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         let id1 = UUID()
         let id2 = UUID()
         vm.activeSpeakers = [
-            ActiveSpeaker(speakerProfileId: id1, sessionLabel: "A", source: .manual),
-            ActiveSpeaker(sessionLabel: "B", source: .autoDetected),  // no profileId
-            ActiveSpeaker(speakerProfileId: id2, sessionLabel: "C", source: .manual),
+            ActiveSpeaker(speakerProfileId: id1, source: .manual),
+            ActiveSpeaker(source: .autoDetected),  // no profileId
+            ActiveSpeaker(speakerProfileId: id2, source: .manual),
         ]
         XCTAssertEqual(vm.activeProfileIds, Set([id1, id2]))
     }
@@ -1058,20 +1077,20 @@ final class TranscriptionViewModelTests: XCTestCase {
         ]
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.activeSpeakers = [
-            ActiveSpeaker(speakerProfileId: profileId, sessionLabel: "A", source: .manual),
-            ActiveSpeaker(sessionLabel: "B", source: .autoDetected),
+            ActiveSpeaker(speakerProfileId: profileId, source: .manual),
+            ActiveSpeaker(source: .autoDetected),
         ]
 
         vm.deactivateSpeaker(profileId: profileId)
 
         XCTAssertEqual(vm.activeSpeakers.count, 1)
-        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "B")
+        XCTAssertEqual(vm.activeSpeakers[0].source, .autoDetected)
     }
 
     func testDeactivateSpeakerNoOpForNonexistentProfileId() {
         let (vm, _) = makeViewModel()
         vm.activeSpeakers = [
-            ActiveSpeaker(sessionLabel: "A", source: .manual),
+            ActiveSpeaker(source: .manual),
         ]
 
         vm.deactivateSpeaker(profileId: UUID())
@@ -1126,12 +1145,12 @@ final class TranscriptionViewModelTests: XCTestCase {
         let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
         vm.addManualSpeaker(fromProfile: id1)
         vm.addManualSpeaker(fromProfile: id2)
-        vm.activeSpeakers.append(ActiveSpeaker(sessionLabel: "Z", source: .autoDetected))
+        vm.activeSpeakers.append(ActiveSpeaker(source: .autoDetected))
 
         vm.bulkDeactivateProfiles(ids: Set([id1, id2]))
 
         XCTAssertEqual(vm.activeSpeakers.count, 1)
-        XCTAssertEqual(vm.activeSpeakers[0].sessionLabel, "Z")
+        XCTAssertEqual(vm.activeSpeakers[0].source, .autoDetected)
     }
 
     // MARK: - Delete Speakers (bulk)
@@ -1155,21 +1174,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.speakerProfiles.count, 1)
         XCTAssertEqual(vm.speakerProfiles[0].id, id3)
         XCTAssertTrue(vm.activeSpeakers.isEmpty)
-    }
-
-    func testDeleteSpeakersUpdatesLabelDisplayNames() {
-        let id1 = UUID()
-        let store = SpeakerProfileStore(directory: tmpDir)
-        store.profiles = [
-            StoredSpeakerProfile(id: id1, label: "A", embedding: Array(repeating: 0.1, count: 256), displayName: "Alice"),
-        ]
-        try! store.save()
-        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
-        XCTAssertEqual(vm.labelDisplayNames["A"], "Alice")
-
-        vm.deleteSpeakers(ids: Set([id1]))
-
-        XCTAssertNil(vm.labelDisplayNames["A"])
     }
 
 }
