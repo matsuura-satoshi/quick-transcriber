@@ -474,6 +474,7 @@ private struct ActiveSpeakerRow: View {
 private struct OutputSettingsTab: View {
     @AppStorage("transcriptsDirectory") private var transcriptsDirectory: String = ""
     @AppStorage("isRecording") private var isRecording: Bool = false
+    @AppStorage("showPostMeetingSheet") private var showPostMeetingSheet: Bool = true
 
     private var displayPath: String {
         let path = transcriptsDirectory.isEmpty
@@ -511,6 +512,9 @@ private struct OutputSettingsTab: View {
                         .font(.callout)
                         .foregroundStyle(.orange)
                 }
+            }
+            Section("After Recording") {
+                Toggle("Show tag sheet after stopping recording", isOn: $showPostMeetingSheet)
             }
             Section {
                 Text("Transcripts are saved as **YYYY-MM-DD_HHmm_qt_transcript.md** with a **qt_transcript.md** symlink pointing to the latest file.")

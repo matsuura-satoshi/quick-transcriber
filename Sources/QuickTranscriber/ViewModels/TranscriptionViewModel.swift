@@ -37,6 +37,7 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
     @Published public var labelDisplayNames: [String: String] = [:]
     @Published public var activeSpeakers: [ActiveSpeaker] = []
+    @Published public var showPostMeetingTagging: Bool = false
     @Published public var translationEnabled: Bool = UserDefaults.standard.bool(forKey: "translationEnabled")
     public let translationService = TranslationService()
 
@@ -66,6 +67,7 @@ public final class TranscriptionViewModel: ObservableObject {
         diarizer: SpeakerDiarizer? = nil,
         speakerProfileStore: SpeakerProfileStore? = nil
     ) {
+        UserDefaults.standard.register(defaults: ["showPostMeetingSheet": true])
         let resolvedStore = parametersStore ?? ParametersStore.shared
         let profileStore = speakerProfileStore ?? {
             let store = SpeakerProfileStore()
@@ -468,6 +470,14 @@ public final class TranscriptionViewModel: ObservableObject {
         }
     }
 
+    public func bulkAddTag(_ tag: String, to profileIds: [UUID]) {
+        let trimmed = tag.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !profileIds.isEmpty else { return }
+        for id in profileIds {
+            addTag(trimmed, to: id)
+        }
+    }
+
     // MARK: - Active Speaker Management
 
     public func addManualSpeaker(fromProfile profileId: UUID) {
@@ -708,6 +718,9 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             self.speakerProfiles = self.speakerProfileStore.profiles
             self.labelDisplayNames = self.speakerProfileStore.labelDisplayNames
+            if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
+                self.showPostMeetingTagging = true
+            }
         }
     }
 
