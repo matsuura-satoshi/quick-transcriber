@@ -331,6 +331,73 @@ final class EmbeddingHistoryStoreTests: XCTestCase {
         XCTAssertNotNil(store)
     }
 
+    // MARK: - Remove entries
+
+    func testRemoveEntriesForProfileId() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir)
+        let idA = UUID()
+        let idB = UUID()
+
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: idA, label: "A", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 0), confirmed: true)]),
+            EmbeddingHistoryEntry(speakerProfileId: idB, label: "B", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 1), confirmed: true)]),
+        ])
+
+        store.removeEntries(for: Set([idA]))
+
+        let loaded = try store.loadAll()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].speakerProfileId, idB)
+    }
+
+    func testRemoveEntriesForMultipleProfileIds() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir)
+        let idA = UUID()
+        let idB = UUID()
+        let idC = UUID()
+
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: idA, label: "A", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 0), confirmed: true)]),
+            EmbeddingHistoryEntry(speakerProfileId: idB, label: "B", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 1), confirmed: true)]),
+            EmbeddingHistoryEntry(speakerProfileId: idC, label: "C", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 2), confirmed: true)]),
+        ])
+
+        store.removeEntries(for: Set([idA, idC]))
+
+        let loaded = try store.loadAll()
+        XCTAssertEqual(loaded.count, 1)
+        XCTAssertEqual(loaded[0].speakerProfileId, idB)
+    }
+
+    func testRemoveAllEntries() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EmbeddingHistoryStore(directory: dir)
+        store.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: UUID(), label: "A", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: makeEmbedding(dominant: 0), confirmed: true)]),
+        ])
+
+        store.removeAll()
+
+        let loaded = try store.loadAll()
+        XCTAssertTrue(loaded.isEmpty)
+        // File should also be deleted
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("embedding_history.json").path))
+    }
+
     func testReconstructProfileLegacyWithoutConfidence() throws {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

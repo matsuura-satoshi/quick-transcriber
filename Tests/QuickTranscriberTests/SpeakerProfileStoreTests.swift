@@ -372,4 +372,71 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, 1, "Should update existing profile by ID, not create new one")
         XCTAssertEqual(store.profiles[0].sessionCount, 2)
     }
+
+    // MARK: - Cross-contamination prevention (RC1)
+
+    func testMergeDoesNotCrossContaminateNewProfilesInSameBatch() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        // No existing profiles — all speakers are new
+
+        let spk1 = UUID()
+        let spk2 = UUID()
+        let spk3 = UUID()
+        // Three very different embeddings
+        let emb1 = makeEmbedding(dominant: 0)
+        let emb2 = makeEmbedding(dominant: 50)
+        let emb3 = makeEmbedding(dominant: 100)
+
+        store.mergeSessionProfiles([
+            (speakerId: spk1, embedding: emb1, displayName: "Speaker-1"),
+            (speakerId: spk2, embedding: emb2, displayName: "Speaker-2"),
+            (speakerId: spk3, embedding: emb3, displayName: "Speaker-3"),
+        ])
+
+        XCTAssertEqual(store.profiles.count, 3,
+                        "Each new speaker should create a separate profile, not merge into earlier new profiles")
+        let profileNames = Set(store.profiles.map { $0.displayName })
+        XCTAssertEqual(profileNames, Set(["Speaker-1", "Speaker-2", "Speaker-3"]))
+    }
+
+    func testMergeNewProfilePreservesSessionUUID() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let sessionId = UUID()
+
+        store.mergeSessionProfiles([
+            (speakerId: sessionId, embedding: makeEmbedding(dominant: 0), displayName: "Speaker-1"),
+        ])
+
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, sessionId,
+                        "New profile should use the session speakerId as its UUID")
+    }
+
+    func testMergeNewProfilesWithSimilarEmbeddingsNotCrossContaminated() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        // Two speakers with somewhat similar embeddings (but different UUIDs)
+        var emb1 = makeEmbedding(dominant: 0)
+        var emb2 = makeEmbedding(dominant: 0)
+        emb2[1] = 0.3  // slightly different
+
+        let spk1 = UUID()
+        let spk2 = UUID()
+
+        store.mergeSessionProfiles([
+            (speakerId: spk1, embedding: emb1, displayName: "Speaker-1"),
+            (speakerId: spk2, embedding: emb2, displayName: "Speaker-2"),
+        ])
+
+        XCTAssertEqual(store.profiles.count, 2,
+                        "Similar but distinct session speakers should not be merged within a single batch")
+    }
 }

@@ -98,6 +98,7 @@ public struct ContentView: View {
             PostMeetingTagSheet(
                 activeSpeakers: viewModel.activeSpeakers,
                 allTags: viewModel.allTags,
+                preExistingProfileIds: viewModel.preExistingProfileIds,
                 onApply: { tag, profileIds in
                     viewModel.bulkAddTag(tag, to: profileIds)
                     viewModel.showPostMeetingTagging = false
