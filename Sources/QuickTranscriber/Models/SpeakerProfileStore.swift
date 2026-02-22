@@ -36,8 +36,13 @@ public final class SpeakerProfileStore {
     }
 
     public func deleteAll() {
-        profiles = []
-        try? FileManager.default.removeItem(at: fileURL)
+        let hadProfiles = !profiles.isEmpty
+        profiles.removeAll { !$0.isLocked }
+        if profiles.isEmpty {
+            try? FileManager.default.removeItem(at: fileURL)
+        } else if hadProfiles {
+            try? save()
+        }
     }
 
     public func rename(id: UUID, to name: String) throws {
@@ -50,10 +55,19 @@ public final class SpeakerProfileStore {
         try save()
     }
 
+    public func setLocked(id: UUID, locked: Bool) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        profiles[index].isLocked = locked
+        try save()
+    }
+
     public func delete(id: UUID) throws {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw SpeakerProfileStoreError.profileNotFound
         }
+        guard !profiles[index].isLocked else { return }
         profiles.remove(at: index)
         try save()
     }
@@ -84,7 +98,7 @@ public final class SpeakerProfileStore {
 
     public func deleteMultiple(ids: Set<UUID>) throws {
         guard !ids.isEmpty else { return }
-        profiles.removeAll { ids.contains($0.id) }
+        profiles.removeAll { ids.contains($0.id) && !$0.isLocked }
         try save()
     }
 

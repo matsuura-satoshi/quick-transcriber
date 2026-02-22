@@ -242,6 +242,102 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, 1)
     }
 
+    // MARK: - isLocked
+
+    func testIsLockedDefaultsToFalse() {
+        let profile = StoredSpeakerProfile(displayName: "Test", embedding: [1, 2, 3])
+        XCTAssertFalse(profile.isLocked)
+    }
+
+    func testIsLockedCanBeSetToTrue() {
+        var profile = StoredSpeakerProfile(displayName: "Test", embedding: [1, 2, 3])
+        profile.isLocked = true
+        XCTAssertTrue(profile.isLocked)
+    }
+
+    func testIsLockedBackwardsCompatibleDecoding() throws {
+        // JSON without isLocked field (existing data)
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000001","displayName":"Old","embedding":[1,2,3],"lastUsed":0,"sessionCount":1,"tags":[]}
+        """.data(using: .utf8)!
+        let profile = try JSONDecoder().decode(StoredSpeakerProfile.self, from: json)
+        XCTAssertFalse(profile.isLocked)
+    }
+
+    // MARK: - setLocked
+
+    func testSetLockedTrue() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: [1, 2, 3])
+        store.profiles = [profile]
+        try store.save()
+
+        try store.setLocked(id: profile.id, locked: true)
+        XCTAssertTrue(store.profiles[0].isLocked)
+
+        // Verify persisted
+        let store2 = SpeakerProfileStore(directory: dir)
+        try store2.load()
+        XCTAssertTrue(store2.profiles[0].isLocked)
+    }
+
+    func testSetLockedNotFoundThrows() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        XCTAssertThrowsError(try store.setLocked(id: UUID(), locked: true))
+    }
+
+    // MARK: - Delete skips locked profiles
+
+    func testDeleteSkipsLockedProfile() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: [1, 2, 3], isLocked: true)
+        store.profiles = [profile]
+        try store.save()
+
+        try store.delete(id: profile.id)
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, profile.id)
+    }
+
+    func testDeleteMultipleSkipsLockedProfiles() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let locked = StoredSpeakerProfile(displayName: "Locked", embedding: [1, 2, 3], isLocked: true)
+        let unlocked = StoredSpeakerProfile(displayName: "Unlocked", embedding: [4, 5, 6])
+        store.profiles = [locked, unlocked]
+        try store.save()
+
+        try store.deleteMultiple(ids: Set([locked.id, unlocked.id]))
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, locked.id)
+    }
+
+    func testDeleteAllSkipsLockedProfiles() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let locked = StoredSpeakerProfile(displayName: "Locked", embedding: [1, 2, 3], isLocked: true)
+        let unlocked = StoredSpeakerProfile(displayName: "Unlocked", embedding: [4, 5, 6])
+        store.profiles = [locked, unlocked]
+        try store.save()
+
+        store.deleteAll()
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, locked.id)
+    }
+
     func testDeleteMultipleIgnoresNonexistentIds() throws {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
