@@ -1215,6 +1215,47 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
     }
 
+    func testAutoDetectedSpeakerNameAvoidsExistingNames() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Speaker-1", embedding: [Float](repeating: 0.9, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        await vm.loadModel()
+
+        // Add "Speaker-1" profile as active speaker
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Simulate a completely different speaker (different embedding, won't match any profile)
+        let newSpeakerId = UUID()
+        var differentEmbedding = [Float](repeating: 0.0, count: 256)
+        differentEmbedding[128] = 1.0
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Test",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Test", speaker: newSpeakerId.uuidString, speakerEmbedding: differentEmbedding)
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+        let newSpeaker = vm.activeSpeakers.first(where: { $0.id == newSpeakerId })
+        XCTAssertNotNil(newSpeaker)
+        XCTAssertNotEqual(newSpeaker?.displayName, "Speaker-1", "Auto name should not conflict with existing")
+    }
+
     func testAutoDetectedSpeakerDoesNotDuplicateExistingProfile() async {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")

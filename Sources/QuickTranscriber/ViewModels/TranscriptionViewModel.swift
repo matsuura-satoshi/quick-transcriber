@@ -501,7 +501,16 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func addManualSpeaker(displayName: String) {
-        let name = displayName.isEmpty ? "Speaker-\(nextSpeakerNumber)" : displayName
+        let name: String
+        if displayName.isEmpty {
+            let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+            while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
+                nextSpeakerNumber += 1
+            }
+            name = "Speaker-\(nextSpeakerNumber)"
+        } else {
+            name = displayName
+        }
         nextSpeakerNumber += 1
         let speaker = ActiveSpeaker(displayName: name, source: .manual)
         activeSpeakers.append(speaker)
@@ -596,6 +605,10 @@ public final class TranscriptionViewModel: ObservableObject {
            let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) {
             displayName = profile.displayName
         } else {
+            let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+            while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
+                nextSpeakerNumber += 1
+            }
             displayName = "Speaker-\(nextSpeakerNumber)"
             nextSpeakerNumber += 1
         }
