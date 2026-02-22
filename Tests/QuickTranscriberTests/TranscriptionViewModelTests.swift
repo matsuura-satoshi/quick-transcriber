@@ -1192,4 +1192,27 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(vm.speakerProfiles.first?.isLocked == true)
     }
 
+    // MARK: - Active Speaker Dedup (profile ID as active ID)
+
+    func testAddManualSpeakerFromProfileUsesProfileIdAsActiveId() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].id, profileId, "ActiveSpeaker.id should equal profile UUID")
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
+    }
+
 }

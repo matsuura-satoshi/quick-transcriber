@@ -491,6 +491,7 @@ public final class TranscriptionViewModel: ObservableObject {
               !activeSpeakers.contains(where: { $0.speakerProfileId == profileId })
         else { return }
         let speaker = ActiveSpeaker(
+            id: profileId,
             speakerProfileId: profileId,
             displayName: profile.displayName,
             source: .manual
