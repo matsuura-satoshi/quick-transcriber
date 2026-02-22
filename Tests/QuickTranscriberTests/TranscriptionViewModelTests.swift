@@ -1192,4 +1192,152 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(vm.speakerProfiles.first?.isLocked == true)
     }
 
+    // MARK: - Active Speaker Dedup (profile ID as active ID)
+
+    func testAddManualSpeakerFromProfileUsesProfileIdAsActiveId() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].id, profileId, "ActiveSpeaker.id should equal profile UUID")
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
+    }
+
+    func testAutoDetectedSpeakerNameAvoidsExistingNames() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Speaker-1", embedding: [Float](repeating: 0.9, count: 256))]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        await vm.loadModel()
+
+        // Add "Speaker-1" profile as active speaker
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Simulate a completely different speaker (different embedding, won't match any profile)
+        let newSpeakerId = UUID()
+        var differentEmbedding = [Float](repeating: 0.0, count: 256)
+        differentEmbedding[128] = 1.0
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Test",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Test", speaker: newSpeakerId.uuidString, speakerEmbedding: differentEmbedding)
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 2)
+        let newSpeaker = vm.activeSpeakers.first(where: { $0.id == newSpeakerId })
+        XCTAssertNotNil(newSpeaker)
+        XCTAssertNotEqual(newSpeaker?.displayName, "Speaker-1", "Auto name should not conflict with existing")
+    }
+
+    func testAutoDetectedSpeakerDoesNotDuplicateExistingProfile() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let embedding = [Float](repeating: 0.1, count: 256)
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: embedding)]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        await vm.loadModel()
+
+        // Manually activate the profile
+        vm.addManualSpeaker(fromProfile: profileId)
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+
+        // Start recording and simulate a segment with a DIFFERENT tracker UUID but same embedding
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let newTrackerId = UUID()
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello", speaker: newTrackerId.uuidString, speakerEmbedding: embedding)
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Should NOT duplicate — profile already active
+        XCTAssertEqual(vm.activeSpeakers.count, 1, "Should not duplicate speaker when profile already active")
+        // But the tracker UUID should still map to the display name
+        XCTAssertEqual(vm.speakerDisplayNames[newTrackerId.uuidString], "Alice")
+    }
+
+    // MARK: - Manual Mode Tracker ID Dedup Integration
+
+    func testManualModeTrackerIdMatchesActiveSpeaker() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupInteg-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let embedding = [Float](repeating: 0.1, count: 256)
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: embedding)]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        await vm.loadModel()
+
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        // After Task 1 fix, ActiveSpeaker.id == profileId
+        XCTAssertEqual(vm.activeSpeakers[0].id, profileId)
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // In manual mode, the tracker uses stored.id (= profileId) as speakerId.
+        // So segments arrive with speaker == profileId.uuidString.
+        // The dedup check $0.id.uuidString == speakerId should match.
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello", speaker: profileId.uuidString, speakerEmbedding: embedding)
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1, "Manual speaker should not be duplicated when tracker uses same ID")
+        XCTAssertEqual(vm.speakerDisplayNames[profileId.uuidString], "Alice")
+    }
+
 }
