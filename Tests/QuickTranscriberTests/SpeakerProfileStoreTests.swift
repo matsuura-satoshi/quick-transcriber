@@ -353,4 +353,23 @@ final class SpeakerProfileStoreTests: XCTestCase {
 
         XCTAssertEqual(store.profiles.count, 1)
     }
+
+    // MARK: - Merge by speakerId
+
+    func testMergeByIdMatchesEvenWithDriftedEmbedding() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let profileId = UUID()
+        let originalEmbedding = makeEmbedding(dominant: 0)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: originalEmbedding)]
+
+        // Very different embedding (cosine similarity < 0.5 with original) but same speakerId
+        let driftedEmbedding = makeEmbedding(dominant: 100)
+        store.mergeSessionProfiles([(speakerId: profileId, embedding: driftedEmbedding, displayName: "Alice")])
+
+        XCTAssertEqual(store.profiles.count, 1, "Should update existing profile by ID, not create new one")
+        XCTAssertEqual(store.profiles[0].sessionCount, 2)
+    }
 }

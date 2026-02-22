@@ -115,7 +115,19 @@ public final class SpeakerProfileStore {
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(speakerId: UUID, embedding: [Float], displayName: String)]) {
-        for (_, embedding, displayName) in sessionProfiles {
+        for (speakerId, embedding, displayName) in sessionProfiles {
+            // Priority 1: Match by speakerId (same profile across sessions)
+            if let idMatchIndex = profiles.firstIndex(where: { $0.id == speakerId }) {
+                let alpha = updateAlpha
+                profiles[idMatchIndex].embedding = zip(profiles[idMatchIndex].embedding, embedding).map { old, new in
+                    (1 - alpha) * old + alpha * new
+                }
+                profiles[idMatchIndex].lastUsed = Date()
+                profiles[idMatchIndex].sessionCount += 1
+                continue
+            }
+
+            // Priority 2: Match by embedding similarity
             var bestIndex = -1
             var bestSimilarity: Float = -1
 
