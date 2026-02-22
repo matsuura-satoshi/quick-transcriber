@@ -96,6 +96,11 @@ struct PostMeetingTagSheet: View {
             Text("Tag:")
             TextField("Enter tag name", text: $tag)
                 .textFieldStyle(.roundedBorder)
+                .onSubmit {
+                    let trimmed = tag.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { return }
+                    onApply(tag, selectedProfileIds)
+                }
         }
     }
 

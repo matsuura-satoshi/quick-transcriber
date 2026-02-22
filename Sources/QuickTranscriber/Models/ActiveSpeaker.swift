@@ -2,7 +2,7 @@ import Foundation
 
 public struct ActiveSpeaker: Identifiable, Equatable, Sendable {
     public let id: UUID
-    public let speakerProfileId: UUID?
+    public var speakerProfileId: UUID?
     public var displayName: String?
     public let source: Source
 

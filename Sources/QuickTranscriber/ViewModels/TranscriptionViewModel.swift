@@ -724,8 +724,31 @@ public final class TranscriptionViewModel: ObservableObject {
         Task {
             await service.stopTranscription(speakerDisplayNames: self.speakerDisplayNames)
             self.speakerProfiles = self.speakerProfileStore.profiles
+            self.linkActiveSpeakersToProfiles()
             if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
                 self.showPostMeetingTagging = true
+            }
+        }
+    }
+
+    func linkActiveSpeakersToProfiles() {
+        for i in activeSpeakers.indices where activeSpeakers[i].speakerProfileId == nil {
+            let speakerIdString = activeSpeakers[i].id.uuidString
+            guard let embedding = confirmedSegments.first(where: {
+                $0.speaker == speakerIdString
+            })?.speakerEmbedding else { continue }
+
+            var bestIndex = -1
+            var bestSimilarity: Float = -1
+            for (j, profile) in speakerProfileStore.profiles.enumerated() {
+                let sim = EmbeddingBasedSpeakerTracker.cosineSimilarity(embedding, profile.embedding)
+                if sim > bestSimilarity {
+                    bestSimilarity = sim
+                    bestIndex = j
+                }
+            }
+            if bestIndex >= 0 && bestSimilarity >= Constants.Embedding.similarityThreshold {
+                activeSpeakers[i].speakerProfileId = speakerProfileStore.profiles[bestIndex].id
             }
         }
     }

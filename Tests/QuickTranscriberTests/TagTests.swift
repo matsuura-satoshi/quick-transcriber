@@ -401,6 +401,105 @@ final class PostMeetingTagTests: XCTestCase {
         XCTAssertFalse(vm.showPostMeetingTagging)
     }
 
+    func testLinkActiveSpeakersToProfiles_linksMatchingSpeaker() {
+        let (vm, store) = makeViewModel()
+        let speakerId = UUID()
+        let profileId = UUID()
+        let embedding = makeEmbedding(dominant: 0)
+
+        // Profile in store with matching embedding
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: embedding)
+        ]
+
+        // Active speaker with no profileId
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, source: .autoDetected)
+        ]
+
+        // Confirmed segment with matching speaker and embedding
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "hello", speaker: speakerId.uuidString, speakerEmbedding: embedding)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
+    }
+
+    func testLinkActiveSpeakersToProfiles_skipsAlreadyLinked() {
+        let (vm, store) = makeViewModel()
+        let speakerId = UUID()
+        let existingProfileId = UUID()
+        let otherProfileId = UUID()
+        let embedding = makeEmbedding(dominant: 0)
+
+        store.profiles = [
+            StoredSpeakerProfile(id: otherProfileId, displayName: "Bob", embedding: embedding)
+        ]
+
+        // Active speaker already linked to a different profile
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, speakerProfileId: existingProfileId, source: .autoDetected)
+        ]
+
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "hello", speaker: speakerId.uuidString, speakerEmbedding: embedding)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        // Should NOT change the existing profileId
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, existingProfileId)
+    }
+
+    func testLinkActiveSpeakersToProfiles_noMatchBelowThreshold() {
+        let (vm, store) = makeViewModel()
+        let speakerId = UUID()
+        let profileId = UUID()
+
+        // Very different embeddings (orthogonal)
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))
+        ]
+
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, source: .autoDetected)
+        ]
+
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "hello", speaker: speakerId.uuidString, speakerEmbedding: makeEmbedding(dominant: 100))
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        // Should remain nil because cosine similarity is below threshold
+        XCTAssertNil(vm.activeSpeakers[0].speakerProfileId)
+    }
+
+    func testLinkActiveSpeakersToProfiles_noEmbeddingSkipped() {
+        let (vm, store) = makeViewModel()
+        let speakerId = UUID()
+        let profileId = UUID()
+
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))
+        ]
+
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, source: .autoDetected)
+        ]
+
+        // Segment without embedding
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "hello", speaker: speakerId.uuidString)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        XCTAssertNil(vm.activeSpeakers[0].speakerProfileId)
+    }
+
     func testBulkAddTagSkipsDuplicates() {
         let (vm, store) = makeViewModel()
         let id = UUID()
