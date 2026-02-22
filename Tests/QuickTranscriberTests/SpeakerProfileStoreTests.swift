@@ -292,6 +292,52 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.setLocked(id: UUID(), locked: true))
     }
 
+    // MARK: - Delete skips locked profiles
+
+    func testDeleteSkipsLockedProfile() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: [1, 2, 3], isLocked: true)
+        store.profiles = [profile]
+        try store.save()
+
+        try store.delete(id: profile.id)
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, profile.id)
+    }
+
+    func testDeleteMultipleSkipsLockedProfiles() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let locked = StoredSpeakerProfile(displayName: "Locked", embedding: [1, 2, 3], isLocked: true)
+        let unlocked = StoredSpeakerProfile(displayName: "Unlocked", embedding: [4, 5, 6])
+        store.profiles = [locked, unlocked]
+        try store.save()
+
+        try store.deleteMultiple(ids: Set([locked.id, unlocked.id]))
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, locked.id)
+    }
+
+    func testDeleteAllSkipsLockedProfiles() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let locked = StoredSpeakerProfile(displayName: "Locked", embedding: [1, 2, 3], isLocked: true)
+        let unlocked = StoredSpeakerProfile(displayName: "Unlocked", embedding: [4, 5, 6])
+        store.profiles = [locked, unlocked]
+        try store.save()
+
+        store.deleteAll()
+        XCTAssertEqual(store.profiles.count, 1)
+        XCTAssertEqual(store.profiles[0].id, locked.id)
+    }
+
     func testDeleteMultipleIgnoresNonexistentIds() throws {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
