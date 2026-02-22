@@ -50,6 +50,14 @@ public final class SpeakerProfileStore {
         try save()
     }
 
+    public func setLocked(id: UUID, locked: Bool) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        profiles[index].isLocked = locked
+        try save()
+    }
+
     public func delete(id: UUID) throws {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw SpeakerProfileStoreError.profileNotFound

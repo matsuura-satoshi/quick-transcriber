@@ -264,6 +264,34 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertFalse(profile.isLocked)
     }
 
+    // MARK: - setLocked
+
+    func testSetLockedTrue() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: [1, 2, 3])
+        store.profiles = [profile]
+        try store.save()
+
+        try store.setLocked(id: profile.id, locked: true)
+        XCTAssertTrue(store.profiles[0].isLocked)
+
+        // Verify persisted
+        let store2 = SpeakerProfileStore(directory: dir)
+        try store2.load()
+        XCTAssertTrue(store2.profiles[0].isLocked)
+    }
+
+    func testSetLockedNotFoundThrows() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        XCTAssertThrowsError(try store.setLocked(id: UUID(), locked: true))
+    }
+
     func testDeleteMultipleIgnoresNonexistentIds() throws {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
