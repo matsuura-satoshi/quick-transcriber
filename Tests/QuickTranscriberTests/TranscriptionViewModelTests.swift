@@ -1176,4 +1176,20 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertTrue(vm.activeSpeakers.isEmpty)
     }
 
+    // MARK: - Set Locked
+
+    func testSetLockedUpdatesProfile() {
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+
+        vm.setLocked(id: id, locked: true)
+
+        XCTAssertTrue(vm.speakerProfiles.first?.isLocked == true)
+    }
+
 }

@@ -415,6 +415,15 @@ public final class TranscriptionViewModel: ObservableObject {
         speakerProfiles = speakerProfileStore.profiles
     }
 
+    public func setLocked(id: UUID, locked: Bool) {
+        do {
+            try speakerProfileStore.setLocked(id: id, locked: locked)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to set locked state for \(id): \(error)")
+        }
+        speakerProfiles = speakerProfileStore.profiles
+    }
+
     public func deleteSpeaker(id: UUID) {
         do {
             try speakerProfileStore.delete(id: id)
