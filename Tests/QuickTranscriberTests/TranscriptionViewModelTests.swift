@@ -1340,4 +1340,188 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.speakerDisplayNames[profileId.uuidString], "Alice")
     }
 
+    // MARK: - Delete cleanup (RC4 - data integrity)
+
+    func testDeleteSpeakerCleansUpDisplayNamesAndActiveSpeakers() {
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.addManualSpeaker(fromProfile: id)
+        XCTAssertFalse(vm.speakerDisplayNames.isEmpty)
+        XCTAssertFalse(vm.activeSpeakers.isEmpty)
+
+        vm.deleteSpeaker(id: id)
+
+        XCTAssertTrue(vm.speakerDisplayNames.isEmpty, "displayNames should be cleaned up on single delete")
+        XCTAssertTrue(vm.activeSpeakers.isEmpty, "activeSpeakers should be cleaned up on single delete")
+    }
+
+    func testDeleteSpeakersCleansUpDisplayNames() {
+        let id1 = UUID()
+        let id2 = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id1, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: id2, displayName: "Bob", embedding: Array(repeating: 0.2, count: 256)),
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+        vm.addManualSpeaker(fromProfile: id1)
+        vm.addManualSpeaker(fromProfile: id2)
+
+        vm.deleteSpeakers(ids: Set([id1]))
+
+        XCTAssertEqual(vm.speakerDisplayNames.count, 1, "Only remaining speaker should have displayName")
+        XCTAssertNotNil(vm.speakerDisplayNames[id2.uuidString])
+    }
+
+    func testDeleteAllSpeakersCleansUpEmbeddingHistory() {
+        let embHistDir = tmpDir.appendingPathComponent("emb-hist-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: embHistDir, withIntermediateDirectories: true)
+        let embeddingHistoryStore = EmbeddingHistoryStore(directory: embHistDir)
+        embeddingHistoryStore.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: UUID(), label: "A", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: Array(repeating: 0.1, count: 256), confirmed: true)])
+        ])
+
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+        ]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store, embeddingHistoryStore: embeddingHistoryStore
+        )
+
+        vm.deleteAllSpeakers()
+
+        let remaining = try! embeddingHistoryStore.loadAll()
+        XCTAssertTrue(remaining.isEmpty, "Embedding history should be cleared on deleteAll")
+    }
+
+    func testDeleteSpeakerCleansUpEmbeddingHistory() {
+        let embHistDir = tmpDir.appendingPathComponent("emb-hist-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: embHistDir, withIntermediateDirectories: true)
+        let embeddingHistoryStore = EmbeddingHistoryStore(directory: embHistDir)
+        let idA = UUID()
+        let idB = UUID()
+        embeddingHistoryStore.appendSession(entries: [
+            EmbeddingHistoryEntry(speakerProfileId: idA, label: "A", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: Array(repeating: 0.1, count: 256), confirmed: true)]),
+            EmbeddingHistoryEntry(speakerProfileId: idB, label: "B", sessionDate: Date(),
+                                 embeddings: [HistoricalEmbedding(embedding: Array(repeating: 0.2, count: 256), confirmed: true)]),
+        ])
+
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: idA, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+            StoredSpeakerProfile(id: idB, displayName: "Bob", embedding: Array(repeating: 0.2, count: 256)),
+        ]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store, embeddingHistoryStore: embeddingHistoryStore
+        )
+
+        vm.deleteSpeaker(id: idA)
+
+        let remaining = try! embeddingHistoryStore.loadAll()
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(remaining[0].speakerProfileId, idB, "Only deleted speaker's history should be removed")
+    }
+
+    // MARK: - preExistingProfileIds (RC3 fix)
+
+    func testPreExistingProfileIdsInitiallyEmpty() {
+        let (vm, _) = makeViewModel()
+        XCTAssertTrue(vm.preExistingProfileIds.isEmpty)
+    }
+
+    // MARK: - linkActiveSpeakersToProfiles (RC2 fix)
+
+    func testLinkActiveSpeakersMatchesByIdFirst() {
+        let profileId = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256))
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+
+        // Active speaker has the same UUID as the profile (session UUID == profile ID from RC2 fix)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: profileId, speakerProfileId: nil, displayName: "Speaker-1", source: .autoDetected)
+        ]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: profileId.uuidString, speakerEmbedding: Array(repeating: 0.1, count: 256))
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId,
+                        "Should match by ID first without needing embedding similarity")
+    }
+
+    func testLinkActiveSpeakersCreatesProfileForUnlinked() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+
+        let speakerId = UUID()
+        let embedding: [Float] = Array(repeating: 0.5, count: 256)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, speakerProfileId: nil, displayName: "Speaker-1", source: .autoDetected)
+        ]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: speakerId.uuidString, speakerEmbedding: embedding)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, speakerId,
+                        "Should create a new profile for unlinked speaker and link it")
+        XCTAssertEqual(store.profiles.count, 1, "Should have created one new profile")
+        XCTAssertEqual(store.profiles[0].id, speakerId)
+        XCTAssertEqual(store.profiles[0].displayName, "Speaker-1")
+    }
+
+    func testLinkActiveSpeakersSavesAndUpdatesProfiles() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let profileId = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256))
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(engine: MockTranscriptionEngine(), modelName: "test-model", speakerProfileStore: store)
+
+        let newSpeakerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: newSpeakerId, speakerProfileId: nil, displayName: "Speaker-2", source: .autoDetected)
+        ]
+        // Use orthogonal embedding to avoid similarity match
+        var differentEmb = Array(repeating: Float(0.0), count: 256)
+        differentEmb[128] = 1.0
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Test", speaker: newSpeakerId.uuidString, speakerEmbedding: differentEmb)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        // Should persist new profile
+        XCTAssertEqual(vm.speakerProfiles.count, 2, "speakerProfiles should be refreshed")
+        // Verify persisted
+        let store2 = SpeakerProfileStore(directory: tmpDir)
+        try! store2.load()
+        XCTAssertEqual(store2.profiles.count, 2, "New profile should be persisted to disk")
+    }
+
 }

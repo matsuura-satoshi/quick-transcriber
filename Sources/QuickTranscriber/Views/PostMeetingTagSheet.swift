@@ -3,6 +3,7 @@ import SwiftUI
 struct PostMeetingTagSheet: View {
     let activeSpeakers: [ActiveSpeaker]
     let allTags: [String]
+    let preExistingProfileIds: Set<UUID>
     let onApply: (String, [UUID]) -> Void
     let onSkip: () -> Void
 
@@ -12,16 +13,23 @@ struct PostMeetingTagSheet: View {
     init(
         activeSpeakers: [ActiveSpeaker],
         allTags: [String],
+        preExistingProfileIds: Set<UUID> = [],
         onApply: @escaping (String, [UUID]) -> Void,
         onSkip: @escaping () -> Void
     ) {
         self.activeSpeakers = activeSpeakers
         self.allTags = allTags
+        self.preExistingProfileIds = preExistingProfileIds
         self.onApply = onApply
         self.onSkip = onSkip
         self._selectedSpeakerIds = State(
             initialValue: Set(activeSpeakers.map { $0.id })
         )
+    }
+
+    private func isNewSpeaker(_ speaker: ActiveSpeaker) -> Bool {
+        guard let profileId = speaker.speakerProfileId else { return true }
+        return !preExistingProfileIds.contains(profileId)
     }
 
     private var selectedProfileIds: [UUID] {
@@ -72,7 +80,7 @@ struct PostMeetingTagSheet: View {
                     )) {
                         HStack(spacing: 6) {
                             Text(speaker.displayName ?? "Speaker")
-                            if speaker.speakerProfileId == nil {
+                            if isNewSpeaker(speaker) {
                                 Text("new")
                                     .font(.caption2)
                                     .padding(.horizontal, 4)

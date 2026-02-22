@@ -101,6 +101,26 @@ public final class EmbeddingHistoryStore {
         return try JSONDecoder().decode([EmbeddingHistoryEntry].self, from: data)
     }
 
+    public func removeEntries(for profileIds: Set<UUID>) {
+        guard !profileIds.isEmpty else { return }
+        var existing = (try? loadAll()) ?? []
+        existing.removeAll { profileIds.contains($0.speakerProfileId) }
+        do {
+            if existing.isEmpty {
+                try? FileManager.default.removeItem(at: fileURL)
+            } else {
+                let data = try JSONEncoder().encode(existing)
+                try data.write(to: fileURL, options: .atomic)
+            }
+        } catch {
+            NSLog("[EmbeddingHistoryStore] Failed to remove entries: \(error)")
+        }
+    }
+
+    public func removeAll() {
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
     public func reconstructProfile(for profileId: UUID) throws -> [Float]? {
         let entries = try loadAll()
         let confirmedEntries = entries

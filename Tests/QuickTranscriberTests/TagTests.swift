@@ -453,7 +453,7 @@ final class PostMeetingTagTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, existingProfileId)
     }
 
-    func testLinkActiveSpeakersToProfiles_noMatchBelowThreshold() {
+    func testLinkActiveSpeakersToProfiles_noMatchBelowThresholdCreatesNewProfile() {
         let (vm, store) = makeViewModel()
         let speakerId = UUID()
         let profileId = UUID()
@@ -473,8 +473,11 @@ final class PostMeetingTagTests: XCTestCase {
 
         vm.linkActiveSpeakersToProfiles()
 
-        // Should remain nil because cosine similarity is below threshold
-        XCTAssertNil(vm.activeSpeakers[0].speakerProfileId)
+        // Should create a new profile for unlinked speaker (not matched to existing)
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, speakerId)
+        XCTAssertNotEqual(vm.activeSpeakers[0].speakerProfileId, profileId,
+                          "Should not match to existing profile with low similarity")
+        XCTAssertEqual(store.profiles.count, 2, "Should have created a new profile")
     }
 
     func testLinkActiveSpeakersToProfiles_noEmbeddingSkipped() {

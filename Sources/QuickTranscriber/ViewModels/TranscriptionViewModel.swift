@@ -38,6 +38,7 @@ public final class TranscriptionViewModel: ObservableObject {
     @Published public var speakerDisplayNames: [String: String] = [:]
     @Published public var activeSpeakers: [ActiveSpeaker] = []
     public var speakerMenuOrder: [String] = []
+    @Published public var preExistingProfileIds: Set<UUID> = []
     @Published public var showPostMeetingTagging: Bool = false
     @Published public var translationEnabled: Bool = UserDefaults.standard.bool(forKey: "translationEnabled")
     public let translationService = TranslationService()
@@ -54,6 +55,7 @@ public final class TranscriptionViewModel: ObservableObject {
     private let modelName: String
     internal let parametersStore: ParametersStore
     internal let speakerProfileStore: SpeakerProfileStore
+    private let embeddingHistoryStore: EmbeddingHistoryStore
     private let fileWriter: TranscriptFileWriter
     private var fileSessionActive: Bool = false
     private var previousSessionSegments: [ConfirmedSegment] = []
@@ -66,7 +68,8 @@ public final class TranscriptionViewModel: ObservableObject {
         parametersStore: ParametersStore? = nil,
         fileWriter: TranscriptFileWriter? = nil,
         diarizer: SpeakerDiarizer? = nil,
-        speakerProfileStore: SpeakerProfileStore? = nil
+        speakerProfileStore: SpeakerProfileStore? = nil,
+        embeddingHistoryStore: EmbeddingHistoryStore? = nil
     ) {
         UserDefaults.standard.register(defaults: ["showPostMeetingSheet": true])
         let resolvedStore = parametersStore ?? ParametersStore.shared
@@ -81,12 +84,14 @@ public final class TranscriptionViewModel: ObservableObject {
         }()
         self.speakerProfileStore = profileStore
         self.speakerProfiles = profileStore.profiles
+        let resolvedEmbeddingHistoryStore = embeddingHistoryStore ?? EmbeddingHistoryStore()
+        self.embeddingHistoryStore = resolvedEmbeddingHistoryStore
         // Always create diarizer so it's available when the user enables it at runtime.
         // The enableSpeakerDiarization parameter controls whether it's actually used.
         let resolvedEngine = engine ?? ChunkedWhisperEngine(
             diarizer: diarizer ?? FluidAudioSpeakerDiarizer(),
             speakerProfileStore: profileStore,
-            embeddingHistoryStore: EmbeddingHistoryStore()
+            embeddingHistoryStore: resolvedEmbeddingHistoryStore
         )
         self.service = TranscriptionService(engine: resolvedEngine)
         self.modelName = modelName
@@ -431,12 +436,16 @@ public final class TranscriptionViewModel: ObservableObject {
             NSLog("[QuickTranscriber] Failed to delete speaker \(id): \(error)")
         }
         speakerProfiles = speakerProfileStore.profiles
+        activeSpeakers.removeAll { $0.speakerProfileId == id }
+        embeddingHistoryStore.removeEntries(for: Set([id]))
+        updateSpeakerDisplayNames()
     }
 
     public func deleteAllSpeakers() {
         speakerProfileStore.deleteAll()
         speakerProfiles = []
         speakerDisplayNames = [:]
+        embeddingHistoryStore.removeAll()
     }
 
     // MARK: - Tags
@@ -565,6 +574,8 @@ public final class TranscriptionViewModel: ObservableObject {
             guard let pid = speaker.speakerProfileId else { return false }
             return ids.contains(pid)
         }
+        embeddingHistoryStore.removeEntries(for: ids)
+        updateSpeakerDisplayNames()
     }
 
     public func clearActiveSpeakers(source: ActiveSpeaker.Source? = nil) {
@@ -753,6 +764,8 @@ public final class TranscriptionViewModel: ObservableObject {
         isRecording = false
         saveUnconfirmedText()
         fileWriter.updateText(confirmedText)
+        // Snapshot existing profile IDs before merge (for "new" badge in PostMeetingTagSheet)
+        preExistingProfileIds = Set(speakerProfileStore.profiles.map { $0.id })
         Task {
             await service.stopTranscription(speakerDisplayNames: self.speakerDisplayNames)
             self.speakerProfiles = self.speakerProfileStore.profiles
@@ -764,8 +777,19 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     func linkActiveSpeakersToProfiles() {
+        var createdNewProfiles = false
+
         for i in activeSpeakers.indices where activeSpeakers[i].speakerProfileId == nil {
-            let speakerIdString = activeSpeakers[i].id.uuidString
+            let speakerId = activeSpeakers[i].id
+
+            // Priority 1: Direct ID match (session UUID == profile UUID from RC2 fix)
+            if speakerProfileStore.profiles.contains(where: { $0.id == speakerId }) {
+                activeSpeakers[i].speakerProfileId = speakerId
+                continue
+            }
+
+            // Priority 2: Embedding similarity fallback
+            let speakerIdString = speakerId.uuidString
             guard let embedding = confirmedSegments.first(where: {
                 $0.speaker == speakerIdString
             })?.speakerEmbedding else { continue }
@@ -781,7 +805,19 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             if bestIndex >= 0 && bestSimilarity >= Constants.Embedding.similarityThreshold {
                 activeSpeakers[i].speakerProfileId = speakerProfileStore.profiles[bestIndex].id
+            } else {
+                // Create new profile for unlinked speaker (Speaker-11 fix)
+                let displayName = activeSpeakers[i].displayName ?? "Speaker"
+                let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
+                speakerProfileStore.profiles.append(newProfile)
+                activeSpeakers[i].speakerProfileId = speakerId
+                createdNewProfiles = true
             }
+        }
+
+        if createdNewProfiles {
+            try? speakerProfileStore.save()
+            speakerProfiles = speakerProfileStore.profiles
         }
     }
 

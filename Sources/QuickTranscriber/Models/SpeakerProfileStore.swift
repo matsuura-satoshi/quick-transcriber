@@ -115,6 +115,8 @@ public final class SpeakerProfileStore {
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(speakerId: UUID, embedding: [Float], displayName: String)]) {
+        var newlyCreatedInThisMerge = Set<UUID>()
+
         for (speakerId, embedding, displayName) in sessionProfiles {
             // Priority 1: Match by speakerId (same profile across sessions)
             if let idMatchIndex = profiles.firstIndex(where: { $0.id == speakerId }) {
@@ -127,11 +129,12 @@ public final class SpeakerProfileStore {
                 continue
             }
 
-            // Priority 2: Match by embedding similarity
+            // Priority 2: Match by embedding similarity (skip profiles created in this batch)
             var bestIndex = -1
             var bestSimilarity: Float = -1
 
             for (i, stored) in profiles.enumerated() {
+                guard !newlyCreatedInThisMerge.contains(stored.id) else { continue }
                 let sim = EmbeddingBasedSpeakerTracker.cosineSimilarity(embedding, stored.embedding)
                 if sim > bestSimilarity {
                     bestSimilarity = sim
@@ -147,7 +150,9 @@ public final class SpeakerProfileStore {
                 profiles[bestIndex].lastUsed = Date()
                 profiles[bestIndex].sessionCount += 1
             } else {
-                profiles.append(StoredSpeakerProfile(displayName: displayName, embedding: embedding))
+                let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
+                profiles.append(newProfile)
+                newlyCreatedInThisMerge.insert(newProfile.id)
             }
         }
     }
