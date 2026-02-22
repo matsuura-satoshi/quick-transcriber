@@ -1297,4 +1297,47 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.speakerDisplayNames[newTrackerId.uuidString], "Alice")
     }
 
+    // MARK: - Manual Mode Tracker ID Dedup Integration
+
+    func testManualModeTrackerIdMatchesActiveSpeaker() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupInteg-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let embedding = [Float](repeating: 0.1, count: 256)
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: embedding)]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        await vm.loadModel()
+
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        // After Task 1 fix, ActiveSpeaker.id == profileId
+        XCTAssertEqual(vm.activeSpeakers[0].id, profileId)
+
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // In manual mode, the tracker uses stored.id (= profileId) as speakerId.
+        // So segments arrive with speaker == profileId.uuidString.
+        // The dedup check $0.id.uuidString == speakerId should match.
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello", speaker: profileId.uuidString, speakerEmbedding: embedding)
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1, "Manual speaker should not be duplicated when tracker uses same ID")
+        XCTAssertEqual(vm.speakerDisplayNames[profileId.uuidString], "Alice")
+    }
+
 }
