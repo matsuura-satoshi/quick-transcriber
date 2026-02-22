@@ -1215,4 +1215,45 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId)
     }
 
+    func testAutoDetectedSpeakerDoesNotDuplicateExistingProfile() async {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VMDedupTest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let profileId = UUID()
+        let embedding = [Float](repeating: 0.1, count: 256)
+        let store = SpeakerProfileStore(directory: dir)
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: embedding)]
+        try! store.save()
+
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(engine: engine, modelName: "test-model", speakerProfileStore: store)
+        await vm.loadModel()
+
+        // Manually activate the profile
+        vm.addManualSpeaker(fromProfile: profileId)
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+
+        // Start recording and simulate a segment with a DIFFERENT tracker UUID but same embedding
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        let newTrackerId = UUID()
+        engine.simulateStateChange(TranscriptionState(
+            confirmedText: "Hello",
+            unconfirmedText: "",
+            isRecording: true,
+            confirmedSegments: [
+                ConfirmedSegment(text: "Hello", speaker: newTrackerId.uuidString, speakerEmbedding: embedding)
+            ]
+        ))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        // Should NOT duplicate — profile already active
+        XCTAssertEqual(vm.activeSpeakers.count, 1, "Should not duplicate speaker when profile already active")
+        // But the tracker UUID should still map to the display name
+        XCTAssertEqual(vm.speakerDisplayNames[newTrackerId.uuidString], "Alice")
+    }
+
 }

@@ -582,6 +582,15 @@ public final class TranscriptionViewModel: ObservableObject {
             }
         }
 
+        // Profile already active — just map the tracker UUID to the existing display name
+        if let matchedProfileId,
+           let existing = activeSpeakers.first(where: { $0.speakerProfileId == matchedProfileId }) {
+            if let name = existing.displayName {
+                speakerDisplayNames[speakerId] = name
+            }
+            return
+        }
+
         let displayName: String
         if let profileId = matchedProfileId,
            let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) {
