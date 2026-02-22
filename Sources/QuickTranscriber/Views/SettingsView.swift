@@ -24,7 +24,7 @@ public struct SettingsView: View {
                     Label("Output", systemImage: "folder")
                 }
         }
-        .frame(minWidth: 520, maxWidth: 520, minHeight: 500, maxHeight: 800)
+        .frame(minWidth: 520, maxWidth: 520, minHeight: 500, maxHeight: 5000)
     }
 }
 
@@ -315,37 +315,33 @@ private struct SpeakersSettingsTab: View {
 
                 bulkActionButtons
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(filteredProfiles, id: \.id) { profile in
-                            DisclosureGroup {
-                                SpeakerProfileDetailView(
-                                    profile: profile,
-                                    allTags: viewModel.allTags,
-                                    onRename: { name in viewModel.renameSpeaker(id: profile.id, to: name) },
-                                    onDelete: { viewModel.deleteSpeaker(id: profile.id) },
-                                    onAddTag: { tag in viewModel.addTag(tag, to: profile.id) },
-                                    onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) }
-                                )
-                            } label: {
-                                SpeakerProfileSummaryView(
-                                    profile: profile,
-                                    isActive: viewModel.activeProfileIds.contains(profile.id),
-                                    isDiarizationEnabled: store.parameters.enableSpeakerDiarization,
-                                    onToggleActive: { newValue in
-                                        if newValue {
-                                            viewModel.addManualSpeaker(fromProfile: profile.id)
-                                        } else {
-                                            viewModel.deactivateSpeaker(profileId: profile.id)
-                                        }
-                                    }
-                                )
+                ForEach(filteredProfiles, id: \.id) { profile in
+                    DisclosureGroup {
+                        SpeakerProfileDetailView(
+                            profile: profile,
+                            allTags: viewModel.allTags,
+                            onRename: { name in viewModel.renameSpeaker(id: profile.id, to: name) },
+                            onDelete: { viewModel.deleteSpeaker(id: profile.id) },
+                            onAddTag: { tag in viewModel.addTag(tag, to: profile.id) },
+                            onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) },
+                            onSetLocked: { locked in viewModel.setLocked(id: profile.id, locked: locked) }
+                        )
+                    } label: {
+                        SpeakerProfileSummaryView(
+                            profile: profile,
+                            isActive: viewModel.activeProfileIds.contains(profile.id),
+                            isDiarizationEnabled: store.parameters.enableSpeakerDiarization,
+                            onToggleActive: { newValue in
+                                if newValue {
+                                    viewModel.addManualSpeaker(fromProfile: profile.id)
+                                } else {
+                                    viewModel.deactivateSpeaker(profileId: profile.id)
+                                }
                             }
-                            Divider()
-                        }
+                        )
                     }
+                    Divider()
                 }
-                .frame(maxHeight: 350)
             }
         }
     }
@@ -503,6 +499,11 @@ private struct SpeakerProfileSummaryView: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            if profile.isLocked {
+                Image(systemName: "lock.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             Text(profile.displayName)
                 .lineLimit(1)
             ForEach(profile.tags, id: \.self) { tag in
@@ -535,6 +536,7 @@ private struct SpeakerProfileDetailView: View {
     let onDelete: () -> Void
     let onAddTag: (String) -> Void
     let onRemoveTag: (String) -> Void
+    let onSetLocked: (Bool) -> Void
 
     @State private var editingName: String
     @State private var showTagPopover = false
@@ -544,13 +546,15 @@ private struct SpeakerProfileDetailView: View {
          onRename: @escaping (String) -> Void,
          onDelete: @escaping () -> Void,
          onAddTag: @escaping (String) -> Void,
-         onRemoveTag: @escaping (String) -> Void) {
+         onRemoveTag: @escaping (String) -> Void,
+         onSetLocked: @escaping (Bool) -> Void) {
         self.profile = profile
         self.allTags = allTags
         self.onRename = onRename
         self.onDelete = onDelete
         self.onAddTag = onAddTag
         self.onRemoveTag = onRemoveTag
+        self.onSetLocked = onSetLocked
         self._editingName = State(initialValue: profile.displayName)
     }
 
@@ -633,6 +637,15 @@ private struct SpeakerProfileDetailView: View {
                     }
                     .padding(8)
                 }
+            }
+
+            // Lock toggle
+            HStack {
+                Toggle("Lock", isOn: Binding(
+                    get: { profile.isLocked },
+                    set: { onSetLocked($0) }
+                ))
+                .font(.caption)
             }
 
             // Delete button
