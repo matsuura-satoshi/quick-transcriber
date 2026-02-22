@@ -242,6 +242,28 @@ final class SpeakerProfileStoreTests: XCTestCase {
         XCTAssertEqual(store.profiles.count, 1)
     }
 
+    // MARK: - isLocked
+
+    func testIsLockedDefaultsToFalse() {
+        let profile = StoredSpeakerProfile(displayName: "Test", embedding: [1, 2, 3])
+        XCTAssertFalse(profile.isLocked)
+    }
+
+    func testIsLockedCanBeSetToTrue() {
+        var profile = StoredSpeakerProfile(displayName: "Test", embedding: [1, 2, 3])
+        profile.isLocked = true
+        XCTAssertTrue(profile.isLocked)
+    }
+
+    func testIsLockedBackwardsCompatibleDecoding() throws {
+        // JSON without isLocked field (existing data)
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000001","displayName":"Old","embedding":[1,2,3],"lastUsed":0,"sessionCount":1,"tags":[]}
+        """.data(using: .utf8)!
+        let profile = try JSONDecoder().decode(StoredSpeakerProfile.self, from: json)
+        XCTAssertFalse(profile.isLocked)
+    }
+
     func testDeleteMultipleIgnoresNonexistentIds() throws {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
