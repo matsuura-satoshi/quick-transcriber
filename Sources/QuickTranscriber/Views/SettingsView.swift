@@ -315,38 +315,35 @@ private struct SpeakersSettingsTab: View {
 
                 bulkActionButtons
 
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(filteredProfiles, id: \.id) { profile in
-                            DisclosureGroup {
-                                SpeakerProfileDetailView(
-                                    profile: profile,
-                                    allTags: viewModel.allTags,
-                                    onRename: { name in viewModel.renameSpeaker(id: profile.id, to: name) },
-                                    onDelete: { viewModel.deleteSpeaker(id: profile.id) },
-                                    onAddTag: { tag in viewModel.addTag(tag, to: profile.id) },
-                                    onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) },
-                                    onSetLocked: { locked in viewModel.setLocked(id: profile.id, locked: locked) }
-                                )
-                            } label: {
-                                SpeakerProfileSummaryView(
-                                    profile: profile,
-                                    isActive: viewModel.activeProfileIds.contains(profile.id),
-                                    isDiarizationEnabled: store.parameters.enableSpeakerDiarization,
-                                    onToggleActive: { newValue in
-                                        if newValue {
-                                            viewModel.addManualSpeaker(fromProfile: profile.id)
-                                        } else {
-                                            viewModel.deactivateSpeaker(profileId: profile.id)
-                                        }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(filteredProfiles, id: \.id) { profile in
+                        DisclosureGroup {
+                            SpeakerProfileDetailView(
+                                profile: profile,
+                                allTags: viewModel.allTags,
+                                onRename: { name in viewModel.renameSpeaker(id: profile.id, to: name) },
+                                onDelete: { viewModel.deleteSpeaker(id: profile.id) },
+                                onAddTag: { tag in viewModel.addTag(tag, to: profile.id) },
+                                onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) },
+                                onSetLocked: { locked in viewModel.setLocked(id: profile.id, locked: locked) }
+                            )
+                        } label: {
+                            SpeakerProfileSummaryView(
+                                profile: profile,
+                                isActive: viewModel.activeProfileIds.contains(profile.id),
+                                isDiarizationEnabled: store.parameters.enableSpeakerDiarization,
+                                onToggleActive: { newValue in
+                                    if newValue {
+                                        viewModel.addManualSpeaker(fromProfile: profile.id)
+                                    } else {
+                                        viewModel.deactivateSpeaker(profileId: profile.id)
                                     }
-                                )
-                            }
-                            Divider()
+                                }
+                            )
                         }
+                        Divider()
                     }
                 }
-                .frame(maxHeight: 350)
             }
         }
     }
