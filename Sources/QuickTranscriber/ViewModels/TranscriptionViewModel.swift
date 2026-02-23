@@ -532,6 +532,7 @@ public final class TranscriptionViewModel: ObservableObject {
         let name: String
         if displayName.isEmpty {
             let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+                .union(speakerProfileStore.profiles.map { $0.displayName })
             while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
                 nextSpeakerNumber += 1
             }
@@ -636,6 +637,7 @@ public final class TranscriptionViewModel: ObservableObject {
             displayName = profile.displayName
         } else {
             let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+                .union(speakerProfileStore.profiles.map { $0.displayName })
             while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
                 nextSpeakerNumber += 1
             }
