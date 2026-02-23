@@ -265,6 +265,77 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
 
     // MARK: - Manual mode includes auto-detected speakers
 
+    func testAddManualSpeakerFromProfileLinksExistingAutoDetectedWithSameId() {
+        let (vm, _, store) = makeViewModel()
+        let profileId = UUID()
+        let profile = StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))
+        store.profiles = [profile]
+
+        // Simulate auto-detected speaker using the same UUID as the stored profile
+        // (happens when tracker loads stored profile UUIDs) with speakerProfileId = nil
+        // (embedding match failed in addAutoDetectedSpeaker)
+        vm.activeSpeakers.append(ActiveSpeaker(
+            id: profileId,
+            speakerProfileId: nil,
+            displayName: "Speaker-1",
+            source: .autoDetected
+        ))
+
+        // Manually activate the same profile — should update in-place, not add duplicate
+        vm.addManualSpeaker(fromProfile: profileId)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1, "Should not create duplicate")
+        XCTAssertEqual(vm.activeSpeakers[0].id, profileId)
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId, "Should link to profile")
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice", "Should update display name")
+    }
+
+    func testAvailableSpeakersHandlesDuplicateIds() {
+        let (vm, _, _) = makeViewModel()
+        let sharedId = UUID()
+
+        // Force duplicate IDs into activeSpeakers (defensive test)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: sharedId, displayName: "Speaker-A", source: .autoDetected),
+            ActiveSpeaker(id: sharedId, displayName: "Speaker-B", source: .manual)
+        ]
+
+        // Should not crash — first entry wins
+        let speakers = vm.availableSpeakers
+        XCTAssertEqual(speakers.count, 1, "Should deduplicate")
+        XCTAssertEqual(speakers[0].displayName, "Speaker-A", "First entry wins")
+    }
+
+    func testAutoSpeakerNamingAvoidsStoredProfileNames() {
+        let (vm, _, store) = makeViewModel()
+        // Stored profiles from previous session
+        store.profiles = [
+            StoredSpeakerProfile(displayName: "Speaker-1", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(displayName: "Speaker-2", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(displayName: "Speaker-3", embedding: makeEmbedding(dominant: 2)),
+        ]
+
+        // Add a manual speaker with empty name — should skip 1, 2, 3
+        vm.addManualSpeaker(displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Speaker-4",
+                       "Should skip names already used by stored profiles")
+    }
+
+    func testAutoDetectedSpeakerNamingAvoidsStoredProfileNames() {
+        let (vm, _, store) = makeViewModel()
+        store.profiles = [
+            StoredSpeakerProfile(displayName: "Speaker-1", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(displayName: "Speaker-2", embedding: makeEmbedding(dominant: 1)),
+        ]
+
+        // Use addManualSpeaker(displayName:) as proxy since addAutoDetectedSpeaker is private
+        vm.addManualSpeaker(displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Speaker-3",
+                       "Should skip names already used by stored profiles")
+    }
+
     func testManualModePassesAutoDetectedSpeakersToEngine() async throws {
         let (vm, engine, paramsStore) = makeViewModelWithStore()
         let profileStore = vm.speakerProfileStore

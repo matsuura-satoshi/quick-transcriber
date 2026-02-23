@@ -259,10 +259,14 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public var availableSpeakers: [SpeakerMenuItem] {
-        let activeIds = Set(activeSpeakers.map { $0.id.uuidString })
-        let speakersById = Dictionary(
-            uniqueKeysWithValues: activeSpeakers.map { ($0.id.uuidString, $0) }
-        )
+        var speakersById: [String: ActiveSpeaker] = [:]
+        for speaker in activeSpeakers {
+            let key = speaker.id.uuidString
+            if speakersById[key] == nil {
+                speakersById[key] = speaker
+            }
+        }
+        let activeIds = Set(speakersById.keys)
 
         var ordered: [SpeakerMenuItem] = []
         var seen = Set<String>()
@@ -273,7 +277,9 @@ public final class TranscriptionViewModel: ObservableObject {
             seen.insert(idStr)
         }
         for speaker in activeSpeakers where !seen.contains(speaker.id.uuidString) {
-            ordered.append(SpeakerMenuItem(id: speaker.id, displayName: speaker.displayName))
+            if seen.insert(speaker.id.uuidString).inserted {
+                ordered.append(SpeakerMenuItem(id: speaker.id, displayName: speaker.displayName))
+            }
         }
         return ordered
     }
@@ -496,9 +502,22 @@ public final class TranscriptionViewModel: ObservableObject {
     // MARK: - Active Speaker Management
 
     public func addManualSpeaker(fromProfile profileId: UUID) {
-        guard let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }),
-              !activeSpeakers.contains(where: { $0.speakerProfileId == profileId })
-        else { return }
+        guard let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) else { return }
+
+        // Already active with this profile linked — no-op
+        if activeSpeakers.contains(where: { $0.speakerProfileId == profileId }) {
+            return
+        }
+
+        // Auto-detected speaker with same ID but unlinked — update in-place
+        if let idx = activeSpeakers.firstIndex(where: { $0.id == profileId }) {
+            activeSpeakers[idx].speakerProfileId = profileId
+            activeSpeakers[idx].displayName = profile.displayName
+            updateSpeakerDisplayNames()
+            return
+        }
+
+        // New speaker
         let speaker = ActiveSpeaker(
             id: profileId,
             speakerProfileId: profileId,
@@ -513,6 +532,7 @@ public final class TranscriptionViewModel: ObservableObject {
         let name: String
         if displayName.isEmpty {
             let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+                .union(speakerProfileStore.profiles.map { $0.displayName })
             while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
                 nextSpeakerNumber += 1
             }
@@ -617,6 +637,7 @@ public final class TranscriptionViewModel: ObservableObject {
             displayName = profile.displayName
         } else {
             let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+                .union(speakerProfileStore.profiles.map { $0.displayName })
             while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
                 nextSpeakerNumber += 1
             }
