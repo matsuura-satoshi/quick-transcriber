@@ -496,9 +496,22 @@ public final class TranscriptionViewModel: ObservableObject {
     // MARK: - Active Speaker Management
 
     public func addManualSpeaker(fromProfile profileId: UUID) {
-        guard let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }),
-              !activeSpeakers.contains(where: { $0.speakerProfileId == profileId })
-        else { return }
+        guard let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) else { return }
+
+        // Already active with this profile linked — no-op
+        if activeSpeakers.contains(where: { $0.speakerProfileId == profileId }) {
+            return
+        }
+
+        // Auto-detected speaker with same ID but unlinked — update in-place
+        if let idx = activeSpeakers.firstIndex(where: { $0.id == profileId }) {
+            activeSpeakers[idx].speakerProfileId = profileId
+            activeSpeakers[idx].displayName = profile.displayName
+            updateSpeakerDisplayNames()
+            return
+        }
+
+        // New speaker
         let speaker = ActiveSpeaker(
             id: profileId,
             speakerProfileId: profileId,
