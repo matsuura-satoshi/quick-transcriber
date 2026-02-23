@@ -259,10 +259,14 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public var availableSpeakers: [SpeakerMenuItem] {
-        let activeIds = Set(activeSpeakers.map { $0.id.uuidString })
-        let speakersById = Dictionary(
-            uniqueKeysWithValues: activeSpeakers.map { ($0.id.uuidString, $0) }
-        )
+        var speakersById: [String: ActiveSpeaker] = [:]
+        for speaker in activeSpeakers {
+            let key = speaker.id.uuidString
+            if speakersById[key] == nil {
+                speakersById[key] = speaker
+            }
+        }
+        let activeIds = Set(speakersById.keys)
 
         var ordered: [SpeakerMenuItem] = []
         var seen = Set<String>()
@@ -273,7 +277,9 @@ public final class TranscriptionViewModel: ObservableObject {
             seen.insert(idStr)
         }
         for speaker in activeSpeakers where !seen.contains(speaker.id.uuidString) {
-            ordered.append(SpeakerMenuItem(id: speaker.id, displayName: speaker.displayName))
+            if seen.insert(speaker.id.uuidString).inserted {
+                ordered.append(SpeakerMenuItem(id: speaker.id, displayName: speaker.displayName))
+            }
         }
         return ordered
     }
