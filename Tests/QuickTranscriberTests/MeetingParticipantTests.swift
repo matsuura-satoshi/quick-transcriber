@@ -290,6 +290,22 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice", "Should update display name")
     }
 
+    func testAvailableSpeakersHandlesDuplicateIds() {
+        let (vm, _, _) = makeViewModel()
+        let sharedId = UUID()
+
+        // Force duplicate IDs into activeSpeakers (defensive test)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: sharedId, displayName: "Speaker-A", source: .autoDetected),
+            ActiveSpeaker(id: sharedId, displayName: "Speaker-B", source: .manual)
+        ]
+
+        // Should not crash — first entry wins
+        let speakers = vm.availableSpeakers
+        XCTAssertEqual(speakers.count, 1, "Should deduplicate")
+        XCTAssertEqual(speakers[0].displayName, "Speaker-A", "First entry wins")
+    }
+
     func testManualModePassesAutoDetectedSpeakersToEngine() async throws {
         let (vm, engine, paramsStore) = makeViewModelWithStore()
         let profileStore = vm.speakerProfileStore
