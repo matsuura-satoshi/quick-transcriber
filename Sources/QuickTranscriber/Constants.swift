@@ -15,4 +15,10 @@ public enum Constants {
         public static let noSpeechProbThreshold: Float = 0.7
         public static let avgLogprobThreshold: Float = -1.5
     }
+
+    public enum Translation {
+        public static let groupBoundarySilence: TimeInterval = 2.0
+        public static let sentenceEndersEN: Set<Character> = [".", "!", "?"]
+        public static let sentenceEndersJA: Set<Character> = ["。", "！", "？"]
+    }
 }

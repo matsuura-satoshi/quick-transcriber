@@ -66,10 +66,22 @@ public struct ContentView: View {
                 translationConfig?.invalidate()
             }
         }
+        .onChange(of: viewModel.isRecording) { _, isRecording in
+            if !isRecording && viewModel.translationEnabled && translationReady {
+                translationConfig?.invalidate()
+            }
+        }
         .translationTask(translationConfig) { session in
             await translationService.translateNewSegments(
-                viewModel.confirmedSegments, using: session
+                viewModel.confirmedSegments,
+                using: session,
+                sourceLanguage: viewModel.currentLanguage.rawValue
             )
+            if !viewModel.isRecording {
+                await translationService.finalizeLastGroup(
+                    viewModel.confirmedSegments, using: session
+                )
+            }
             if !translationReady {
                 translationReady = true
             }
@@ -187,7 +199,7 @@ public struct ContentView: View {
 
     private var translationArea: some View {
         TranslationTextView(
-            confirmedSegments: translationService.translatedSegments,
+            confirmedSegments: translationService.displaySegments,
             fontSize: viewModel.fontSize,
             language: viewModel.translationTargetLanguage.rawValue,
             silenceThreshold: viewModel.silenceLineBreakThreshold,
