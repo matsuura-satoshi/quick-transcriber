@@ -306,6 +306,36 @@ final class ActiveSpeakerViewModelTests: XCTestCase {
         XCTAssertEqual(speakers[0].displayName, "Speaker-A", "First entry wins")
     }
 
+    func testAutoSpeakerNamingAvoidsStoredProfileNames() {
+        let (vm, _, store) = makeViewModel()
+        // Stored profiles from previous session
+        store.profiles = [
+            StoredSpeakerProfile(displayName: "Speaker-1", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(displayName: "Speaker-2", embedding: makeEmbedding(dominant: 1)),
+            StoredSpeakerProfile(displayName: "Speaker-3", embedding: makeEmbedding(dominant: 2)),
+        ]
+
+        // Add a manual speaker with empty name — should skip 1, 2, 3
+        vm.addManualSpeaker(displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Speaker-4",
+                       "Should skip names already used by stored profiles")
+    }
+
+    func testAutoDetectedSpeakerNamingAvoidsStoredProfileNames() {
+        let (vm, _, store) = makeViewModel()
+        store.profiles = [
+            StoredSpeakerProfile(displayName: "Speaker-1", embedding: makeEmbedding(dominant: 0)),
+            StoredSpeakerProfile(displayName: "Speaker-2", embedding: makeEmbedding(dominant: 1)),
+        ]
+
+        // Use addManualSpeaker(displayName:) as proxy since addAutoDetectedSpeaker is private
+        vm.addManualSpeaker(displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Speaker-3",
+                       "Should skip names already used by stored profiles")
+    }
+
     func testManualModePassesAutoDetectedSpeakersToEngine() async throws {
         let (vm, engine, paramsStore) = makeViewModelWithStore()
         let profileStore = vm.speakerProfileStore
