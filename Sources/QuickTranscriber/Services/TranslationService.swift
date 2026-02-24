@@ -210,6 +210,11 @@ public final class TranslationService: ObservableObject {
             return true
         }
 
+        // 2c. non-nil → nil transition
+        if prev.speaker != nil && current.speaker == nil {
+            return true
+        }
+
         // 3. Long silence
         if current.precedingSilence > Constants.Translation.groupBoundarySilence {
             return true
@@ -265,7 +270,29 @@ public final class TranslationService: ObservableObject {
             updated[i].originalSpeaker = source[i].originalSpeaker
         }
         translatedSegments = updated
+        invalidateInconsistentGroups()
         rebuildDisplaySegments()
+    }
+
+    private func invalidateInconsistentGroups() {
+        for (groupIdx, group) in groups.enumerated() {
+            guard groupRetranslations[groupIdx] != nil,
+                  group.startIndex < translatedSegments.count else { continue }
+            let end = min(group.endIndex, translatedSegments.count - 1)
+            guard end > group.startIndex else { continue }
+
+            var hasInternalSpeakerBoundary = false
+            for i in (group.startIndex + 1)...end {
+                if translatedSegments[i - 1].speaker != translatedSegments[i].speaker,
+                   !(translatedSegments[i - 1].speaker == nil && translatedSegments[i].speaker == nil) {
+                    hasInternalSpeakerBoundary = true
+                    break
+                }
+            }
+            if hasInternalSpeakerBoundary {
+                groupRetranslations.removeValue(forKey: groupIdx)
+            }
+        }
     }
 
     public func reset() {

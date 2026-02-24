@@ -468,6 +468,133 @@ final class TranslationServiceTests: XCTestCase {
         )
     }
 
+    // MARK: - isGroupBoundary: non-nil → nil speaker transition
+
+    func testIsGroupBoundaryNonNilToNilSpeaker() {
+        let segments = [
+            ConfirmedSegment(text: "confirmed", speaker: "A"),
+            ConfirmedSegment(text: "pending"),
+        ]
+        XCTAssertTrue(
+            TranslationService.isGroupBoundary(segments: segments, at: 1, sourceLanguage: "en")
+        )
+    }
+
+    // MARK: - syncSpeakerMetadata group invalidation
+
+    func testSyncSpeakerMetadataInvalidatesGroupOnSpeakerChange() {
+        // Set up: 3 segments, group retranslation for indices 0-1 (same speaker "A")
+        service.translatedSegments = [
+            ConfirmedSegment(text: "こんにちは", speaker: "A"),
+            ConfirmedSegment(text: "世界", speaker: "A"),
+            ConfirmedSegment(text: "次の文", speaker: "B"),
+        ]
+        service.applyGroupRetranslation(
+            groupStartIndex: 0, groupEndIndex: 1, translatedText: "ハローワールド"
+        )
+
+        // Before sync: group retranslation is active
+        XCTAssertEqual(service.displaySegments[0].text, "ハローワールド")
+        XCTAssertEqual(service.displaySegments[1].text, "")
+
+        // Sync with changed speaker: segment 1 now belongs to "C"
+        let source = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: " world", speaker: "C"),
+            ConfirmedSegment(text: " Next.", speaker: "B"),
+        ]
+        service.syncSpeakerMetadata(from: source)
+
+        // After sync: retranslation should be invalidated, individual translations restored
+        XCTAssertEqual(service.displaySegments[0].text, "こんにちは")
+        XCTAssertEqual(service.displaySegments[0].speaker, "A")
+        XCTAssertEqual(service.displaySegments[1].text, "世界")
+        XCTAssertEqual(service.displaySegments[1].speaker, "C")
+    }
+
+    func testSyncSpeakerMetadataPreservesGroupWhenSpeakerConsistent() {
+        // Set up: 3 segments, group retranslation for indices 0-1 (same speaker "A")
+        service.translatedSegments = [
+            ConfirmedSegment(text: "こんにちは", speaker: "A"),
+            ConfirmedSegment(text: "世界", speaker: "A"),
+            ConfirmedSegment(text: "次の文", speaker: "B"),
+        ]
+        service.applyGroupRetranslation(
+            groupStartIndex: 0, groupEndIndex: 1, translatedText: "ハローワールド"
+        )
+
+        // Sync: both segments changed to "C" (consistent within group)
+        let source = [
+            ConfirmedSegment(text: "Hello", speaker: "C"),
+            ConfirmedSegment(text: " world", speaker: "C"),
+            ConfirmedSegment(text: " Next.", speaker: "B"),
+        ]
+        service.syncSpeakerMetadata(from: source)
+
+        // Group retranslation should still be active (no internal boundary)
+        XCTAssertEqual(service.displaySegments[0].text, "ハローワールド")
+        XCTAssertEqual(service.displaySegments[0].speaker, "C")
+        XCTAssertEqual(service.displaySegments[1].text, "")
+    }
+
+    func testSyncSpeakerMetadataInvalidatesGroupOnNilSpeaker() {
+        // Set up: 2 segments in a group, both speaker "A"
+        service.translatedSegments = [
+            ConfirmedSegment(text: "こんにちは", speaker: "A"),
+            ConfirmedSegment(text: "世界", speaker: "A"),
+        ]
+        service.applyGroupRetranslation(
+            groupStartIndex: 0, groupEndIndex: 1, translatedText: "ハローワールド"
+        )
+
+        // Sync: segment 1 speaker becomes nil (non-nil → nil transition)
+        let source = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: " world"),
+        ]
+        service.syncSpeakerMetadata(from: source)
+
+        // Retranslation should be invalidated
+        XCTAssertEqual(service.displaySegments[0].text, "こんにちは")
+        XCTAssertEqual(service.displaySegments[0].speaker, "A")
+        XCTAssertEqual(service.displaySegments[1].text, "世界")
+        XCTAssertNil(service.displaySegments[1].speaker)
+    }
+
+    func testSyncSpeakerMetadataOnlyInvalidatesAffectedGroup() {
+        // Set up: 4 segments, two groups with retranslations
+        service.translatedSegments = [
+            ConfirmedSegment(text: "Seg0", speaker: "A"),
+            ConfirmedSegment(text: "Seg1", speaker: "A"),
+            ConfirmedSegment(text: "Seg2", speaker: "B"),
+            ConfirmedSegment(text: "Seg3", speaker: "B"),
+        ]
+        // Group 0: indices 0-1
+        service.applyGroupRetranslation(
+            groupStartIndex: 0, groupEndIndex: 1, translatedText: "Group0訳"
+        )
+        // Group 1: indices 2-3
+        service.applyGroupRetranslation(
+            groupStartIndex: 2, groupEndIndex: 3, translatedText: "Group1訳"
+        )
+
+        // Sync: only group 0 has speaker change (seg 1: A→C), group 1 stays consistent
+        let source = [
+            ConfirmedSegment(text: "s0", speaker: "A"),
+            ConfirmedSegment(text: "s1", speaker: "C"),
+            ConfirmedSegment(text: "s2", speaker: "B"),
+            ConfirmedSegment(text: "s3", speaker: "B"),
+        ]
+        service.syncSpeakerMetadata(from: source)
+
+        // Group 0 invalidated: individual translations restored
+        XCTAssertEqual(service.displaySegments[0].text, "Seg0")
+        XCTAssertEqual(service.displaySegments[1].text, "Seg1")
+        // Group 1 preserved: retranslation still active
+        XCTAssertEqual(service.displaySegments[2].text, "Group1訳")
+        XCTAssertEqual(service.displaySegments[3].text, "")
+    }
+
     // MARK: - sync after split integration
 
     func testSyncAfterSplitMaintainsCorrectMapping() {
