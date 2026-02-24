@@ -362,4 +362,135 @@ final class TranslationServiceTests: XCTestCase {
         XCTAssertEqual(service.displaySegments[0].speakerConfidence, 0.9)
         XCTAssertEqual(service.displaySegments[0].precedingSilence, 0)
     }
+
+    // MARK: - splitSegment
+
+    func testSplitSegmentMaintainsIndexCorrespondence() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "World", speaker: "B"),
+            ConfirmedSegment(text: "Foo", speaker: "A"),
+        ]
+
+        service.splitSegment(at: 1)
+
+        XCTAssertEqual(service.translatedSegments.count, 4)
+        XCTAssertEqual(service.translatedSegments[0].text, "Hello")
+        XCTAssertEqual(service.translatedSegments[1].text, "World")
+        XCTAssertEqual(service.translatedSegments[1].speaker, "B")
+        XCTAssertEqual(service.translatedSegments[2].text, "")
+        XCTAssertEqual(service.translatedSegments[2].speaker, "B")
+        XCTAssertEqual(service.translatedSegments[2].precedingSilence, 0)
+        XCTAssertEqual(service.translatedSegments[3].text, "Foo")
+    }
+
+    func testSplitSegmentShiftsGroupIndices() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "A", speaker: "X"),
+            ConfirmedSegment(text: "B", speaker: "X"),
+            ConfirmedSegment(text: "C", speaker: "Y"),
+            ConfirmedSegment(text: "D", speaker: "Y"),
+        ]
+
+        // Create a group spanning indices 2-3
+        service.applyGroupRetranslation(
+            groupStartIndex: 2, groupEndIndex: 3,
+            translatedText: "CDの訳"
+        )
+
+        // Split at index 0 — should shift group indices by +1
+        service.splitSegment(at: 0)
+
+        // Group should now span 3-4, displaySegments should reflect that
+        XCTAssertEqual(service.translatedSegments.count, 5)
+        XCTAssertEqual(service.displaySegments.count, 5)
+        XCTAssertEqual(service.displaySegments[3].text, "CDの訳")
+        XCTAssertEqual(service.displaySegments[4].text, "")
+    }
+
+    func testSplitSegmentAdjustsCursor() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "A"),
+            ConfirmedSegment(text: "B"),
+            ConfirmedSegment(text: "C"),
+        ]
+        service.translationCursor = 3
+
+        service.splitSegment(at: 1)
+
+        // Cursor was at 3, split at 1 (before cursor) — cursor should become 4
+        XCTAssertEqual(service.translationCursor, 4)
+    }
+
+    func testSplitSegmentCursorNotAdjustedWhenSplitAfter() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "A"),
+            ConfirmedSegment(text: "B"),
+            ConfirmedSegment(text: "C"),
+        ]
+        service.translationCursor = 1
+
+        service.splitSegment(at: 2)
+
+        // Cursor was at 1, split at 2 (after cursor) — cursor stays at 1
+        XCTAssertEqual(service.translationCursor, 1)
+    }
+
+    func testSplitSegmentOutOfBoundsIsNoop() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "A"),
+        ]
+
+        service.splitSegment(at: 5)
+
+        XCTAssertEqual(service.translatedSegments.count, 1)
+    }
+
+    // MARK: - isGroupBoundary nil speaker
+
+    func testIsGroupBoundaryNilToNonNilSpeaker() {
+        let segments = [
+            ConfirmedSegment(text: "pending"),
+            ConfirmedSegment(text: "confirmed", speaker: "A"),
+        ]
+        XCTAssertTrue(
+            TranslationService.isGroupBoundary(segments: segments, at: 1, sourceLanguage: "en")
+        )
+    }
+
+    func testIsGroupBoundaryNilToNilNoBoundary() {
+        let segments = [
+            ConfirmedSegment(text: "pending1"),
+            ConfirmedSegment(text: "pending2"),
+        ]
+        XCTAssertFalse(
+            TranslationService.isGroupBoundary(segments: segments, at: 1, sourceLanguage: "en")
+        )
+    }
+
+    // MARK: - sync after split integration
+
+    func testSyncAfterSplitMaintainsCorrectMapping() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "こんにちは", speaker: "A"),
+            ConfirmedSegment(text: "世界", speaker: "A"),
+        ]
+
+        // Split index 0
+        service.splitSegment(at: 0)
+        XCTAssertEqual(service.translatedSegments.count, 3)
+
+        // Source confirmedSegments after split
+        let source = [
+            ConfirmedSegment(text: "Hello", speaker: "A"),
+            ConfirmedSegment(text: "", speaker: "B"),  // split + reassigned
+            ConfirmedSegment(text: "World", speaker: "A"),
+        ]
+
+        service.syncSpeakerMetadata(from: source)
+
+        XCTAssertEqual(service.translatedSegments[0].speaker, "A")
+        XCTAssertEqual(service.translatedSegments[1].speaker, "B")
+        XCTAssertEqual(service.translatedSegments[2].speaker, "A")
+    }
 }

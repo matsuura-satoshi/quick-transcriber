@@ -314,4 +314,53 @@ final class SpeakerReassignmentTests: XCTestCase {
 
         await engine.stopStreaming()
     }
+
+    // MARK: - Split propagates to translation
+
+    func testReassignSpeakerForSelectionWithSplitPropagatesTranslation() {
+        let (vm, _) = makeViewModel()
+        let speakerIdA = UUID().uuidString
+        let speakerIdB = UUID().uuidString
+
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello World", speaker: speakerIdA, speakerConfidence: 0.8),
+            ConfirmedSegment(text: "Foo", speaker: speakerIdA, speakerConfidence: 0.8),
+        ]
+
+        // Set up corresponding translation segments
+        vm.translationService.translatedSegments = [
+            ConfirmedSegment(text: "こんにちは世界", speaker: speakerIdA),
+            ConfirmedSegment(text: "フー", speaker: speakerIdA),
+        ]
+
+        let names = [speakerIdA: "A", speakerIdB: "B"]
+        let (_, map) = TranscriptionTextView.buildAttributedStringFromSegments(
+            vm.confirmedSegments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: names
+        )
+
+        // Select "World" part only (partial selection triggers split)
+        let labelLen = "A: ".count
+        let selectionRange = NSRange(location: labelLen + 6, length: 5)
+
+        vm.reassignSpeakerForSelection(
+            selectionRange: selectionRange,
+            newSpeaker: speakerIdB,
+            segmentMap: map
+        )
+
+        // confirmedSegments should have been split: "Hello " (A), "World" (B), "Foo" (A)
+        XCTAssertGreaterThanOrEqual(vm.confirmedSegments.count, 3)
+
+        // translationService should also have 3+ segments to maintain 1:1 correspondence
+        XCTAssertEqual(
+            vm.translationService.translatedSegments.count,
+            vm.confirmedSegments.count,
+            "Translation segments should match confirmed segments after split"
+        )
+
+        // Speaker metadata should be synced
+        let bTranslated = vm.translationService.translatedSegments.filter { $0.speaker == speakerIdB }
+        XCTAssertFalse(bTranslated.isEmpty, "Translation should have segments assigned to speaker B")
+    }
 }

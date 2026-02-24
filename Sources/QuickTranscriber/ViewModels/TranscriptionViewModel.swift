@@ -330,6 +330,8 @@ public final class TranscriptionViewModel: ObservableObject {
         second.precedingSilence = 0
 
         confirmedSegments.replaceSubrange(index...index, with: [first, second])
+
+        translationService.splitSegment(at: index)
     }
 
     private func reassignSegment(at index: Int, to newSpeaker: String) {
@@ -758,10 +760,26 @@ public final class TranscriptionViewModel: ObservableObject {
                         } else {
                             newSegments = sessionSegments + stateSegments
                         }
+                        // Snapshot speakers before merge for change detection
+                        let oldSpeakers = self.confirmedSegments.map { $0.speaker }
+
                         self.confirmedSegments = Self.mergePreservingUserCorrections(
                             existing: self.confirmedSegments,
                             incoming: newSegments
                         )
+
+                        // Detect retroactive speaker changes and propagate to translation
+                        let existingCount = min(oldSpeakers.count, self.confirmedSegments.count)
+                        var speakerChanged = false
+                        for i in 0..<existingCount {
+                            if oldSpeakers[i] != self.confirmedSegments[i].speaker {
+                                speakerChanged = true
+                                break
+                            }
+                        }
+                        if speakerChanged {
+                            self.translationService.syncSpeakerMetadata(from: self.confirmedSegments)
+                        }
 
                         // Auto-detect new speakers from segments
                         for segment in stateSegments {
