@@ -16,6 +16,7 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
     private var confirmed: SpeakerIdentification?
     private var pendingSpeakerId: UUID?
     private var pendingCount: Int = 0
+    private var immediateConfirmNext: Bool = false
 
     public init(stayProbability: Double = 0.9) {
         self.stayProbability = max(0.5, min(stayProbability, 0.999))
@@ -31,13 +32,25 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
         }
 
         // First speaker: confirm immediately
-        guard let currentConfirmed = confirmed else {
+        guard confirmed != nil else {
             stateLogProb[id.speakerId] = 0.0
             confirmed = id
             pendingSpeakerId = nil
             pendingCount = 0
             return id
         }
+
+        // After silence reset: confirm next observation immediately
+        if immediateConfirmNext {
+            immediateConfirmNext = false
+            stateLogProb = [id.speakerId: 0.0]
+            confirmed = id
+            pendingSpeakerId = nil
+            pendingCount = 0
+            return id
+        }
+
+        let currentConfirmed = confirmed!
 
         // Clamp confidence to avoid log(0)
         let c = Double(min(max(id.confidence, 0.01), 0.99))
@@ -122,11 +135,22 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
         }
     }
 
+    /// Reset transition bias while preserving speaker knowledge.
+    /// After significant silence, treats next observation as fresh start
+    /// so that any speaker (new or returning) confirms immediately.
+    public func resetForSpeakerChange() {
+        pendingSpeakerId = nil
+        pendingCount = 0
+        immediateConfirmNext = true
+        // confirmed is preserved for nil-input fallback
+    }
+
     public func reset() {
         stateLogProb = [:]
         confirmed = nil
         pendingSpeakerId = nil
         pendingCount = 0
+        immediateConfirmNext = false
     }
 }
 
