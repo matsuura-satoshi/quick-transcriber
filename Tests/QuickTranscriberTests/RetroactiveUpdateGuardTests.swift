@@ -174,7 +174,11 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         // Mark segment as user-corrected (was originally profileIdA, user changed to some other speaker)
         engine.markSegmentAsUserCorrected(at: 0, speaker: UUID().uuidString, originalSpeaker: profileIdA.uuidString)
 
-        await engine.stopStreaming()
+        // Provide display names for both profiles (ghost filter requires mapping)
+        await engine.stopStreaming(speakerDisplayNames: [
+            profileIdA.uuidString: "Speaker-A",
+            profileIdB.uuidString: "Speaker-B",
+        ])
 
         // Only profileIdB should have been merged (not profileIdA since it was the original speaker of a corrected segment)
         let profiles = store.profiles

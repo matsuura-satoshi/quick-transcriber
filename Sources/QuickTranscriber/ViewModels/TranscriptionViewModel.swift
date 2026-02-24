@@ -60,6 +60,8 @@ public final class TranscriptionViewModel: ObservableObject {
     private var fileSessionActive: Bool = false
     private var previousSessionSegments: [ConfirmedSegment] = []
     private var nextSpeakerNumber: Int = 1
+    var trackerAliases: [String: UUID] = [:]
+    var removedSpeakerIds: Set<UUID> = []
     private var cancellables: Set<AnyCancellable> = []
 
     public init(
@@ -198,6 +200,8 @@ public final class TranscriptionViewModel: ObservableObject {
         confirmedSegments = []
         unconfirmedText = ""
         activeSpeakers = []
+        trackerAliases = [:]
+        removedSpeakerIds = []
         translationService.reset()
         if wasRecording {
             Task {
@@ -528,19 +532,24 @@ public final class TranscriptionViewModel: ObservableObject {
         updateSpeakerDisplayNames()
     }
 
+    func generateSpeakerName() -> String {
+        let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
+            .union(speakerProfileStore.profiles.map { $0.displayName })
+        while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
+            nextSpeakerNumber += 1
+        }
+        let name = "Speaker-\(nextSpeakerNumber)"
+        nextSpeakerNumber += 1
+        return name
+    }
+
     public func addManualSpeaker(displayName: String) {
         let name: String
         if displayName.isEmpty {
-            let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
-                .union(speakerProfileStore.profiles.map { $0.displayName })
-            while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
-                nextSpeakerNumber += 1
-            }
-            name = "Speaker-\(nextSpeakerNumber)"
+            name = generateSpeakerName()
         } else {
             name = displayName
         }
-        nextSpeakerNumber += 1
         let speaker = ActiveSpeaker(displayName: name, source: .manual)
         activeSpeakers.append(speaker)
         updateSpeakerDisplayNames()
@@ -559,7 +568,14 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func removeActiveSpeaker(id: UUID) {
+        if let speaker = activeSpeakers.first(where: { $0.id == id }),
+           let profileId = speaker.speakerProfileId {
+            removedSpeakerIds.insert(profileId)
+        }
+        removedSpeakerIds.insert(id)
         activeSpeakers.removeAll { $0.id == id }
+        trackerAliases = trackerAliases.filter { $0.value != id }
+        updateSpeakerDisplayNames()
     }
 
     public var activeProfileIds: Set<UUID> {
@@ -604,10 +620,13 @@ public final class TranscriptionViewModel: ObservableObject {
         } else {
             activeSpeakers = []
         }
+        trackerAliases = [:]
     }
 
     /// Add an auto-detected speaker from the diarization pipeline
-    private func addAutoDetectedSpeaker(speakerId: String, embedding: [Float]?) {
+    func addAutoDetectedSpeaker(speakerId: String, embedding: [Float]?) {
+        // Block re-addition of removed speakers
+        if let uuid = UUID(uuidString: speakerId), removedSpeakerIds.contains(uuid) { return }
         guard !activeSpeakers.contains(where: { $0.id.uuidString == speakerId }) else { return }
 
         var matchedProfileId: UUID? = nil
@@ -622,12 +641,19 @@ public final class TranscriptionViewModel: ObservableObject {
             }
         }
 
-        // Profile already active — just map the tracker UUID to the existing display name
+        // Block re-addition of removed profiles
+        if let matchedProfileId, removedSpeakerIds.contains(matchedProfileId) { return }
+
+        // Profile already active — register tracker alias instead of adding duplicate
         if let matchedProfileId,
            let existing = activeSpeakers.first(where: { $0.speakerProfileId == matchedProfileId }) {
-            if let name = existing.displayName {
-                speakerDisplayNames[speakerId] = name
-            }
+            trackerAliases[speakerId] = existing.id
+            updateSpeakerDisplayNames()
+            return
+        }
+
+        // Manual mode: only allow alias registration, block new speaker addition
+        if parametersStore.parameters.diarizationMode == .manual {
             return
         }
 
@@ -636,13 +662,7 @@ public final class TranscriptionViewModel: ObservableObject {
            let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) {
             displayName = profile.displayName
         } else {
-            let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
-                .union(speakerProfileStore.profiles.map { $0.displayName })
-            while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
-                nextSpeakerNumber += 1
-            }
-            displayName = "Speaker-\(nextSpeakerNumber)"
-            nextSpeakerNumber += 1
+            displayName = generateSpeakerName()
         }
 
         let speaker = ActiveSpeaker(
@@ -662,6 +682,12 @@ public final class TranscriptionViewModel: ObservableObject {
         for speaker in activeSpeakers {
             if let name = speaker.displayName {
                 names[speaker.id.uuidString] = name
+            }
+        }
+        // Resolve tracker aliases to active speaker display names
+        for (trackerUUID, activeSpeakerId) in trackerAliases {
+            if let name = names[activeSpeakerId.uuidString] {
+                names[trackerUUID] = name
             }
         }
         speakerDisplayNames = names
@@ -809,6 +835,20 @@ public final class TranscriptionViewModel: ObservableObject {
                 continue
             }
 
+            // Priority 1.5: Tracker alias — match profiles created under aliased tracker UUIDs
+            let aliasedTrackerUUIDs = trackerAliases
+                .filter { $0.value == speakerId }
+                .compactMap { UUID(uuidString: $0.key) }
+            var linkedViaAlias = false
+            for aliasUUID in aliasedTrackerUUIDs {
+                if speakerProfileStore.profiles.contains(where: { $0.id == aliasUUID }) {
+                    activeSpeakers[i].speakerProfileId = aliasUUID
+                    linkedViaAlias = true
+                    break
+                }
+            }
+            if linkedViaAlias { continue }
+
             // Priority 2: Embedding similarity fallback
             let speakerIdString = speakerId.uuidString
             guard let embedding = confirmedSegments.first(where: {
@@ -827,8 +867,8 @@ public final class TranscriptionViewModel: ObservableObject {
             if bestIndex >= 0 && bestSimilarity >= Constants.Embedding.similarityThreshold {
                 activeSpeakers[i].speakerProfileId = speakerProfileStore.profiles[bestIndex].id
             } else {
-                // Create new profile for unlinked speaker (Speaker-11 fix)
-                let displayName = activeSpeakers[i].displayName ?? "Speaker"
+                // Create new profile for unlinked speaker
+                let displayName = activeSpeakers[i].displayName ?? generateSpeakerName()
                 let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
                 speakerProfileStore.profiles.append(newProfile)
                 activeSpeakers[i].speakerProfileId = speakerId

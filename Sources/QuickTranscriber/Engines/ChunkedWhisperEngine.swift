@@ -151,20 +151,23 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
                 }
                 if !filteredProfiles.isEmpty {
-                    let mergeProfiles = filteredProfiles.map { profile in
-                        (
-                            speakerId: profile.speakerId,
-                            embedding: profile.embedding,
-                            displayName: speakerDisplayNames[profile.speakerId.uuidString] ?? "Speaker"
-                        )
+                    let mergeProfiles = filteredProfiles.compactMap { profile
+                        -> (speakerId: UUID, embedding: [Float], displayName: String)? in
+                        guard let name = speakerDisplayNames[profile.speakerId.uuidString] else {
+                            NSLog("[ChunkedWhisperEngine] Skipping unmapped profile \(profile.speakerId)")
+                            return nil
+                        }
+                        return (speakerId: profile.speakerId, embedding: profile.embedding, displayName: name)
                     }
-                    store.mergeSessionProfiles(mergeProfiles)
-                    do {
-                        try store.save()
-                    } catch {
-                        NSLog("[ChunkedWhisperEngine] Failed to save speaker profiles: \(error)")
+                    if !mergeProfiles.isEmpty {
+                        store.mergeSessionProfiles(mergeProfiles)
+                        do {
+                            try store.save()
+                        } catch {
+                            NSLog("[ChunkedWhisperEngine] Failed to save speaker profiles: \(error)")
+                        }
+                        NSLog("[ChunkedWhisperEngine] Saved \(mergeProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - mergeProfiles.count))")
                     }
-                    NSLog("[ChunkedWhisperEngine] Saved \(filteredProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - filteredProfiles.count))")
                 }
             }
         }
