@@ -243,10 +243,12 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         var params = TranscriptionParameters.default
         params.enableSpeakerDiarization = true
         try await engine.startStreaming(language: "en", parameters: params, onStateChange: { _ in })
-        await engine.stopStreaming()
+
+        // Provide display name mapping for the exported profile
+        await engine.stopStreaming(speakerDisplayNames: [exportedId.uuidString: "Speaker-1"])
 
         XCTAssertEqual(store.profiles.count, 1)
-        XCTAssertEqual(store.profiles[0].displayName, "Speaker")
+        XCTAssertEqual(store.profiles[0].displayName, "Speaker-1")
     }
 
     func testCorrectSpeakerAssignmentForwardsToDiarizer() async throws {
@@ -365,6 +367,38 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         try await engine.startStreaming(language: "en", parameters: .init(enableSpeakerDiarization: true)) { _ in }
         await engine.stopStreaming()
         // Should not crash
+    }
+
+    func testStopStreamingSkipsGhostProfiles() async throws {
+        let mockDiarizer = MockSpeakerDiarizer()
+        let knownId = UUID()
+        let ghostId = UUID()
+        let embedding = [Float](repeating: 0.1, count: 256)
+        mockDiarizer.exportedProfiles = [
+            (speakerId: knownId, embedding: embedding),
+            (speakerId: ghostId, embedding: embedding)
+        ]
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = SpeakerProfileStore(directory: dir)
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: MockChunkTranscriber(),
+            diarizer: mockDiarizer,
+            speakerProfileStore: store
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+        try await engine.startStreaming(language: "en", parameters: params, onStateChange: { _ in })
+
+        // Only knownId has a display name mapping; ghostId is unmapped
+        await engine.stopStreaming(speakerDisplayNames: [knownId.uuidString: "Alice"])
+
+        // Only the known profile should be merged
+        XCTAssertEqual(store.profiles.count, 1, "Ghost profile should be filtered out")
+        XCTAssertEqual(store.profiles[0].displayName, "Alice")
     }
 
     func testStartStreamingLoadsSpeakerProfiles() async throws {
