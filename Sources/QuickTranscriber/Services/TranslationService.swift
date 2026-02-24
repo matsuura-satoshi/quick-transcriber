@@ -113,16 +113,26 @@ public final class TranslationService: ObservableObject {
         }
     }
 
+    /// Returns finalized multi-segment groups that need retranslation, skipping
+    /// groups with stale indices (e.g. from a race between clear and translation task).
+    func pendingRetranslationGroups(
+        for segments: [ConfirmedSegment]
+    ) -> [(groupIndex: Int, group: TranslationGroup)] {
+        groups.enumerated().compactMap { (groupIdx, group) in
+            guard group.isFinalized,
+                  group.endIndex > group.startIndex,
+                  group.endIndex < segments.count,
+                  groupRetranslations[groupIdx] == nil else { return nil }
+            return (groupIndex: groupIdx, group: group)
+        }
+    }
+
     private func retranslateFinalized(
         segments: [ConfirmedSegment], using session: TranslationSession
     ) async throws {
         var requests: [(groupIndex: Int, request: TranslationSession.Request)] = []
 
-        for (groupIdx, group) in groups.enumerated() {
-            guard group.isFinalized,
-                  group.endIndex > group.startIndex,
-                  groupRetranslations[groupIdx] == nil else { continue }
-
+        for (groupIdx, group) in pendingRetranslationGroups(for: segments) {
             let groupText = segments[group.startIndex...group.endIndex]
                 .map(\.text)
                 .joined()

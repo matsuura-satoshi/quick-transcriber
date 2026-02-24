@@ -72,14 +72,15 @@ public struct ContentView: View {
             }
         }
         .translationTask(translationConfig) { session in
+            let segments = viewModel.confirmedSegments
             await translationService.translateNewSegments(
-                viewModel.confirmedSegments,
+                segments,
                 using: session,
                 sourceLanguage: viewModel.currentLanguage.rawValue
             )
             if !viewModel.isRecording {
                 await translationService.finalizeLastGroup(
-                    viewModel.confirmedSegments, using: session
+                    segments, using: session
                 )
             }
             if !translationReady {
