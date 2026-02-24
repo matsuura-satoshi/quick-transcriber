@@ -2,7 +2,7 @@ import Foundation
 import Translation
 
 struct TranslationGroup {
-    let startIndex: Int
+    var startIndex: Int
     var endIndex: Int
     var isFinalized: Bool
 }
@@ -12,8 +12,8 @@ public final class TranslationService: ObservableObject {
     @Published public var translatedSegments: [ConfirmedSegment] = []
     @Published public var displaySegments: [ConfirmedSegment] = []
 
-    private var translationCursor: Int = 0
-    private var groups: [TranslationGroup] = []
+    var translationCursor: Int = 0
+    var groups: [TranslationGroup] = []
     private var groupRetranslations: [Int: String] = [:]  // groupIndex -> retranslated text
     private var sourceLanguage: String = "en"
 
@@ -149,6 +149,37 @@ public final class TranslationService: ObservableObject {
         }
     }
 
+    // MARK: - Split segment
+
+    /// Split the translated segment at the given index to maintain 1:1 index
+    /// correspondence with confirmedSegments after a split.
+    public func splitSegment(at index: Int) {
+        guard index < translatedSegments.count else { return }
+
+        var second = translatedSegments[index]
+        second.text = ""
+        second.precedingSilence = 0
+
+        var updated = translatedSegments
+        updated.insert(second, at: index + 1)
+        translatedSegments = updated
+
+        if translationCursor > index {
+            translationCursor += 1
+        }
+
+        for i in 0..<groups.count {
+            if groups[i].startIndex > index {
+                groups[i].startIndex += 1
+                groups[i].endIndex += 1
+            } else if groups[i].endIndex >= index {
+                groups[i].endIndex += 1
+            }
+        }
+
+        rebuildDisplaySegments()
+    }
+
     // MARK: - Group boundary detection
 
     public static func isGroupBoundary(
@@ -171,6 +202,11 @@ public final class TranslationService: ObservableObject {
         // 2. Speaker change (both non-nil, different)
         if let prevSpeaker = prev.speaker, let curSpeaker = current.speaker,
            prevSpeaker != curSpeaker {
+            return true
+        }
+
+        // 2b. nil → non-nil transition (pending segment resolved)
+        if prev.speaker == nil && current.speaker != nil {
             return true
         }
 
