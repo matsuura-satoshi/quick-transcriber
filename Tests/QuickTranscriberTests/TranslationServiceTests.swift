@@ -595,6 +595,86 @@ final class TranslationServiceTests: XCTestCase {
         XCTAssertEqual(service.displaySegments[3].text, "")
     }
 
+    // MARK: - pendingRetranslationGroups (bounds checking)
+
+    func testPendingRetranslationGroupsSkipsGroupsWithStaleIndices() {
+        // Simulate race condition: groups reference indices beyond segments
+        service.groups = [
+            TranslationGroup(startIndex: 0, endIndex: 3, isFinalized: true),
+            TranslationGroup(startIndex: 4, endIndex: 6, isFinalized: true),
+        ]
+
+        // Only 2 segments exist (cleared after groups were built)
+        let segments = [
+            ConfirmedSegment(text: "A"),
+            ConfirmedSegment(text: "B"),
+        ]
+
+        let pending = service.pendingRetranslationGroups(for: segments)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testPendingRetranslationGroupsIncludesValidGroups() {
+        service.groups = [
+            TranslationGroup(startIndex: 0, endIndex: 1, isFinalized: true),
+            TranslationGroup(startIndex: 2, endIndex: 5, isFinalized: true),
+        ]
+
+        let segments = [
+            ConfirmedSegment(text: "A"),
+            ConfirmedSegment(text: "B"),
+            ConfirmedSegment(text: "C"),
+        ]
+
+        // Group 0 (endIndex=1 < 3) valid, Group 1 (endIndex=5 >= 3) stale
+        let pending = service.pendingRetranslationGroups(for: segments)
+        XCTAssertEqual(pending.count, 1)
+        XCTAssertEqual(pending[0].groupIndex, 0)
+    }
+
+    func testPendingRetranslationGroupsSkipsAlreadyRetranslated() {
+        service.translatedSegments = [
+            ConfirmedSegment(text: "A"),
+            ConfirmedSegment(text: "B"),
+        ]
+        // applyGroupRetranslation creates group AND sets its retranslation
+        service.applyGroupRetranslation(
+            groupStartIndex: 0, groupEndIndex: 1, translatedText: "AB訳"
+        )
+
+        let segments = [
+            ConfirmedSegment(text: "A"),
+            ConfirmedSegment(text: "B"),
+        ]
+
+        // Group already has retranslation → skipped
+        let pending = service.pendingRetranslationGroups(for: segments)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testPendingRetranslationGroupsSkipsSingleSegmentGroups() {
+        service.groups = [
+            TranslationGroup(startIndex: 0, endIndex: 0, isFinalized: true),
+        ]
+
+        let segments = [ConfirmedSegment(text: "A")]
+
+        // endIndex == startIndex → single segment, not worth retranslating
+        let pending = service.pendingRetranslationGroups(for: segments)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    func testPendingRetranslationGroupsWithEmptySegments() {
+        service.groups = [
+            TranslationGroup(startIndex: 0, endIndex: 2, isFinalized: true),
+        ]
+
+        let segments: [ConfirmedSegment] = []
+
+        let pending = service.pendingRetranslationGroups(for: segments)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
     // MARK: - sync after split integration
 
     func testSyncAfterSplitMaintainsCorrectMapping() {
