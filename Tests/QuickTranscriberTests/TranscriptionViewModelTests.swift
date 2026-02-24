@@ -1276,25 +1276,25 @@ final class TranscriptionViewModelTests: XCTestCase {
         vm.addManualSpeaker(fromProfile: profileId)
         XCTAssertEqual(vm.activeSpeakers.count, 1)
 
-        // Start recording and simulate a segment with a DIFFERENT tracker UUID but same embedding
+        // Start recording and simulate a segment with the profile's UUID
+        // (tracker uses stored profile ID in manual mode)
         vm.toggleRecording()
         try? await Task.sleep(nanoseconds: 100_000_000)
 
-        let newTrackerId = UUID()
         engine.simulateStateChange(TranscriptionState(
             confirmedText: "Hello",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
-                ConfirmedSegment(text: "Hello", speaker: newTrackerId.uuidString, speakerEmbedding: embedding)
+                ConfirmedSegment(text: "Hello", speaker: profileId.uuidString, speakerEmbedding: embedding)
             ]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
-        // Should NOT duplicate — profile already active
+        // Should NOT duplicate — profile already active, UUID match creates alias
         XCTAssertEqual(vm.activeSpeakers.count, 1, "Should not duplicate speaker when profile already active")
-        // But the tracker UUID should still map to the display name
-        XCTAssertEqual(vm.speakerDisplayNames[newTrackerId.uuidString], "Alice")
+        // The profile UUID should map to Alice's display name
+        XCTAssertEqual(vm.speakerDisplayNames[profileId.uuidString], "Alice")
     }
 
     // MARK: - Manual Mode Tracker ID Dedup Integration
@@ -1524,4 +1524,100 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(store2.profiles.count, 2, "New profile should be persisted to disk")
     }
 
+    // MARK: - Single authority refactoring
+
+    func testModeSwitchMidSessionUsesSnapshotMode() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Set manual mode and snapshot it
+        vm.parametersStore.parameters.diarizationMode = .manual
+        vm.snapshotDiarizationMode()
+
+        // Switch to auto mode AFTER snapshot
+        vm.parametersStore.parameters.diarizationMode = .auto
+
+        // addAutoDetectedSpeaker should still use the snapshot (manual),
+        // blocking new speaker addition
+        let speakerId = UUID().uuidString
+        vm.addAutoDetectedSpeaker(speakerId: speakerId, embedding: nil)
+
+        XCTAssertEqual(vm.activeSpeakers.count, 0,
+                       "Should use snapshot mode (manual), not current mode (auto)")
+    }
+
+    func testManualModeNoSpeakersPassesEmptyArray() async throws {
+        let engine = MockTranscriptionEngine()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Prepare engine so service.isReady = true
+        await vm.loadModel()
+
+        // Manual mode with no active speakers
+        vm.parametersStore.parameters.diarizationMode = .manual
+        vm.parametersStore.parameters.enableSpeakerDiarization = true
+
+        vm.toggleRecording()
+
+        // Wait for the async Task in startRecording to execute
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        XCTAssertTrue(engine.startStreamingCalled, "Engine should have been called")
+        // Key assertion: empty array, NOT nil
+        XCTAssertNotNil(engine.startStreamingParticipantProfiles,
+                        "Manual mode should pass empty array, not nil")
+        XCTAssertEqual(engine.startStreamingParticipantProfiles?.count, 0,
+                        "Manual mode with no speakers should pass empty array")
+    }
+
+    func testAutoDetectedSpeakerWithMatchingProfileIdLinksDirectly() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let profileId = UUID()
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Tracker uses the stored profile's UUID directly
+        vm.addAutoDetectedSpeaker(speakerId: profileId.uuidString, embedding: makeEmbedding(dominant: 0))
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, profileId,
+                       "Should link to profile by UUID match")
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice")
+    }
+
+    func testAutoDetectedSpeakerSimilarEmbeddingDifferentIdDoesNotLink() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let profileId = UUID()
+        store.profiles = [StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Tracker uses a DIFFERENT UUID but with similar embedding
+        let newTrackerId = UUID()
+        vm.addAutoDetectedSpeaker(speakerId: newTrackerId.uuidString, embedding: makeEmbedding(dominant: 0))
+
+        // Should NOT link to Alice's profile (different UUID)
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertNil(vm.activeSpeakers[0].speakerProfileId,
+                     "Should NOT link via embedding similarity — UUID mismatch")
+    }
+
+}
+
+private func makeEmbedding(dominant dim: Int, dimensions: Int = 256) -> [Float] {
+    var v = [Float](repeating: 0.01, count: dimensions)
+    v[dim] = 1.0
+    return v
 }

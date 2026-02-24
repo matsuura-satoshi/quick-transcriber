@@ -5,6 +5,7 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     var setupCalled = false
     var setupError: Error?
     var speakerResults: [SpeakerIdentification?] = []
+    var identifySpeakerCallCount = 0
     private var callIndex = 0
 
     func setup() async throws {
@@ -13,6 +14,7 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     }
 
     func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
+        identifySpeakerCallCount += 1
         guard callIndex < speakerResults.count else { return nil }
         let result = speakerResults[callIndex]
         callIndex += 1

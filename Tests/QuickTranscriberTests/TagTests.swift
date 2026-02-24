@@ -403,23 +403,21 @@ final class PostMeetingTagTests: XCTestCase {
 
     func testLinkActiveSpeakersToProfiles_linksMatchingSpeaker() {
         let (vm, store) = makeViewModel()
-        let speakerId = UUID()
         let profileId = UUID()
         let embedding = makeEmbedding(dominant: 0)
 
-        // Profile in store with matching embedding
+        // Profile in store
         store.profiles = [
             StoredSpeakerProfile(id: profileId, displayName: "Alice", embedding: embedding)
         ]
 
-        // Active speaker with no profileId
+        // Active speaker with SAME UUID as profile (ID direct match)
         vm.activeSpeakers = [
-            ActiveSpeaker(id: speakerId, source: .autoDetected)
+            ActiveSpeaker(id: profileId, source: .autoDetected)
         ]
 
-        // Confirmed segment with matching speaker and embedding
         vm.confirmedSegments = [
-            ConfirmedSegment(text: "hello", speaker: speakerId.uuidString, speakerEmbedding: embedding)
+            ConfirmedSegment(text: "hello", speaker: profileId.uuidString, speakerEmbedding: embedding)
         ]
 
         vm.linkActiveSpeakersToProfiles()

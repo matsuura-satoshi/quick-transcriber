@@ -73,11 +73,12 @@ final class SpeakerProfileStoreTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         let existingEmb = makeEmbedding(dominant: 0)
-        store.profiles = [StoredSpeakerProfile(displayName: "Alice", embedding: existingEmb, sessionCount: 2)]
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: existingEmb, sessionCount: 2)
+        store.profiles = [profile]
 
         var sessionEmb = makeEmbedding(dominant: 0)
         sessionEmb[1] = 0.15
-        store.mergeSessionProfiles([(speakerId: UUID(), embedding: sessionEmb, displayName: "Speaker-1")])
+        store.mergeSessionProfiles([(speakerId: profile.id, embedding: sessionEmb, displayName: "Speaker-1")])
 
         XCTAssertEqual(store.profiles.count, 1, "Should update, not add")
         XCTAssertEqual(store.profiles[0].displayName, "Alice")
@@ -105,12 +106,13 @@ final class SpeakerProfileStoreTests: XCTestCase {
 
         let store = SpeakerProfileStore(directory: dir)
         let oldDate = Date.distantPast
-        store.profiles = [StoredSpeakerProfile(
+        let profile = StoredSpeakerProfile(
             displayName: "Alice", embedding: makeEmbedding(dominant: 0),
             lastUsed: oldDate, sessionCount: 1
-        )]
+        )
+        store.profiles = [profile]
 
-        store.mergeSessionProfiles([(speakerId: UUID(), embedding: makeEmbedding(dominant: 0), displayName: "Speaker-1")])
+        store.mergeSessionProfiles([(speakerId: profile.id, embedding: makeEmbedding(dominant: 0), displayName: "Speaker-1")])
 
         XCTAssertGreaterThan(store.profiles[0].lastUsed, oldDate)
     }
@@ -130,8 +132,9 @@ final class SpeakerProfileStoreTests: XCTestCase {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
-        store.mergeSessionProfiles([(speakerId: UUID(), embedding: makeEmbedding(dominant: 0), displayName: "Speaker-1")])
+        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0))
+        store.profiles = [profile]
+        store.mergeSessionProfiles([(speakerId: profile.id, embedding: makeEmbedding(dominant: 0), displayName: "Speaker-1")])
         XCTAssertEqual(store.profiles.count, 1)
         XCTAssertEqual(store.profiles[0].displayName, "Alice", "Should preserve user-set displayName")
     }
@@ -438,5 +441,27 @@ final class SpeakerProfileStoreTests: XCTestCase {
 
         XCTAssertEqual(store.profiles.count, 2,
                         "Similar but distinct session speakers should not be merged within a single batch")
+    }
+
+    // MARK: - Single authority: no embedding similarity fallback
+
+    func testMergeSimilarEmbeddingDifferentIdCreatesNewProfile() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let existingId = UUID()
+        store.profiles = [StoredSpeakerProfile(id: existingId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))]
+
+        // Same embedding but different UUID → should create new profile, NOT update Alice
+        let newId = UUID()
+        store.mergeSessionProfiles([(speakerId: newId, embedding: makeEmbedding(dominant: 0), displayName: "Speaker-1")])
+
+        XCTAssertEqual(store.profiles.count, 2,
+                       "Similar embedding with different ID should create new profile, not update existing")
+        XCTAssertEqual(store.profiles[0].displayName, "Alice")
+        XCTAssertEqual(store.profiles[0].sessionCount, 1, "Alice should NOT be updated")
+        XCTAssertEqual(store.profiles[1].id, newId)
+        XCTAssertEqual(store.profiles[1].displayName, "Speaker-1")
     }
 }

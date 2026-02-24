@@ -110,15 +110,14 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
 
         // Add Alice as manual speaker (profile linked)
         vm.addManualSpeaker(fromProfile: profileAlice.id)
-        let aliceActiveId = vm.activeSpeakers[0].id
 
-        // Simulate: tracker detects a new UUID that matches Alice's profile
-        let trackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: trackerUUID, embedding: makeEmbedding(dominant: 0))
+        // Simulate: tracker detects using Alice's profile UUID directly
+        // (UUID match triggers alias since profile is already active)
+        vm.addAutoDetectedSpeaker(speakerId: profileAlice.id.uuidString, embedding: makeEmbedding(dominant: 0))
 
         // The tracker UUID should resolve to Alice's display name
         XCTAssertEqual(
-            vm.speakerDisplayNames[trackerUUID], "Alice",
+            vm.speakerDisplayNames[profileAlice.id.uuidString], "Alice",
             "Tracker alias UUID should map to Alice's display name"
         )
 
@@ -134,16 +133,15 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
 
         vm.addManualSpeaker(fromProfile: profileAlice.id)
 
-        // Add tracker alias
-        let trackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: trackerUUID, embedding: makeEmbedding(dominant: 0))
+        // Add tracker alias using profile UUID (UUID match → alias)
+        vm.addAutoDetectedSpeaker(speakerId: profileAlice.id.uuidString, embedding: makeEmbedding(dominant: 0))
 
         // Trigger display names rebuild (e.g. by adding another speaker)
         vm.addManualSpeaker(displayName: "Bob")
 
         // Alias should still be present
         XCTAssertEqual(
-            vm.speakerDisplayNames[trackerUUID], "Alice",
+            vm.speakerDisplayNames[profileAlice.id.uuidString], "Alice",
             "Tracker alias should survive display name rebuilds"
         )
     }
@@ -179,9 +177,8 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
         vm.removeActiveSpeaker(id: vm.activeSpeakers[0].id)
         XCTAssertEqual(vm.activeSpeakers.count, 0)
 
-        // Auto-detection with matching embedding should be blocked
-        let newTrackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: newTrackerUUID, embedding: makeEmbedding(dominant: 0))
+        // Auto-detection with profile's UUID should be blocked (UUID match to removed profile)
+        vm.addAutoDetectedSpeaker(speakerId: profile.id.uuidString, embedding: makeEmbedding(dominant: 0))
         XCTAssertEqual(vm.activeSpeakers.count, 0, "Removed profile should not be re-added")
     }
 
@@ -208,15 +205,14 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
         vm.addManualSpeaker(fromProfile: profile.id)
         let aliceId = vm.activeSpeakers[0].id
 
-        // Add a tracker alias pointing to Alice
-        let trackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: trackerUUID, embedding: makeEmbedding(dominant: 0))
+        // Add a tracker alias using profile UUID (UUID match → alias)
+        vm.addAutoDetectedSpeaker(speakerId: profile.id.uuidString, embedding: makeEmbedding(dominant: 0))
 
         // Remove Alice
         vm.removeActiveSpeaker(id: aliceId)
 
         // Tracker alias should also be cleaned up
-        XCTAssertNil(vm.speakerDisplayNames[trackerUUID],
+        XCTAssertNil(vm.speakerDisplayNames[profile.id.uuidString],
                      "Tracker alias display name should be cleaned up when target speaker is removed")
     }
 
@@ -226,8 +222,9 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
         let store = SpeakerProfileStore(directory: tmpDir)
         let (vm, _, _) = makeViewModel(store: store)
 
-        // Set manual mode
+        // Set manual mode and snapshot it
         vm.parametersStore.parameters.diarizationMode = .manual
+        vm.snapshotDiarizationMode()
 
         // Add a manual speaker
         vm.addManualSpeaker(displayName: "Alice")
@@ -246,16 +243,16 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
         store.profiles = [profileAlice]
         let (vm, _, _) = makeViewModel(store: store)
 
-        // Set manual mode and add Alice
+        // Set manual mode, snapshot it, and add Alice
         vm.parametersStore.parameters.diarizationMode = .manual
+        vm.snapshotDiarizationMode()
         vm.addManualSpeaker(fromProfile: profileAlice.id)
 
-        // Tracker UUID matching Alice's profile should create alias, not new speaker
-        let trackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: trackerUUID, embedding: makeEmbedding(dominant: 0))
+        // Tracker UUID matching Alice's profile UUID → alias
+        vm.addAutoDetectedSpeaker(speakerId: profileAlice.id.uuidString, embedding: makeEmbedding(dominant: 0))
 
         XCTAssertEqual(vm.activeSpeakers.count, 1, "Should not add duplicate speaker")
-        XCTAssertEqual(vm.speakerDisplayNames[trackerUUID], "Alice",
+        XCTAssertEqual(vm.speakerDisplayNames[profileAlice.id.uuidString], "Alice",
                        "Should create alias to Alice in manual mode")
     }
 
@@ -267,11 +264,11 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
         let (vm, _, _) = makeViewModel(store: store)
 
         vm.parametersStore.parameters.diarizationMode = .manual
+        vm.snapshotDiarizationMode()
         vm.addManualSpeaker(displayName: "Alice")  // Only Alice is active
 
-        // Tracker matches Bob's profile, but Bob isn't active in manual mode
-        let trackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: trackerUUID, embedding: makeEmbedding(dominant: 3))
+        // Tracker uses Bob's UUID, but Bob isn't active in manual mode
+        vm.addAutoDetectedSpeaker(speakerId: profileBob.id.uuidString, embedding: makeEmbedding(dominant: 3))
         XCTAssertEqual(vm.activeSpeakers.count, 1,
                        "Manual mode should not add inactive profile speaker")
     }
@@ -391,18 +388,44 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
 
     func testClearActiveSpeakersResetsTrackerAliases() {
         let store = SpeakerProfileStore(directory: tmpDir)
-        let profile = StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0))
-        store.profiles = [profile]
         let (vm, _, _) = makeViewModel(store: store)
 
-        vm.addManualSpeaker(fromProfile: profile.id)
-        let trackerUUID = UUID().uuidString
-        vm.addAutoDetectedSpeaker(speakerId: trackerUUID, embedding: makeEmbedding(dominant: 0))
+        vm.addManualSpeaker(displayName: "Alice")
+        let aliceId = vm.activeSpeakers[0].id
+        // Directly set a tracker alias (simulating engine assigning alias)
+        vm.trackerAliases[UUID().uuidString] = aliceId
 
         XCTAssertFalse(vm.trackerAliases.isEmpty, "Precondition: aliases should exist")
 
         vm.clearActiveSpeakers()
 
         XCTAssertTrue(vm.trackerAliases.isEmpty, "clearActiveSpeakers should reset trackerAliases")
+    }
+
+    // MARK: - Single authority: linkActiveSpeakers no embedding similarity
+
+    func testLinkSimilarEmbeddingDifferentIdCreatesNewProfile() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let existingProfileId = UUID()
+        let embedding = makeEmbedding(dominant: 0)
+        store.profiles = [StoredSpeakerProfile(id: existingProfileId, displayName: "Alice", embedding: embedding)]
+        let (vm, _, _) = makeViewModel(store: store)
+
+        // Active speaker with DIFFERENT UUID from existing profile
+        let newSpeakerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: newSpeakerId, speakerProfileId: nil, displayName: "Speaker-1", source: .autoDetected)
+        ]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: newSpeakerId.uuidString, speakerEmbedding: embedding)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        // Should create a NEW profile, NOT link to Alice (despite identical embedding)
+        XCTAssertEqual(store.profiles.count, 2,
+                       "Should create new profile, not link to existing via embedding similarity")
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, newSpeakerId,
+                       "New profile should use the active speaker's UUID")
     }
 }

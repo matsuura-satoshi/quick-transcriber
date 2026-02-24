@@ -62,6 +62,7 @@ public final class TranscriptionViewModel: ObservableObject {
     private var nextSpeakerNumber: Int = 1
     var trackerAliases: [String: UUID] = [:]
     var removedSpeakerIds: Set<UUID> = []
+    var recordingDiarizationMode: DiarizationMode = .auto
     private var cancellables: Set<AnyCancellable> = []
 
     public init(
@@ -629,17 +630,11 @@ public final class TranscriptionViewModel: ObservableObject {
         if let uuid = UUID(uuidString: speakerId), removedSpeakerIds.contains(uuid) { return }
         guard !activeSpeakers.contains(where: { $0.id.uuidString == speakerId }) else { return }
 
-        var matchedProfileId: UUID? = nil
-        if let embedding {
-            var bestSimilarity: Float = -1
-            for profile in speakerProfileStore.profiles {
-                let sim = EmbeddingBasedSpeakerTracker.cosineSimilarity(embedding, profile.embedding)
-                if sim >= Constants.Embedding.similarityThreshold && sim > bestSimilarity {
-                    bestSimilarity = sim
-                    matchedProfileId = profile.id
-                }
-            }
+        // UUID direct match only — no embedding similarity re-matching
+        let matchedProfile = UUID(uuidString: speakerId).flatMap { id in
+            speakerProfileStore.profiles.first(where: { $0.id == id })
         }
+        let matchedProfileId = matchedProfile?.id
 
         // Block re-addition of removed profiles
         if let matchedProfileId, removedSpeakerIds.contains(matchedProfileId) { return }
@@ -653,13 +648,12 @@ public final class TranscriptionViewModel: ObservableObject {
         }
 
         // Manual mode: only allow alias registration, block new speaker addition
-        if parametersStore.parameters.diarizationMode == .manual {
+        if recordingDiarizationMode == .manual {
             return
         }
 
         let displayName: String
-        if let profileId = matchedProfileId,
-           let profile = speakerProfileStore.profiles.first(where: { $0.id == profileId }) {
+        if let profile = matchedProfile {
             displayName = profile.displayName
         } else {
             displayName = generateSpeakerName()
@@ -693,6 +687,10 @@ public final class TranscriptionViewModel: ObservableObject {
         speakerDisplayNames = names
     }
 
+    func snapshotDiarizationMode() {
+        recordingDiarizationMode = parametersStore.parameters.diarizationMode
+    }
+
     private func restartRecording() {
         saveUnconfirmedText()
         isRecording = false
@@ -710,6 +708,7 @@ public final class TranscriptionViewModel: ObservableObject {
         }
         isRecording = true
         let params = parametersStore.parameters
+        snapshotDiarizationMode()
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
         if !fileSessionActive {
@@ -729,7 +728,7 @@ public final class TranscriptionViewModel: ObservableObject {
                 else { return nil }
                 return (speakerId: stored.id, embedding: stored.embedding)
             }
-            participantProfiles = speakersWithProfiles.isEmpty ? nil : speakersWithProfiles
+            participantProfiles = speakersWithProfiles
         } else {
             participantProfiles = nil
         }
@@ -849,31 +848,17 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             if linkedViaAlias { continue }
 
-            // Priority 2: Embedding similarity fallback
+            // Fallback: Create new profile for unlinked speaker (no embedding similarity search)
             let speakerIdString = speakerId.uuidString
             guard let embedding = confirmedSegments.first(where: {
                 $0.speaker == speakerIdString
             })?.speakerEmbedding else { continue }
 
-            var bestIndex = -1
-            var bestSimilarity: Float = -1
-            for (j, profile) in speakerProfileStore.profiles.enumerated() {
-                let sim = EmbeddingBasedSpeakerTracker.cosineSimilarity(embedding, profile.embedding)
-                if sim > bestSimilarity {
-                    bestSimilarity = sim
-                    bestIndex = j
-                }
-            }
-            if bestIndex >= 0 && bestSimilarity >= Constants.Embedding.similarityThreshold {
-                activeSpeakers[i].speakerProfileId = speakerProfileStore.profiles[bestIndex].id
-            } else {
-                // Create new profile for unlinked speaker
-                let displayName = activeSpeakers[i].displayName ?? generateSpeakerName()
-                let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
-                speakerProfileStore.profiles.append(newProfile)
-                activeSpeakers[i].speakerProfileId = speakerId
-                createdNewProfiles = true
-            }
+            let displayName = activeSpeakers[i].displayName ?? generateSpeakerName()
+            let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
+            speakerProfileStore.profiles.append(newProfile)
+            activeSpeakers[i].speakerProfileId = speakerId
+            createdNewProfiles = true
         }
 
         if createdNewProfiles {

@@ -8,7 +8,6 @@ public final class SpeakerProfileStore {
     private let fileURL: URL
     public var profiles: [StoredSpeakerProfile] = []
 
-    private let mergeThreshold: Float = Constants.Embedding.similarityThreshold
     private let updateAlpha: Float = 0.3
 
     public init(directory: URL? = nil) {
@@ -115,10 +114,8 @@ public final class SpeakerProfileStore {
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(speakerId: UUID, embedding: [Float], displayName: String)]) {
-        var newlyCreatedInThisMerge = Set<UUID>()
-
         for (speakerId, embedding, displayName) in sessionProfiles {
-            // Priority 1: Match by speakerId (same profile across sessions)
+            // ID match only — no embedding similarity fallback
             if let idMatchIndex = profiles.firstIndex(where: { $0.id == speakerId }) {
                 let alpha = updateAlpha
                 profiles[idMatchIndex].embedding = zip(profiles[idMatchIndex].embedding, embedding).map { old, new in
@@ -126,33 +123,9 @@ public final class SpeakerProfileStore {
                 }
                 profiles[idMatchIndex].lastUsed = Date()
                 profiles[idMatchIndex].sessionCount += 1
-                continue
-            }
-
-            // Priority 2: Match by embedding similarity (skip profiles created in this batch)
-            var bestIndex = -1
-            var bestSimilarity: Float = -1
-
-            for (i, stored) in profiles.enumerated() {
-                guard !newlyCreatedInThisMerge.contains(stored.id) else { continue }
-                let sim = EmbeddingBasedSpeakerTracker.cosineSimilarity(embedding, stored.embedding)
-                if sim > bestSimilarity {
-                    bestSimilarity = sim
-                    bestIndex = i
-                }
-            }
-
-            if bestIndex >= 0 && bestSimilarity >= mergeThreshold {
-                let alpha = updateAlpha
-                profiles[bestIndex].embedding = zip(profiles[bestIndex].embedding, embedding).map { old, new in
-                    (1 - alpha) * old + alpha * new
-                }
-                profiles[bestIndex].lastUsed = Date()
-                profiles[bestIndex].sessionCount += 1
             } else {
                 let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
                 profiles.append(newProfile)
-                newlyCreatedInThisMerge.insert(newProfile.id)
             }
         }
     }

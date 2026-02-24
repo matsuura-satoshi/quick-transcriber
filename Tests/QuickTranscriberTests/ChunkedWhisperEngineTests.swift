@@ -401,6 +401,45 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(store.profiles[0].displayName, "Alice")
     }
 
+    func testManualModeEmptyParticipantsDisablesDiarization() async throws {
+        let mockTranscriber = MockChunkTranscriber()
+        let mockDiarizer = MockSpeakerDiarizer()
+        let spkId = UUID()
+        mockDiarizer.speakerResults = [SpeakerIdentification(speakerId: spkId, confidence: 0.9, embedding: [Float](repeating: 0.5, count: 256))]
+        mockTranscriber.transcribeResults = [TranscribedSegment(text: "Hello", avgLogprob: -0.3, compressionRatio: 1.5, noSpeechProb: 0.1)]
+
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+        params.diarizationMode = .manual
+
+        // Manual mode with empty participants → diarization should be disabled
+        try await engine.startStreaming(
+            language: "en", parameters: params,
+            participantProfiles: [],
+            onStateChange: { _ in }
+        )
+
+        // Feed a chunk to trigger processChunk
+        let chunk = [Float](repeating: 0.5, count: 80000)
+        mockCapture.simulateBuffer(chunk)
+
+        // Give time for processing
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        // Diarizer should NOT have been called
+        XCTAssertEqual(mockDiarizer.identifySpeakerCallCount, 0,
+                       "Manual mode with no participants should disable diarization")
+
+        await engine.stopStreaming()
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()

@@ -17,6 +17,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var currentParameters: TranscriptionParameters = .default
     /// Accumulated silence since last confirmed segment (seconds).
     private var silenceSinceLastSegment: TimeInterval = 0
+    /// Whether diarization is active for this streaming session.
+    private var diarizationActive = false
 
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
@@ -70,13 +72,18 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         if let diarizer, parameters.enableSpeakerDiarization {
             if let participantProfiles, parameters.diarizationMode == .manual {
                 // Manual mode: load only participant embeddings
-                if !participantProfiles.isEmpty {
+                if participantProfiles.isEmpty {
+                    diarizationActive = false
+                    NSLog("[ChunkedWhisperEngine] Manual mode: no participants, diarization disabled")
+                } else {
+                    diarizationActive = true
                     diarizer.loadSpeakerProfiles(participantProfiles)
                     NSLog("[ChunkedWhisperEngine] Manual mode: loaded \(participantProfiles.count) participant profiles")
                 }
                 diarizer.updateExpectedSpeakerCount(participantProfiles.count)
             } else {
                 // Auto mode: load all profiles from store
+                diarizationActive = true
                 diarizer.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
                 if let store = speakerProfileStore {
                     let profiles = store.profiles.map { (speakerId: $0.id, embedding: $0.embedding) }
@@ -87,6 +94,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 }
             }
         } else {
+            diarizationActive = false
             diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
         }
         pendingSegmentStartIndex = nil
@@ -134,7 +142,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
 
         accumulator.reset()
-        if let diarizer, currentParameters.enableSpeakerDiarization, let store = speakerProfileStore {
+        if let diarizer, diarizationActive, let store = speakerProfileStore {
             let sessionProfiles = diarizer.exportSpeakerProfiles()
             if !sessionProfiles.isEmpty {
                 // Filter out profiles for speakers that were user-corrected
@@ -172,7 +180,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             }
         }
         // Save embedding history for future profile reconstruction
-        if let historyStore = embeddingHistoryStore, let diarizer, currentParameters.enableSpeakerDiarization {
+        if let historyStore = embeddingHistoryStore, let diarizer, diarizationActive {
             let detailed = diarizer.exportDetailedSpeakerProfiles()
             let entries = detailed.compactMap { profile -> EmbeddingHistoryEntry? in
                 guard !profile.embeddingHistory.isEmpty else { return nil }
@@ -246,7 +254,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             // Run transcription and diarization in parallel when diarizer is available
             let segments: [TranscribedSegment]
             let rawSpeakerResult: SpeakerIdentification?
-            if let diarizer, currentParameters.enableSpeakerDiarization {
+            if let diarizer, diarizationActive {
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
                     language: currentLanguage,
@@ -277,7 +285,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedResult: SpeakerIdentification?
-            if currentParameters.enableSpeakerDiarization {
+            if diarizationActive {
                 smoothedResult = speakerSmoother.process(rawSpeakerResult)
 
                 // Retroactively update pending segments with confidence (skip user-corrected)
@@ -312,7 +320,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             }
 
             // Track where pending segments start
-            if currentParameters.enableSpeakerDiarization && smoothedResult == nil
+            if diarizationActive && smoothedResult == nil
                 && pendingSegmentStartIndex == nil && !filtered.isEmpty {
                 pendingSegmentStartIndex = confirmedSegments.count - filtered.count
             }
