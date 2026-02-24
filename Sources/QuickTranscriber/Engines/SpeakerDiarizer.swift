@@ -4,12 +4,18 @@ import FluidAudio
 /// Protocol for identifying the current speaker from an audio chunk.
 public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
-    func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification?
+    func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification?
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float])]
     func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])]
     func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])])
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
+}
+
+extension SpeakerDiarizer {
+    public func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
+        await identifySpeaker(audioChunk: audioChunk, forceRun: false)
+    }
 }
 
 /// Speaker diarizer backed by FluidAudio's OfflineDiarizerManager.
@@ -77,7 +83,7 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         NSLog("[SpeakerDiarizer] FluidAudio models prepared")
     }
 
-    public func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
+    public func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification? {
         guard let diarizer else { return nil }
 
         let windowSamples = Int(windowDuration * Double(sampleRate))
@@ -91,8 +97,8 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
             return (rollingBuffer, shouldRun, accumulated)
         }
 
-        // Return cached result while accumulating
-        guard shouldRunDiarization else {
+        // Return cached result while accumulating (bypass when forced)
+        guard shouldRunDiarization || forceRun else {
             return lock.withLock { pacer.lastResult }
         }
 

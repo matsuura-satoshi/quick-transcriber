@@ -272,6 +272,56 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
         XCTAssertNotNil(result)
     }
 
+    // MARK: - resetForSpeakerChange
+
+    func testResetForSpeakerChangeConfirmsImmediately() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Confirm A
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerA, 0.9))
+        // Reset for speaker change (silence detected)
+        smoother.resetForSpeakerChange()
+        // B should be confirmed immediately (no pending required)
+        let result = smoother.process(id(speakerB, 0.9))
+        XCTAssertEqual(result?.speakerId, speakerB, "After resetForSpeakerChange, new speaker should confirm immediately")
+    }
+
+    func testResetForSpeakerChangePreservesKnownSpeakers() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Confirm A, then switch to B
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerB, 0.95))
+        _ = smoother.process(id(speakerB, 0.95))
+        // Reset for speaker change
+        smoother.resetForSpeakerChange()
+        // A observation should confirm immediately (A is a known speaker)
+        let result = smoother.process(id(speakerA, 0.9))
+        XCTAssertEqual(result?.speakerId, speakerA, "After resetForSpeakerChange, known speaker should confirm immediately")
+    }
+
+    func testResetForSpeakerChangePreservesConfirmedForNilInput() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Confirm A
+        _ = smoother.process(id(speakerA, 0.9))
+        // Reset for speaker change
+        smoother.resetForSpeakerChange()
+        // nil input should still return last confirmed (A)
+        let result = smoother.process(nil)
+        XCTAssertEqual(result?.speakerId, speakerA, "After resetForSpeakerChange, nil input should return last confirmed speaker")
+    }
+
+    func testResetForSpeakerChangeThenSameSpeakerResumes() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        // Confirm A
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerA, 0.9))
+        // Reset for speaker change (silence detected)
+        smoother.resetForSpeakerChange()
+        // Same speaker A returns - should confirm immediately
+        let result = smoother.process(id(speakerA, 0.9))
+        XCTAssertEqual(result?.speakerId, speakerA, "After resetForSpeakerChange, same speaker resuming should confirm immediately")
+    }
+
     func testManySpeakers() {
         let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
         // Register many speakers — should not crash due to state complexity

@@ -440,6 +440,61 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
     }
 
+    func testForceRunPassedOnSignificantSilence() async throws {
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let mockDiarizer = MockSpeakerDiarizer()
+        let spkA = UUID()
+        // Provide enough results for 2 diarization calls
+        mockDiarizer.speakerResults = [
+            SpeakerIdentification(speakerId: spkA, confidence: 0.9, embedding: [Float](repeating: 0.5, count: 256)),
+            SpeakerIdentification(speakerId: spkA, confidence: 0.9, embedding: [Float](repeating: 0.5, count: 256))
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+
+        let expectation = XCTestExpectation(description: "Two transcriptions received")
+        expectation.expectedFulfillmentCount = 2
+        try await engine.startStreaming(language: "en", parameters: params) { state in
+            if !state.confirmedText.isEmpty {
+                expectation.fulfill()
+            }
+        }
+
+        // First speech chunk (5s at 16kHz)
+        let speechBuffer = [Float](repeating: 0.1, count: 80000)
+        mockCapture.simulateBuffer(speechBuffer)
+
+        // Wait for first chunk processing
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        // Silent chunk (1s) to accumulate silence ≥ silenceCutoffDuration (0.8s)
+        let silentBuffer = [Float](repeating: 0.0001, count: 16000)
+        mockCapture.simulateBuffer(silentBuffer)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Second speech chunk after silence
+        mockCapture.simulateBuffer(speechBuffer)
+
+        await fulfillment(of: [expectation], timeout: 6.0)
+
+        // First call should be forceRun: false, second should be forceRun: true
+        XCTAssertGreaterThanOrEqual(mockDiarizer.forceRunValues.count, 2)
+        XCTAssertEqual(mockDiarizer.forceRunValues[0], false, "First chunk should not force run")
+        XCTAssertEqual(mockDiarizer.forceRunValues[1], true, "Chunk after significant silence should force run")
+
+        await engine.stopStreaming()
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()

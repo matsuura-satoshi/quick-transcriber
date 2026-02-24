@@ -255,12 +255,19 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             let segments: [TranscribedSegment]
             let rawSpeakerResult: SpeakerIdentification?
             if let diarizer, diarizationActive {
+                let significantSilence = silenceSinceLastSegment >= currentParameters.silenceCutoffDuration
+                if significantSilence {
+                    speakerSmoother.resetForSpeakerChange()
+                }
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
                     language: currentLanguage,
                     parameters: currentParameters
                 )
-                async let speakerId = diarizer.identifySpeaker(audioChunk: chunk)
+                async let speakerId = diarizer.identifySpeaker(
+                    audioChunk: chunk,
+                    forceRun: significantSilence
+                )
                 segments = try await transcription
                 rawSpeakerResult = await speakerId
             } else {
