@@ -191,9 +191,10 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
 
         vm.removeActiveSpeaker(id: aliceId)
 
-        XCTAssertNil(vm.speakerDisplayNames[aliceId.uuidString],
-                     "Removed speaker's display name should be cleared")
-        XCTAssertEqual(vm.speakerDisplayNames.count, 1)
+        // After Fix 1: removed speaker's display name is preserved via historicalSpeakerNames
+        XCTAssertEqual(vm.speakerDisplayNames[aliceId.uuidString], "Alice",
+                       "Removed speaker's display name should be preserved in historical names")
+        XCTAssertEqual(vm.speakerDisplayNames.count, 2)
     }
 
     func testRemoveActiveSpeakerCleansUpTrackerAliases() {
@@ -211,9 +212,10 @@ final class SpeakerDisplayNameBugTests: XCTestCase {
         // Remove Alice
         vm.removeActiveSpeaker(id: aliceId)
 
-        // Tracker alias should also be cleaned up
-        XCTAssertNil(vm.speakerDisplayNames[profile.id.uuidString],
-                     "Tracker alias display name should be cleaned up when target speaker is removed")
+        // Tracker alias is cleaned up, but display name preserved via historicalSpeakerNames
+        XCTAssertTrue(vm.trackerAliases.isEmpty, "Tracker aliases should be cleaned up")
+        XCTAssertEqual(vm.speakerDisplayNames[profile.id.uuidString], "Alice",
+                       "Removed speaker's display name should be preserved in historical names")
     }
 
     // MARK: - Step 4: Manual mode blocks new speaker addition
