@@ -382,18 +382,22 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func tryRenameActiveSpeaker(id: UUID, displayName: String) {
-        if let mergeRequest = checkNameUniqueness(newName: displayName, forEntity: .active(id: id)) {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let mergeRequest = checkNameUniqueness(newName: trimmed, forEntity: .active(id: id)) {
             pendingMergeRequest = mergeRequest
         } else {
-            renameActiveSpeaker(id: id, displayName: displayName)
+            renameActiveSpeaker(id: id, displayName: trimmed)
         }
     }
 
     public func tryRenameSpeaker(id: UUID, to name: String) {
-        if let mergeRequest = checkNameUniqueness(newName: name, forEntity: .registered(id: id)) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let mergeRequest = checkNameUniqueness(newName: trimmed, forEntity: .registered(id: id)) {
             pendingMergeRequest = mergeRequest
         } else {
-            renameSpeaker(id: id, to: name)
+            renameSpeaker(id: id, to: trimmed)
         }
     }
 
@@ -509,9 +513,9 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func renameActiveSpeaker(id: UUID, displayName: String) {
-        let name = displayName.isEmpty ? nil : displayName
+        guard !displayName.isEmpty else { return }
         if let idx = activeSpeakers.firstIndex(where: { $0.id == id }) {
-            activeSpeakers[idx].displayName = name
+            activeSpeakers[idx].displayName = displayName
         }
         // Update stored profile if linked
         if let speaker = activeSpeakers.first(where: { $0.id == id }),
@@ -639,6 +643,7 @@ public final class TranscriptionViewModel: ObservableObject {
     // MARK: - Speaker Profile Management
 
     public func renameSpeaker(id: UUID, to name: String) {
+        guard !name.isEmpty else { return }
         do {
             try speakerProfileStore.rename(id: id, to: name)
         } catch {
