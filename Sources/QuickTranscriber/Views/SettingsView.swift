@@ -201,8 +201,7 @@ private struct SpeakersSettingsTab: View {
                     HStack {
                         Text("Number of Speakers")
                         Spacer()
-                        let manualCount = viewModel.activeSpeakers.filter { $0.source == .manual }.count
-                        Text("\(manualCount)")
+                        Text("\(viewModel.activeSpeakers.count)")
                             .foregroundStyle(.secondary)
                     }
                 }
