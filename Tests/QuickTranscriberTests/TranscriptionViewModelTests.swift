@@ -1614,6 +1614,262 @@ final class TranscriptionViewModelTests: XCTestCase {
                      "Should NOT link via embedding similarity — UUID mismatch")
     }
 
+    // MARK: - Fix 1: historicalSpeakerNames
+
+    func testRemovedSpeakerDisplayNamePreservedInHistory() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+        let speakerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, displayName: "Alice", source: .autoDetected)
+        ]
+        vm.speakerDisplayNames = [speakerId.uuidString: "Alice"]
+
+        vm.removeActiveSpeaker(id: speakerId)
+
+        // After removal, the display name should still be available as fallback
+        XCTAssertEqual(vm.speakerDisplayNames[speakerId.uuidString], "Alice",
+                       "Removed speaker's display name should be preserved via historicalSpeakerNames")
+    }
+
+    func testClearTextResetsHistoricalSpeakerNames() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+        let speakerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, displayName: "Alice", source: .autoDetected)
+        ]
+        vm.speakerDisplayNames = [speakerId.uuidString: "Alice"]
+        vm.removeActiveSpeaker(id: speakerId)
+        // historicalSpeakerNames should have "Alice"
+        XCTAssertEqual(vm.speakerDisplayNames[speakerId.uuidString], "Alice")
+
+        vm.clearText()
+
+        // After clearText, historical names should be gone too
+        XCTAssertTrue(vm.speakerDisplayNames.isEmpty,
+                      "clearText should reset historicalSpeakerNames")
+    }
+
+    // MARK: - Fix 2: restartRecording passes speakerDisplayNames
+
+    func testRestartRecordingPassesSpeakerDisplayNames() async {
+        let engine = MockTranscriptionEngine()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store
+        )
+        await vm.loadModel()
+
+        // Set up active speaker with display name
+        let speakerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: speakerId, displayName: "Alice", source: .manual)
+        ]
+        vm.speakerDisplayNames = [speakerId.uuidString: "Alice"]
+
+        // Start recording
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(engine.startStreamingCalled)
+
+        // Trigger restart by simulating parameter change
+        engine.stopStreamingSpeakerDisplayNames = nil  // reset
+        vm.restartRecording()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        // stopStreaming should have been called with the display names
+        XCTAssertNotNil(engine.stopStreamingSpeakerDisplayNames,
+                        "restartRecording should pass speakerDisplayNames to stopTranscription")
+        XCTAssertEqual(engine.stopStreamingSpeakerDisplayNames?[speakerId.uuidString], "Alice")
+    }
+
+    // MARK: - Fix 3: Deferred profile deletion during recording
+
+    func testDeleteSpeakerDuringRecordingDefersProfileDeletion() async {
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+        ]
+        try! store.save()
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store
+        )
+        await vm.loadModel()
+
+        vm.addManualSpeaker(fromProfile: id)
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(vm.isRecording)
+
+        // Delete during recording
+        vm.deleteSpeaker(id: id)
+
+        // UI should reflect removal immediately
+        XCTAssertTrue(vm.activeSpeakers.isEmpty,
+                      "Active speakers should be cleaned up immediately")
+        // But the profile should still exist in the store (deferred)
+        XCTAssertEqual(store.profiles.count, 1,
+                       "Profile deletion should be deferred during recording")
+    }
+
+    func testDeferredDeletionExecutedOnStop() async {
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+        ]
+        try! store.save()
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store
+        )
+        await vm.loadModel()
+
+        vm.addManualSpeaker(fromProfile: id)
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        // Delete during recording
+        vm.deleteSpeaker(id: id)
+        XCTAssertEqual(store.profiles.count, 1, "Deferred — not yet deleted")
+
+        // Stop recording
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        // Now the deferred deletion should have been flushed
+        XCTAssertEqual(store.profiles.count, 0,
+                       "Deferred deletion should be flushed after stop")
+    }
+
+    func testClearTextResetsPendingDeletions() async {
+        let id = UUID()
+        let store = SpeakerProfileStore(directory: tmpDir)
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: Array(repeating: 0.1, count: 256)),
+        ]
+        try! store.save()
+        let engine = MockTranscriptionEngine()
+        let vm = TranscriptionViewModel(
+            engine: engine, modelName: "test-model",
+            speakerProfileStore: store
+        )
+        await vm.loadModel()
+
+        vm.addManualSpeaker(fromProfile: id)
+        vm.toggleRecording()
+        try? await Task.sleep(nanoseconds: 200_000_000)
+
+        vm.deleteSpeaker(id: id)
+        XCTAssertTrue(vm.pendingProfileDeletions.contains(id))
+
+        vm.clearText()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertTrue(vm.pendingProfileDeletions.isEmpty,
+                      "clearText should reset pendingProfileDeletions")
+    }
+
+    // MARK: - Fix 4: Locked profile similarity matching in linkActiveSpeakersToProfiles
+
+    func testLinkActiveSpeakersMatchesLockedProfileBySimilarity() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let lockedProfileId = UUID()
+        let embedding = makeEmbedding(dominant: 0)
+        store.profiles = [
+            StoredSpeakerProfile(id: lockedProfileId, displayName: "Alice", embedding: embedding, isLocked: true)
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Auto-detected speaker with different UUID but very similar embedding
+        let trackerId = UUID()
+        var similarEmbedding = makeEmbedding(dominant: 0)
+        similarEmbedding[1] = 0.1  // slightly different but still very similar
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: trackerId, speakerProfileId: nil, displayName: "Speaker-1", source: .autoDetected)
+        ]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: trackerId.uuidString, speakerEmbedding: similarEmbedding)
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, lockedProfileId,
+                       "Should match locked profile by embedding similarity")
+    }
+
+    func testLinkActiveSpeakersDoesNotMatchUnlockedProfileBySimilarity() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let unlockedProfileId = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: unlockedProfileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0))
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Auto-detected speaker with different UUID but very similar embedding
+        let trackerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: trackerId, speakerProfileId: nil, displayName: "Speaker-1", source: .autoDetected)
+        ]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: trackerId.uuidString, speakerEmbedding: makeEmbedding(dominant: 0))
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        // Should NOT match by similarity — profile is not locked
+        XCTAssertNotEqual(vm.activeSpeakers[0].speakerProfileId, unlockedProfileId,
+                          "Should NOT match unlocked profile by similarity")
+    }
+
+    func testLinkActiveSpeakersDissimilarEmbeddingDoesNotMatchLockedProfile() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let lockedProfileId = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: lockedProfileId, displayName: "Alice", embedding: makeEmbedding(dominant: 0), isLocked: true)
+        ]
+        try! store.save()
+        let vm = TranscriptionViewModel(
+            engine: MockTranscriptionEngine(), modelName: "test-model",
+            speakerProfileStore: store
+        )
+
+        // Auto-detected speaker with very different embedding
+        let trackerId = UUID()
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: trackerId, speakerProfileId: nil, displayName: "Speaker-1", source: .autoDetected)
+        ]
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "Hello", speaker: trackerId.uuidString, speakerEmbedding: makeEmbedding(dominant: 128))
+        ]
+
+        vm.linkActiveSpeakersToProfiles()
+
+        // Should NOT match — embedding too different even though profile is locked
+        XCTAssertNotEqual(vm.activeSpeakers[0].speakerProfileId, lockedProfileId,
+                          "Dissimilar embedding should not match locked profile")
+    }
+
 }
 
 private func makeEmbedding(dominant dim: Int, dimensions: Int = 256) -> [Float] {

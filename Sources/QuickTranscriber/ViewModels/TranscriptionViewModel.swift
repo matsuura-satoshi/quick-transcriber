@@ -62,6 +62,8 @@ public final class TranscriptionViewModel: ObservableObject {
     private var nextSpeakerNumber: Int = 1
     var trackerAliases: [String: UUID] = [:]
     var removedSpeakerIds: Set<UUID> = []
+    var historicalSpeakerNames: [String: String] = [:]
+    public var pendingProfileDeletions: Set<UUID> = []
     var recordingDiarizationMode: DiarizationMode = .auto
     private var cancellables: Set<AnyCancellable> = []
 
@@ -201,8 +203,11 @@ public final class TranscriptionViewModel: ObservableObject {
         confirmedSegments = []
         unconfirmedText = ""
         activeSpeakers = []
+        speakerDisplayNames = [:]
         trackerAliases = [:]
         removedSpeakerIds = []
+        historicalSpeakerNames = [:]
+        pendingProfileDeletions = []
         translationService.reset()
         if wasRecording {
             Task {
@@ -443,15 +448,22 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func deleteSpeaker(id: UUID) {
-        do {
-            try speakerProfileStore.delete(id: id)
-        } catch {
-            NSLog("[QuickTranscriber] Failed to delete speaker \(id): \(error)")
-        }
-        speakerProfiles = speakerProfileStore.profiles
+        // UI cleanup happens immediately regardless of recording state
         activeSpeakers.removeAll { $0.speakerProfileId == id }
-        embeddingHistoryStore.removeEntries(for: Set([id]))
         updateSpeakerDisplayNames()
+
+        if isRecording {
+            // Defer actual profile deletion until recording stops
+            pendingProfileDeletions.insert(id)
+        } else {
+            do {
+                try speakerProfileStore.delete(id: id)
+            } catch {
+                NSLog("[QuickTranscriber] Failed to delete speaker \(id): \(error)")
+            }
+            speakerProfiles = speakerProfileStore.profiles
+            embeddingHistoryStore.removeEntries(for: Set([id]))
+        }
     }
 
     public func deleteAllSpeakers() {
@@ -571,6 +583,10 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func removeActiveSpeaker(id: UUID) {
+        // Preserve display name before removal so segments still show the name
+        if let name = speakerDisplayNames[id.uuidString] {
+            historicalSpeakerNames[id.uuidString] = name
+        }
         if let speaker = activeSpeakers.first(where: { $0.id == id }),
            let profileId = speaker.speakerProfileId {
             removedSpeakerIds.insert(profileId)
@@ -603,18 +619,24 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func deleteSpeakers(ids: Set<UUID>) {
-        do {
-            try speakerProfileStore.deleteMultiple(ids: ids)
-        } catch {
-            NSLog("[QuickTranscriber] Failed to delete speakers: \(error)")
-        }
-        speakerProfiles = speakerProfileStore.profiles
+        // UI cleanup happens immediately regardless of recording state
         activeSpeakers.removeAll { speaker in
             guard let pid = speaker.speakerProfileId else { return false }
             return ids.contains(pid)
         }
-        embeddingHistoryStore.removeEntries(for: ids)
         updateSpeakerDisplayNames()
+
+        if isRecording {
+            pendingProfileDeletions.formUnion(ids)
+        } else {
+            do {
+                try speakerProfileStore.deleteMultiple(ids: ids)
+            } catch {
+                NSLog("[QuickTranscriber] Failed to delete speakers: \(error)")
+            }
+            speakerProfiles = speakerProfileStore.profiles
+            embeddingHistoryStore.removeEntries(for: ids)
+        }
     }
 
     public func clearActiveSpeakers(source: ActiveSpeaker.Source? = nil) {
@@ -674,7 +696,9 @@ public final class TranscriptionViewModel: ObservableObject {
     // MARK: - Private
 
     private func updateSpeakerDisplayNames() {
-        var names: [String: String] = [:]
+        // Start with historical names as fallback for removed speakers
+        var names = historicalSpeakerNames
+        // Active speakers take priority
         for speaker in activeSpeakers {
             if let name = speaker.displayName {
                 names[speaker.id.uuidString] = name
@@ -693,11 +717,12 @@ public final class TranscriptionViewModel: ObservableObject {
         recordingDiarizationMode = parametersStore.parameters.diarizationMode
     }
 
-    private func restartRecording() {
+    func restartRecording() {
         saveUnconfirmedText()
         isRecording = false
+        let displayNames = self.speakerDisplayNames
         Task {
-            await service.stopTranscription()
+            await service.stopTranscription(speakerDisplayNames: displayNames)
             try? await Task.sleep(nanoseconds: 100_000_000) // 100ms safety margin
             startRecording()
         }
@@ -834,10 +859,24 @@ public final class TranscriptionViewModel: ObservableObject {
             await service.stopTranscription(speakerDisplayNames: self.speakerDisplayNames)
             self.speakerProfiles = self.speakerProfileStore.profiles
             self.linkActiveSpeakersToProfiles()
+            self.flushPendingDeletions()
             if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
                 self.showPostMeetingTagging = true
             }
         }
+    }
+
+    func flushPendingDeletions() {
+        guard !pendingProfileDeletions.isEmpty else { return }
+        let ids = pendingProfileDeletions
+        pendingProfileDeletions = []
+        do {
+            try speakerProfileStore.deleteMultiple(ids: ids)
+        } catch {
+            NSLog("[QuickTranscriber] Failed to flush pending deletions: \(error)")
+        }
+        speakerProfiles = speakerProfileStore.profiles
+        embeddingHistoryStore.removeEntries(for: ids)
     }
 
     func linkActiveSpeakersToProfiles() {
@@ -866,12 +905,18 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             if linkedViaAlias { continue }
 
-            // Fallback: Create new profile for unlinked speaker (no embedding similarity search)
+            // Priority 2: Locked profile similarity match (high threshold)
             let speakerIdString = speakerId.uuidString
             guard let embedding = confirmedSegments.first(where: {
                 $0.speaker == speakerIdString
             })?.speakerEmbedding else { continue }
 
+            if let lockedProfile = speakerProfileStore.findLockedProfileBySimilarity(embedding: embedding) {
+                activeSpeakers[i].speakerProfileId = lockedProfile.id
+                continue
+            }
+
+            // Fallback: Create new profile for unlinked speaker
             let displayName = activeSpeakers[i].displayName ?? generateSpeakerName()
             let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
             speakerProfileStore.profiles.append(newProfile)
