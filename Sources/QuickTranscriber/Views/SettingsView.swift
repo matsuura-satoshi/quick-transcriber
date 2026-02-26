@@ -405,7 +405,12 @@ private struct ActiveSpeakerRow: View {
                 TextField("Enter name...", text: $editingName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
-                        onRename(editingName)
+                        let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            editingName = speaker.displayName ?? ""
+                        } else {
+                            onRename(trimmed)
+                        }
                     }
             }
             Spacer()
