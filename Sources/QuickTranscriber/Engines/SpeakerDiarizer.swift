@@ -10,11 +10,16 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])]
     func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])])
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
+    func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID)
 }
 
 extension SpeakerDiarizer {
     public func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
         await identifySpeaker(audioChunk: audioChunk, forceRun: false)
+    }
+
+    public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        // Default no-op
     }
 }
 
@@ -163,6 +168,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         speakerTracker.correctAssignment(embedding: embedding, from: oldId, to: newId)
+    }
+
+    public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        speakerTracker.mergeProfile(from: sourceId, into: targetId)
     }
 
     /// Find the segment with the most overlap with the latest chunk's time range.

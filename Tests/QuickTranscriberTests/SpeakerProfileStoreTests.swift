@@ -552,4 +552,38 @@ final class SpeakerProfileStoreTests: XCTestCase {
         let result = store.findLockedProfileBySimilarity(embedding: makeEmbedding(dominant: 0))
         XCTAssertNil(result, "Should not match unlocked profiles")
     }
+
+    // MARK: - forceDelete
+
+    func testForceDeleteIgnoresLocked() throws {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+        let id = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: makeEmbedding(dominant: 0), isLocked: true)
+        ]
+        try store.save()
+
+        try store.forceDelete(id: id)
+
+        XCTAssertTrue(store.profiles.isEmpty, "forceDelete should remove even locked profiles")
+
+        // Verify persistence
+        let store2 = SpeakerProfileStore(directory: dir)
+        try store2.load()
+        XCTAssertTrue(store2.profiles.isEmpty)
+    }
+
+    func testForceDeleteThrowsForMissingProfile() {
+        let dir = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = SpeakerProfileStore(directory: dir)
+
+        XCTAssertThrowsError(try store.forceDelete(id: UUID())) { error in
+            XCTAssertEqual(error as? SpeakerProfileStoreError, .profileNotFound)
+        }
+    }
 }

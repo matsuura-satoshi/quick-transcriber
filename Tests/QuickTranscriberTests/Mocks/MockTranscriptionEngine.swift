@@ -65,9 +65,14 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     }
 
     var correctedAssignments: [(embedding: [Float], oldId: UUID, newId: UUID)] = []
+    var mergedProfiles: [(sourceId: UUID, targetId: UUID)] = []
 
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         correctedAssignments.append((embedding: embedding, oldId: oldId, newId: newId))
+    }
+
+    func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        mergedProfiles.append((sourceId: sourceId, targetId: targetId))
     }
 
     // Helper to simulate state changes from the engine

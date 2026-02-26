@@ -72,6 +72,14 @@ public final class SpeakerProfileStore {
         try save()
     }
 
+    public func forceDelete(id: UUID) throws {
+        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
+            throw SpeakerProfileStoreError.profileNotFound
+        }
+        profiles.remove(at: index)
+        try save()
+    }
+
     // MARK: - Tags
 
     public var allTags: [String] {
