@@ -627,6 +627,54 @@ final class SpeakerMergeTests: XCTestCase {
         XCTAssertEqual(aliceCount, 1, "Should not create duplicate active speaker")
     }
 
+    func testTryRenameActiveSpeaker_emptyName_isIgnored() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")
+        let id = vm.activeSpeakers[0].id
+
+        vm.tryRenameActiveSpeaker(id: id, displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice")
+        XCTAssertNil(vm.pendingMergeRequest)
+    }
+
+    func testTryRenameActiveSpeaker_whitespaceOnlyName_isIgnored() {
+        let (vm, _) = makeViewModel()
+        vm.addManualSpeaker(displayName: "Alice")
+        let id = vm.activeSpeakers[0].id
+
+        vm.tryRenameActiveSpeaker(id: id, displayName: "   ")
+
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice")
+    }
+
+    func testTryRenameSpeaker_emptyName_isIgnored() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let id = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256))
+        ]
+        let (vm, _) = makeViewModel(speakerProfileStore: store)
+
+        vm.tryRenameSpeaker(id: id, to: "")
+
+        XCTAssertEqual(vm.speakerProfiles.first(where: { $0.id == id })?.displayName, "Alice")
+        XCTAssertNil(vm.pendingMergeRequest)
+    }
+
+    func testTryRenameSpeaker_whitespaceOnlyName_isIgnored() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let id = UUID()
+        store.profiles = [
+            StoredSpeakerProfile(id: id, displayName: "Alice", embedding: [Float](repeating: 0.1, count: 256))
+        ]
+        let (vm, _) = makeViewModel(speakerProfileStore: store)
+
+        vm.tryRenameSpeaker(id: id, to: "   ")
+
+        XCTAssertEqual(vm.speakerProfiles.first(where: { $0.id == id })?.displayName, "Alice")
+    }
+
     func testAddManualSpeaker_existingRegistered_activatesExisting() {
         let store = SpeakerProfileStore(directory: tmpDir)
         let profileId = UUID()

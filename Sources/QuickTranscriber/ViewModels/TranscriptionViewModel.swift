@@ -382,18 +382,22 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func tryRenameActiveSpeaker(id: UUID, displayName: String) {
-        if let mergeRequest = checkNameUniqueness(newName: displayName, forEntity: .active(id: id)) {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let mergeRequest = checkNameUniqueness(newName: trimmed, forEntity: .active(id: id)) {
             pendingMergeRequest = mergeRequest
         } else {
-            renameActiveSpeaker(id: id, displayName: displayName)
+            renameActiveSpeaker(id: id, displayName: trimmed)
         }
     }
 
     public func tryRenameSpeaker(id: UUID, to name: String) {
-        if let mergeRequest = checkNameUniqueness(newName: name, forEntity: .registered(id: id)) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if let mergeRequest = checkNameUniqueness(newName: trimmed, forEntity: .registered(id: id)) {
             pendingMergeRequest = mergeRequest
         } else {
-            renameSpeaker(id: id, to: name)
+            renameSpeaker(id: id, to: trimmed)
         }
     }
 
@@ -509,9 +513,9 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func renameActiveSpeaker(id: UUID, displayName: String) {
-        let name = displayName.isEmpty ? nil : displayName
+        guard !displayName.isEmpty else { return }
         if let idx = activeSpeakers.firstIndex(where: { $0.id == id }) {
-            activeSpeakers[idx].displayName = name
+            activeSpeakers[idx].displayName = displayName
         }
         // Update stored profile if linked
         if let speaker = activeSpeakers.first(where: { $0.id == id }),
@@ -639,6 +643,7 @@ public final class TranscriptionViewModel: ObservableObject {
     // MARK: - Speaker Profile Management
 
     public func renameSpeaker(id: UUID, to name: String) {
+        guard !name.isEmpty else { return }
         do {
             try speakerProfileStore.rename(id: id, to: name)
         } catch {
@@ -756,14 +761,25 @@ public final class TranscriptionViewModel: ObservableObject {
         updateSpeakerDisplayNames()
     }
 
-    func generateSpeakerName() -> String {
+    private func findAvailableSpeakerNumber(startingFrom start: Int) -> Int {
         let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
             .union(speakerProfileStore.profiles.map { $0.displayName })
-        while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
-            nextSpeakerNumber += 1
+        var n = start
+        while existingNames.contains("Speaker-\(n)") {
+            n += 1
         }
-        let name = "Speaker-\(nextSpeakerNumber)"
-        nextSpeakerNumber += 1
+        return n
+    }
+
+    /// Preview of the next auto-generated speaker name (no side effects)
+    public var nextSpeakerPlaceholder: String {
+        "Speaker-\(findAvailableSpeakerNumber(startingFrom: nextSpeakerNumber))"
+    }
+
+    func generateSpeakerName() -> String {
+        let n = findAvailableSpeakerNumber(startingFrom: nextSpeakerNumber)
+        let name = "Speaker-\(n)"
+        nextSpeakerNumber = n + 1
         return name
     }
 
@@ -960,7 +976,7 @@ public final class TranscriptionViewModel: ObservableObject {
             return
         }
         isRecording = true
-        let params = parametersStore.parameters
+        var params = parametersStore.parameters
         snapshotDiarizationMode()
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
@@ -982,6 +998,7 @@ public final class TranscriptionViewModel: ObservableObject {
                 return (speakerId: stored.id, embedding: stored.embedding)
             }
             participantProfiles = speakersWithProfiles
+            params.expectedSpeakerCount = activeSpeakers.count
         } else {
             participantProfiles = nil
         }

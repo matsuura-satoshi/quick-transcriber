@@ -833,15 +833,16 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(vm.speakerDisplayNames[speakerId.uuidString], "Alicia")
     }
 
-    func testRenameActiveSpeakerEmptyNameClearsDisplayName() async {
+    func testRenameActiveSpeakerEmptyNameIsRejected() async {
         let (vm, _) = makeViewModel()
         vm.addManualSpeaker(displayName: "Alice")
         let speakerId = vm.activeSpeakers[0].id
 
         vm.renameActiveSpeaker(id: speakerId, displayName: "")
 
-        XCTAssertNil(vm.activeSpeakers[0].displayName)
-        XCTAssertNil(vm.speakerDisplayNames[speakerId.uuidString])
+        // Empty rename should be ignored — name stays "Alice"
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Alice")
+        XCTAssertEqual(vm.speakerDisplayNames[speakerId.uuidString], "Alice")
     }
 
     func testRenameActiveSpeakerUpdatesStoreIfProfileExists() async {
@@ -1868,6 +1869,26 @@ final class TranscriptionViewModelTests: XCTestCase {
         // Should NOT match — embedding too different even though profile is locked
         XCTAssertNotEqual(vm.activeSpeakers[0].speakerProfileId, lockedProfileId,
                           "Dissimilar embedding should not match locked profile")
+    }
+
+    // MARK: - Default Speaker Name
+
+    func testAddManualSpeakerEmptyNameGeneratesDefault() async {
+        let (vm, _) = makeViewModel()
+
+        vm.addManualSpeaker(displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Speaker-1")
+    }
+
+    func testNextSpeakerPlaceholder() async {
+        let (vm, _) = makeViewModel()
+
+        XCTAssertEqual(vm.nextSpeakerPlaceholder, "Speaker-1")
+
+        vm.addManualSpeaker(displayName: "Speaker-1")
+        XCTAssertEqual(vm.nextSpeakerPlaceholder, "Speaker-2")
     }
 
 }

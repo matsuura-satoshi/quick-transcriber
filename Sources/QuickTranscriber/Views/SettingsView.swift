@@ -201,8 +201,7 @@ private struct SpeakersSettingsTab: View {
                     HStack {
                         Text("Number of Speakers")
                         Spacer()
-                        let manualCount = viewModel.activeSpeakers.filter { $0.source == .manual }.count
-                        Text("\(manualCount)")
+                        Text("\(viewModel.activeSpeakers.count)")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -240,12 +239,11 @@ private struct SpeakersSettingsTab: View {
                 showNewSpeakerAlert = true
             }
             .alert("New Speaker", isPresented: $showNewSpeakerAlert) {
-                TextField("Name", text: $newSpeakerName)
+                TextField(viewModel.nextSpeakerPlaceholder, text: $newSpeakerName)
                 Button("Add") {
                     let name = newSpeakerName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !name.isEmpty {
-                        viewModel.addManualSpeaker(displayName: name)
-                    }
+                    viewModel.addManualSpeaker(displayName: name)
+                    newSpeakerName = ""
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -407,7 +405,12 @@ private struct ActiveSpeakerRow: View {
                 TextField("Enter name...", text: $editingName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
-                        onRename(editingName)
+                        let trimmed = editingName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmed.isEmpty {
+                            editingName = speaker.displayName ?? ""
+                        } else {
+                            onRename(trimmed)
+                        }
                     }
             }
             Spacer()
