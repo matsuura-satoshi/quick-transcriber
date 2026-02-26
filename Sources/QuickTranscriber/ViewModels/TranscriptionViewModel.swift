@@ -761,14 +761,25 @@ public final class TranscriptionViewModel: ObservableObject {
         updateSpeakerDisplayNames()
     }
 
-    func generateSpeakerName() -> String {
+    private func findAvailableSpeakerNumber(startingFrom start: Int) -> Int {
         let existingNames = Set(activeSpeakers.compactMap { $0.displayName })
             .union(speakerProfileStore.profiles.map { $0.displayName })
-        while existingNames.contains("Speaker-\(nextSpeakerNumber)") {
-            nextSpeakerNumber += 1
+        var n = start
+        while existingNames.contains("Speaker-\(n)") {
+            n += 1
         }
-        let name = "Speaker-\(nextSpeakerNumber)"
-        nextSpeakerNumber += 1
+        return n
+    }
+
+    /// Preview of the next auto-generated speaker name (no side effects)
+    public var nextSpeakerPlaceholder: String {
+        "Speaker-\(findAvailableSpeakerNumber(startingFrom: nextSpeakerNumber))"
+    }
+
+    func generateSpeakerName() -> String {
+        let n = findAvailableSpeakerNumber(startingFrom: nextSpeakerNumber)
+        let name = "Speaker-\(n)"
+        nextSpeakerNumber = n + 1
         return name
     }
 

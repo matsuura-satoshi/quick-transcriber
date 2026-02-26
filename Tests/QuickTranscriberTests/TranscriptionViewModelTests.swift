@@ -1871,6 +1871,26 @@ final class TranscriptionViewModelTests: XCTestCase {
                           "Dissimilar embedding should not match locked profile")
     }
 
+    // MARK: - Default Speaker Name
+
+    func testAddManualSpeakerEmptyNameGeneratesDefault() async {
+        let (vm, _) = makeViewModel()
+
+        vm.addManualSpeaker(displayName: "")
+
+        XCTAssertEqual(vm.activeSpeakers.count, 1)
+        XCTAssertEqual(vm.activeSpeakers[0].displayName, "Speaker-1")
+    }
+
+    func testNextSpeakerPlaceholder() async {
+        let (vm, _) = makeViewModel()
+
+        XCTAssertEqual(vm.nextSpeakerPlaceholder, "Speaker-1")
+
+        vm.addManualSpeaker(displayName: "Speaker-1")
+        XCTAssertEqual(vm.nextSpeakerPlaceholder, "Speaker-2")
+    }
+
 }
 
 private func makeEmbedding(dominant dim: Int, dimensions: Int = 256) -> [Float] {
