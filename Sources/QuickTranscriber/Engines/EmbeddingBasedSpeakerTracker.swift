@@ -166,6 +166,17 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
     }
 
+    /// Merge one speaker profile into another, combining embedding histories.
+    public func mergeProfile(from sourceId: UUID, into targetId: UUID) {
+        guard let sourceIdx = profiles.firstIndex(where: { $0.id == sourceId }),
+              let targetIdx = profiles.firstIndex(where: { $0.id == targetId }) else {
+            return
+        }
+        profiles[targetIdx].embeddingHistory.append(contentsOf: profiles[sourceIdx].embeddingHistory)
+        recalculateEmbedding(at: targetIdx)
+        profiles.remove(at: sourceIdx)
+    }
+
     /// Correct a speaker assignment by moving an embedding from one profile to another.
     ///
     /// - Parameters:

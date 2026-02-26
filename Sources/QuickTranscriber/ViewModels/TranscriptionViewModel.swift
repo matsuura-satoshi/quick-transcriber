@@ -3,6 +3,19 @@ import SwiftUI
 import AppKit
 import Combine
 
+public enum SpeakerEntity: Equatable {
+    case active(id: UUID)
+    case registered(id: UUID)
+}
+
+public struct SpeakerMergeRequest: Equatable {
+    public let sourceEntity: SpeakerEntity
+    public let targetEntity: SpeakerEntity
+    public let duplicateName: String
+    public let sourceDisplayName: String
+    public let targetDisplayName: String
+}
+
 public enum ModelState: Equatable {
     case notLoaded
     case loading
@@ -40,6 +53,7 @@ public final class TranscriptionViewModel: ObservableObject {
     public var speakerMenuOrder: [String] = []
     @Published public var preExistingProfileIds: Set<UUID> = []
     @Published public var showPostMeetingTagging: Bool = false
+    @Published public var pendingMergeRequest: SpeakerMergeRequest?
     @Published public var translationEnabled: Bool = UserDefaults.standard.bool(forKey: "translationEnabled")
     public let translationService = TranslationService()
 
@@ -297,6 +311,201 @@ public final class TranscriptionViewModel: ObservableObject {
     public func recordSpeakerSelection(_ idStr: String) {
         speakerMenuOrder.removeAll { $0 == idStr }
         speakerMenuOrder.insert(idStr, at: 0)
+    }
+
+    // MARK: - Name Uniqueness & Merge
+
+    public func checkNameUniqueness(newName: String, forEntity: SpeakerEntity) -> SpeakerMergeRequest? {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let selfId: UUID
+        let selfLinkedProfileId: UUID?
+        switch forEntity {
+        case .active(let id):
+            selfId = id
+            selfLinkedProfileId = activeSpeakers.first(where: { $0.id == id })?.speakerProfileId
+        case .registered(let id):
+            selfId = id
+            selfLinkedProfileId = nil
+        }
+
+        // Check active speakers
+        for speaker in activeSpeakers {
+            guard speaker.id != selfId else { continue }
+            // Skip if this active speaker is the linked profile of self
+            if let linkedId = selfLinkedProfileId, speaker.id == linkedId { continue }
+            if let name = speaker.displayName, name.caseInsensitiveCompare(trimmed) == .orderedSame {
+                let sourceDisplayName: String
+                switch forEntity {
+                case .active(let id):
+                    sourceDisplayName = activeSpeakers.first(where: { $0.id == id })?.displayName ?? ""
+                case .registered(let id):
+                    sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
+                }
+                return SpeakerMergeRequest(
+                    sourceEntity: forEntity,
+                    targetEntity: .active(id: speaker.id),
+                    duplicateName: trimmed,
+                    sourceDisplayName: sourceDisplayName,
+                    targetDisplayName: speaker.displayName ?? ""
+                )
+            }
+        }
+
+        // Check registered profiles
+        for profile in speakerProfileStore.profiles {
+            guard profile.id != selfId else { continue }
+            // Skip if self is active and linked to this profile
+            if let linkedId = selfLinkedProfileId, profile.id == linkedId { continue }
+            // Skip if this profile is already represented by an active speaker we checked above
+            if activeSpeakers.contains(where: { $0.speakerProfileId == profile.id || $0.id == profile.id }) { continue }
+            if profile.displayName.caseInsensitiveCompare(trimmed) == .orderedSame {
+                let sourceDisplayName: String
+                switch forEntity {
+                case .active(let id):
+                    sourceDisplayName = activeSpeakers.first(where: { $0.id == id })?.displayName ?? ""
+                case .registered(let id):
+                    sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
+                }
+                return SpeakerMergeRequest(
+                    sourceEntity: forEntity,
+                    targetEntity: .registered(id: profile.id),
+                    duplicateName: trimmed,
+                    sourceDisplayName: sourceDisplayName,
+                    targetDisplayName: profile.displayName
+                )
+            }
+        }
+
+        return nil
+    }
+
+    public func tryRenameActiveSpeaker(id: UUID, displayName: String) {
+        if let mergeRequest = checkNameUniqueness(newName: displayName, forEntity: .active(id: id)) {
+            pendingMergeRequest = mergeRequest
+        } else {
+            renameActiveSpeaker(id: id, displayName: displayName)
+        }
+    }
+
+    public func tryRenameSpeaker(id: UUID, to name: String) {
+        if let mergeRequest = checkNameUniqueness(newName: name, forEntity: .registered(id: id)) {
+            pendingMergeRequest = mergeRequest
+        } else {
+            renameSpeaker(id: id, to: name)
+        }
+    }
+
+    public func executeMerge(_ request: SpeakerMergeRequest) {
+        pendingMergeRequest = nil
+
+        // Resolve profile IDs
+        let sourceProfileId = resolveProfileId(for: request.sourceEntity)
+        let targetProfileId = resolveProfileId(for: request.targetEntity)
+
+        // Determine survivor based on sessionCount
+        let sourceProfile = sourceProfileId.flatMap { id in speakerProfileStore.profiles.first(where: { $0.id == id }) }
+        let targetProfile = targetProfileId.flatMap { id in speakerProfileStore.profiles.first(where: { $0.id == id }) }
+
+        let sourceSessionCount = sourceProfile?.sessionCount ?? 0
+        let targetSessionCount = targetProfile?.sessionCount ?? 0
+
+        let survivorIsTarget = targetSessionCount >= sourceSessionCount
+        let survivorEntity = survivorIsTarget ? request.targetEntity : request.sourceEntity
+        let absorbedEntity = survivorIsTarget ? request.sourceEntity : request.targetEntity
+        let survivorProfileId = survivorIsTarget ? targetProfileId : sourceProfileId
+        let absorbedProfileId = survivorIsTarget ? sourceProfileId : targetProfileId
+
+        let survivorId = entityUUID(survivorEntity)
+        let absorbedId = entityUUID(absorbedEntity)
+
+        // 1. Segment reassignment: absorbed → survivor
+        let absorbedIdStr = absorbedId.uuidString
+        let survivorIdStr = survivorId.uuidString
+        for i in confirmedSegments.indices {
+            if confirmedSegments[i].speaker == absorbedIdStr {
+                confirmedSegments[i].speaker = survivorIdStr
+            }
+        }
+
+        // 2. Tracker aliases remap
+        for (key, value) in trackerAliases {
+            if value == absorbedId {
+                trackerAliases[key] = survivorId
+            }
+        }
+
+        // 3. Profile integration (if both have profiles)
+        if let survId = survivorProfileId, let absId = absorbedProfileId,
+           let survIdx = speakerProfileStore.profiles.firstIndex(where: { $0.id == survId }),
+           let absIdx = speakerProfileStore.profiles.firstIndex(where: { $0.id == absId }) {
+            let absProfile = speakerProfileStore.profiles[absIdx]
+
+            // Embedding EMA blending: 0.7 * survivor + 0.3 * absorbed
+            let alpha: Float = 0.3
+            speakerProfileStore.profiles[survIdx].embedding = zip(
+                speakerProfileStore.profiles[survIdx].embedding,
+                absProfile.embedding
+            ).map { survEmb, absEmb in
+                (1 - alpha) * survEmb + alpha * absEmb
+            }
+
+            // Metadata integration
+            speakerProfileStore.profiles[survIdx].sessionCount += absProfile.sessionCount
+            speakerProfileStore.profiles[survIdx].lastUsed = max(
+                speakerProfileStore.profiles[survIdx].lastUsed,
+                absProfile.lastUsed
+            )
+            let existingTags = Set(speakerProfileStore.profiles[survIdx].tags)
+            for tag in absProfile.tags where !existingTags.contains(tag) {
+                speakerProfileStore.profiles[survIdx].tags.append(tag)
+            }
+            speakerProfileStore.profiles[survIdx].isLocked = speakerProfileStore.profiles[survIdx].isLocked || absProfile.isLocked
+
+            // Delete absorbed profile (force, ignoring lock)
+            try? speakerProfileStore.forceDelete(id: absId)
+            embeddingHistoryStore.removeEntries(for: Set([absId]))
+        }
+
+        // 4. Tracker integration (if recording)
+        if isRecording, let survId = survivorProfileId, let absId = absorbedProfileId {
+            service.mergeSpeakerProfiles(from: absId, into: survId)
+        }
+
+        // 5. Active speaker update
+        // Set survivor display name
+        if let idx = activeSpeakers.firstIndex(where: { $0.id == survivorId }) {
+            activeSpeakers[idx].displayName = request.duplicateName
+        }
+        // Remove absorbed active speaker
+        activeSpeakers.removeAll { $0.id == absorbedId }
+
+        // 6. Refresh
+        speakerProfiles = speakerProfileStore.profiles
+        updateSpeakerDisplayNames()
+        regenerateText()
+        translationService.syncSpeakerMetadata(from: confirmedSegments)
+    }
+
+    public func cancelMerge() {
+        pendingMergeRequest = nil
+    }
+
+    private func resolveProfileId(for entity: SpeakerEntity) -> UUID? {
+        switch entity {
+        case .active(let id):
+            return activeSpeakers.first(where: { $0.id == id })?.speakerProfileId
+        case .registered(let id):
+            return id
+        }
+    }
+
+    private func entityUUID(_ entity: SpeakerEntity) -> UUID {
+        switch entity {
+        case .active(let id): return id
+        case .registered(let id): return id
+        }
     }
 
     public func renameActiveSpeaker(id: UUID, displayName: String) {
@@ -565,6 +774,23 @@ public final class TranscriptionViewModel: ObservableObject {
         } else {
             name = displayName
         }
+
+        // Check for existing speaker/profile with same name (case-insensitive)
+        if !name.isEmpty {
+            // Check active speakers
+            if activeSpeakers.contains(where: { $0.displayName?.caseInsensitiveCompare(name) == .orderedSame }) {
+                return // Already active, no-op
+            }
+
+            // Check registered profiles — activate existing if found
+            if let existingProfile = speakerProfileStore.profiles.first(where: {
+                $0.displayName.caseInsensitiveCompare(name) == .orderedSame
+            }) {
+                addManualSpeaker(fromProfile: existingProfile.id)
+                return
+            }
+        }
+
         let speaker = ActiveSpeaker(displayName: name, source: .manual)
         activeSpeakers.append(speaker)
         updateSpeakerDisplayNames()

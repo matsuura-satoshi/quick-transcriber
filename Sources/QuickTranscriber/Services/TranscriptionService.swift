@@ -51,6 +51,10 @@ public final class TranscriptionService {
         engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
     }
 
+    public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        engine.mergeSpeakerProfiles(from: sourceId, into: targetId)
+    }
+
     public func cleanup() {
         engine.cleanup()
         isReady = false

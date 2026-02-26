@@ -154,6 +154,27 @@ private struct SpeakersSettingsTab: View {
             registeredSpeakersSection
         }
         .formStyle(.grouped)
+        .alert(
+            "Merge Speakers?",
+            isPresented: Binding(
+                get: { viewModel.pendingMergeRequest != nil },
+                set: { if !$0 { viewModel.cancelMerge() } }
+            )
+        ) {
+            Button("Merge") {
+                if let request = viewModel.pendingMergeRequest {
+                    viewModel.executeMerge(request)
+                }
+            }
+            .keyboardShortcut(.defaultAction)
+            Button("Cancel", role: .cancel) {
+                viewModel.cancelMerge()
+            }
+        } message: {
+            if let request = viewModel.pendingMergeRequest {
+                Text("Merge \"\(request.sourceDisplayName)\" into \"\(request.targetDisplayName)\"? All segments will be combined.")
+            }
+        }
     }
 
     // MARK: - Speaker Detection
@@ -207,7 +228,7 @@ private struct SpeakersSettingsTab: View {
                 ActiveSpeakerRow(
                     speaker: speaker,
                     onRename: { name in
-                        viewModel.renameActiveSpeaker(id: speaker.id, displayName: name)
+                        viewModel.tryRenameActiveSpeaker(id: speaker.id, displayName: name)
                     },
                     onRemove: {
                         viewModel.removeActiveSpeaker(id: speaker.id)
@@ -321,7 +342,7 @@ private struct SpeakersSettingsTab: View {
                             SpeakerProfileDetailView(
                                 profile: profile,
                                 allTags: viewModel.allTags,
-                                onRename: { name in viewModel.renameSpeaker(id: profile.id, to: name) },
+                                onRename: { name in viewModel.tryRenameSpeaker(id: profile.id, to: name) },
                                 onDelete: { viewModel.deleteSpeaker(id: profile.id) },
                                 onAddTag: { tag in viewModel.addTag(tag, to: profile.id) },
                                 onRemoveTag: { tag in viewModel.removeTag(tag, from: profile.id) },

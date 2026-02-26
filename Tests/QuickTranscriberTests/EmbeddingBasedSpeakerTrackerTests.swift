@@ -585,4 +585,36 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertNotNil(movedEntry)
         XCTAssertEqual(movedEntry?.confidence, 1.0)
     }
+
+    // MARK: - mergeProfile
+
+    func testMergeProfile_movesHistoryAndRecalculatesCentroid() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = tracker.identify(embedding: embA).speakerId
+        let idB = tracker.identify(embedding: embB).speakerId
+
+        tracker.mergeProfile(from: idB, into: idA)
+
+        let profiles = tracker.exportDetailedProfiles()
+        // Source profile should be gone
+        XCTAssertNil(profiles.first { $0.speakerId == idB })
+        // Target profile should have history entries from both
+        let merged = profiles.first { $0.speakerId == idA }!
+        XCTAssertEqual(merged.embeddingHistory.count, 2)
+    }
+
+    func testMergeProfile_nonexistentSource_noOp() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let idA = tracker.identify(embedding: embA).speakerId
+
+        // Merging from a nonexistent UUID should be a no-op
+        tracker.mergeProfile(from: UUID(), into: idA)
+
+        let profiles = tracker.exportDetailedProfiles()
+        XCTAssertEqual(profiles.count, 1)
+        XCTAssertEqual(profiles[0].embeddingHistory.count, 1)
+    }
 }

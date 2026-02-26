@@ -221,6 +221,10 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
     }
 
+    public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        diarizer?.mergeSpeakerProfiles(from: sourceId, into: targetId)
+    }
+
     public func cleanup() {
         Task { [weak self] in
             await self?.stopStreaming()
