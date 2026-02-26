@@ -976,7 +976,7 @@ public final class TranscriptionViewModel: ObservableObject {
             return
         }
         isRecording = true
-        let params = parametersStore.parameters
+        var params = parametersStore.parameters
         snapshotDiarizationMode()
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
@@ -998,6 +998,7 @@ public final class TranscriptionViewModel: ObservableObject {
                 return (speakerId: stored.id, embedding: stored.embedding)
             }
             participantProfiles = speakersWithProfiles
+            params.expectedSpeakerCount = activeSpeakers.count
         } else {
             participantProfiles = nil
         }
