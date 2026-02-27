@@ -1,6 +1,8 @@
 import Foundation
 import FluidAudio
 
+struct DiarizationTimeoutError: Error {}
+
 /// Protocol for identifying the current speaker from an audio chunk.
 public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
@@ -88,6 +90,27 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         NSLog("[SpeakerDiarizer] FluidAudio models prepared")
     }
 
+    private static func processWithTimeout(
+        diarizer: OfflineDiarizerManager,
+        audio: [Float],
+        timeout: TimeInterval
+    ) async throws -> DiarizationResult {
+        try await withThrowingTaskGroup(of: DiarizationResult.self) { group in
+            group.addTask {
+                try await diarizer.process(audio: audio)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw DiarizationTimeoutError()
+            }
+            guard let result = try await group.next() else {
+                throw DiarizationTimeoutError()
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
     public func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification? {
         guard let diarizer else { return nil }
 
@@ -111,7 +134,11 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         guard currentBuffer.count >= sampleRate else { return nil }
 
         do {
-            let result = try await diarizer.process(audio: currentBuffer)
+            let result = try await Self.processWithTimeout(
+                diarizer: diarizer,
+                audio: currentBuffer,
+                timeout: Constants.Diarization.processTimeout
+            )
 
             let segments = result.segments.map { seg in
                 TimedSegmentInfo(
@@ -140,6 +167,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
             }
             NSLog("[SpeakerDiarizer] Raw=\(relevant.speakerId) → Tracked=\(identification.speakerId.uuidString) conf=\(String(format: "%.3f", identification.confidence)) (time=\(String(format: "%.1f", relevant.startTime))-\(String(format: "%.1f", relevant.endTime))s, accumulated=\(String(format: "%.1f", accumulatedDuration))s)")
             return identification
+        } catch is DiarizationTimeoutError {
+            NSLog("[SpeakerDiarizer] Diarization timed out after \(Constants.Diarization.processTimeout)s, returning cached result")
+            lock.withLock { pacer.reset() }
+            return lock.withLock { pacer.lastResult }
         } catch {
             NSLog("[SpeakerDiarizer] Diarization failed: \(error)")
             lock.withLock { pacer.reset() }
