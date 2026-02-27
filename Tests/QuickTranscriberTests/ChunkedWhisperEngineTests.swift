@@ -495,6 +495,49 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
     }
 
+    func testNilDiarizationDoesNotBlockTranscription() async throws {
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello world", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        // MockSpeakerDiarizer with empty speakerResults → always returns nil
+        // Simulates timeout scenario where cached result is nil
+        let mockDiarizer = MockSpeakerDiarizer()
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+
+        let expectation = XCTestExpectation(description: "Transcription with nil diarization")
+        var receivedSegments: [ConfirmedSegment]?
+
+        try await engine.startStreaming(language: "en", parameters: params) { state in
+            if !state.confirmedSegments.isEmpty {
+                receivedSegments = state.confirmedSegments
+                expectation.fulfill()
+            }
+        }
+
+        // Feed 5 seconds of audio to trigger chunk processing
+        let speechBuffer = [Float](repeating: 0.1, count: 80000)
+        mockCapture.simulateBuffer(speechBuffer)
+
+        await fulfillment(of: [expectation], timeout: 6.0)
+
+        // Transcription should succeed even with nil diarization
+        XCTAssertNotNil(receivedSegments)
+        XCTAssertEqual(receivedSegments?.count, 1)
+        XCTAssertEqual(receivedSegments?[0].text, "Hello world")
+        XCTAssertNil(receivedSegments?[0].speaker, "Speaker should be nil when diarization returns nil")
+
+        await engine.stopStreaming()
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()

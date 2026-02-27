@@ -16,6 +16,11 @@ public enum Constants {
         public static let avgLogprobThreshold: Float = -1.5
     }
 
+    public enum Diarization {
+        /// Maximum time to wait for a single diarization process() call.
+        public static let processTimeout: TimeInterval = 10.0
+    }
+
     public enum Translation {
         public static let groupBoundarySilence: TimeInterval = 2.0
         public static let sentenceEndersEN: Set<Character> = [".", "!", "?"]
