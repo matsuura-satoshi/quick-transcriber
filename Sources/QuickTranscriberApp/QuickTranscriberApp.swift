@@ -9,6 +9,8 @@ extension Notification.Name {
     static let menuClear = Notification.Name("QuickTranscriber.menuClear")
     static let menuIncreaseFontSize = Notification.Name("QuickTranscriber.menuIncreaseFontSize")
     static let menuDecreaseFontSize = Notification.Name("QuickTranscriber.menuDecreaseFontSize")
+    static let menuResetFontSize = Notification.Name("QuickTranscriber.menuResetFontSize")
+    static let menuToggleRecording = Notification.Name("QuickTranscriber.menuToggleRecording")
     static let menuIsRecordingQuery = Notification.Name("QuickTranscriber.menuIsRecordingQuery")
 }
 
@@ -31,6 +33,11 @@ struct QuickTranscriberApp: App {
 
             // File menu
             CommandGroup(after: .newItem) {
+                Button(viewModel.isRecording ? "Stop" : "Record") {
+                    NotificationCenter.default.post(name: .menuToggleRecording, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+
                 Button("Export...") {
                     NotificationCenter.default.post(name: .menuExport, object: nil)
                 }
@@ -62,6 +69,11 @@ struct QuickTranscriberApp: App {
                     NotificationCenter.default.post(name: .menuDecreaseFontSize, object: nil)
                 }
                 .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Font Size") {
+                    NotificationCenter.default.post(name: .menuResetFontSize, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
             }
         }
 

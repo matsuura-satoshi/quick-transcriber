@@ -1,19 +1,17 @@
 import SwiftUI
 
 struct ControlBar: View {
-    @Binding var isRecording: Bool
     @Binding var currentLanguage: Language
     @Binding var translationEnabled: Bool
-    let modelState: ModelState
-    let onToggleRecording: () -> Void
     let onSwitchLanguage: (Language) -> Void
     let onCopyAll: () -> Void
     let onExport: () -> Void
     let onClear: () -> Void
 
+    private let buttonPadding = EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+
     var body: some View {
-        HStack(spacing: 16) {
-            recordButton
+        HStack(spacing: 8) {
             languagePicker
             translateButton
             Spacer()
@@ -25,43 +23,36 @@ struct ControlBar: View {
         .padding(.vertical, 8)
     }
 
-    private var recordButton: some View {
-        Button(action: onToggleRecording) {
-            HStack(spacing: 6) {
-                Image(systemName: isRecording ? "stop.circle.fill" : "mic.circle.fill")
-                    .font(.title2)
-                Text(isRecording ? "Stop" : "Record")
-            }
-        }
-        .disabled(modelState != .ready)
-        .keyboardShortcut("r", modifiers: .command)
-    }
-
     private var languagePicker: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             Image(systemName: "globe")
-                .font(.title2)
-            Picker("", selection: Binding(
-                get: { currentLanguage },
-                set: { onSwitchLanguage($0) }
-            )) {
-                ForEach(Language.allCases) { lang in
-                    Text(lang.displayName).tag(lang)
+                .padding(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 4))
+                .foregroundStyle(.secondary)
+            ForEach(Language.allCases) { lang in
+                Button(lang.displayName) {
+                    onSwitchLanguage(lang)
                 }
+                .buttonStyle(.plain)
+                .padding(buttonPadding)
+                .background(currentLanguage == lang ? Color.accentColor : Color.clear)
+                .foregroundStyle(currentLanguage == lang ? .white : .primary)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 200)
         }
+        .background(Color.secondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 
     private var translateButton: some View {
         Button { translationEnabled.toggle() } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Image(systemName: "translate")
-                    .font(.title2)
                 Text(translationEnabled ? "Hide" : "Translate")
             }
+            .padding(buttonPadding)
         }
+        .buttonStyle(.plain)
+        .background(Color.secondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
         .keyboardShortcut("t", modifiers: .command)
     }
 
@@ -71,16 +62,24 @@ struct ControlBar: View {
                 Image(systemName: "doc.on.doc")
                 Text("Copy")
             }
+            .padding(buttonPadding)
         }
+        .buttonStyle(.plain)
+        .background(Color.secondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 
     private var exportButton: some View {
         Button(action: onExport) {
             HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.up")
-                Text("Export")
+                Image(systemName: "square.and.arrow.down")
+                Text("Save")
             }
+            .padding(buttonPadding)
         }
+        .buttonStyle(.plain)
+        .background(Color.secondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 
     private var clearButton: some View {
@@ -89,6 +88,10 @@ struct ControlBar: View {
                 Image(systemName: "trash")
                 Text("Clear")
             }
+            .padding(buttonPadding)
         }
+        .buttonStyle(.plain)
+        .background(Color.secondary.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
     }
 }

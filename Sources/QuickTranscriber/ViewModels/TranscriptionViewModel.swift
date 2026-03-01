@@ -240,6 +240,10 @@ public final class TranscriptionViewModel: ObservableObject {
         fontSize = max(fontSize - 1, 10)
     }
 
+    public func resetFontSize() {
+        fontSize = 15
+    }
+
     public func copyAllText() {
         let text = displayText
         guard !text.isEmpty else { return }
@@ -1103,7 +1107,8 @@ public final class TranscriptionViewModel: ObservableObject {
             self.speakerProfiles = self.speakerProfileStore.profiles
             self.linkActiveSpeakersToProfiles()
             self.flushPendingDeletions()
-            if UserDefaults.standard.bool(forKey: "showPostMeetingSheet") {
+            if UserDefaults.standard.bool(forKey: "showPostMeetingSheet")
+                && !self.activeSpeakers.isEmpty {
                 self.showPostMeetingTagging = true
             }
         }

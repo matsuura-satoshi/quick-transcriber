@@ -26,16 +26,18 @@ public struct ContentView: View {
             }
             Divider()
             ControlBar(
-                isRecording: $viewModel.isRecording,
                 currentLanguage: $viewModel.currentLanguage,
                 translationEnabled: $viewModel.translationEnabled,
-                modelState: viewModel.modelState,
-                onToggleRecording: { viewModel.toggleRecording() },
                 onSwitchLanguage: { viewModel.switchLanguage($0) },
                 onCopyAll: { viewModel.copyAllText() },
                 onExport: { viewModel.exportText() },
                 onClear: { viewModel.clearText() }
             )
+        }
+        .onKeyPress(.space) {
+            guard viewModel.modelState == .ready else { return .ignored }
+            viewModel.toggleRecording()
+            return .handled
         }
         .navigationTitle("Quick Transcriber")
         .frame(minWidth: viewModel.translationEnabled ? 900 : 600, minHeight: 400)
@@ -102,6 +104,12 @@ public struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuDecreaseFontSize"))) { _ in
             viewModel.decreaseFontSize()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuResetFontSize"))) { _ in
+            viewModel.resetFontSize()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuToggleRecording"))) { _ in
+            viewModel.toggleRecording()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuIsRecordingQuery"))) { notification in
             if let callback = notification.userInfo?["callback"] as? (Bool) -> Void {
                 callback(viewModel.isRecording)
@@ -126,6 +134,21 @@ public struct ContentView: View {
     @ViewBuilder
     private var statusBar: some View {
         HStack {
+            Button(action: { viewModel.toggleRecording() }) {
+                Image(systemName: viewModel.isRecording ? "stop.circle.fill" : "mic.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(viewModel.isRecording ? .red : .primary)
+            }
+            .buttonStyle(.borderless)
+            .disabled(viewModel.modelState != .ready)
+            if viewModel.isRecording {
+                Label("Recording", systemImage: "waveform")
+                    .foregroundStyle(.red)
+            } else {
+                Text("Waiting")
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
             switch viewModel.modelState {
             case .notLoaded:
                 Label("Not loaded", systemImage: "circle")
@@ -142,40 +165,9 @@ public struct ContentView: View {
                 Label(message, systemImage: "exclamation.triangle.fill")
                     .foregroundStyle(.red)
             }
-            Spacer()
-            fontSizeControls
-            if viewModel.isRecording {
-                Label("Recording", systemImage: "waveform")
-                    .foregroundStyle(.red)
-            }
         }
         .padding(.horizontal)
-        .padding(.vertical, 6)
-        .font(.caption)
-    }
-
-    private var fontSizeControls: some View {
-        HStack(spacing: 4) {
-            Button(action: { viewModel.decreaseFontSize() }) {
-                Text("A-")
-                    .font(.caption2)
-                    .frame(width: 24, height: 18)
-            }
-            .buttonStyle(.borderless)
-
-            Text("\(Int(viewModel.fontSize))pt")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 30)
-
-            Button(action: { viewModel.increaseFontSize() }) {
-                Text("A+")
-                    .font(.caption2)
-                    .frame(width: 24, height: 18)
-            }
-            .buttonStyle(.borderless)
-        }
-        .padding(.trailing, 8)
+        .padding(.vertical, 8)
     }
 
     private var transcriptionArea: some View {
