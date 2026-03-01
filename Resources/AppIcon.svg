@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228" fill="#0F766E"/>
+  <!-- 6 bars B: 35%, 75%, 55%, 100%, 80%, 40% / w62 gap34 maxH620 / right-shifted peak -->
+  <g>
+    <rect x="241" y="404" width="62" height="217" rx="31" ry="31" fill="#FFFFFF"/>
+    <rect x="337" y="280" width="62" height="465" rx="31" ry="31" fill="#FFFFFF"/>
+    <rect x="433" y="342" width="62" height="341" rx="31" ry="31" fill="#FFFFFF"/>
+    <rect x="529" y="202" width="62" height="620" rx="31" ry="31" fill="#FFFFFF"/>
+    <rect x="625" y="264" width="62" height="496" rx="31" ry="31" fill="#FFFFFF"/>
+    <rect x="721" y="388" width="62" height="248" rx="31" ry="31" fill="#FFFFFF"/>
+  </g>
+</svg>

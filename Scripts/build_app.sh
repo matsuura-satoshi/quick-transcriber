@@ -52,6 +52,8 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
     <string>15.0</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Quick Transcriber needs microphone access for real-time transcription.</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSApplicationCategoryType</key>
@@ -59,6 +61,15 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
 </dict>
 </plist>
 PLIST
+
+# アイコンをコピー
+ICON_FILE="${PROJECT_DIR}/Resources/AppIcon.icns"
+if [ -f "$ICON_FILE" ]; then
+    cp "$ICON_FILE" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
+    echo "    Icon: AppIcon.icns"
+else
+    echo "    Warning: AppIcon.icns not found. Run Scripts/generate_icon.sh first."
+fi
 
 # アドホック署名
 echo "==> Signing app bundle (ad-hoc)..."
