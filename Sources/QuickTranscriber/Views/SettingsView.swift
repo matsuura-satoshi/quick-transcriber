@@ -143,7 +143,7 @@ private struct SpeakersSettingsTab: View {
     @State private var showNewSpeakerAlert = false
     @State private var newSpeakerName = ""
     @State private var searchText = ""
-    @State private var selectedTag: String?
+    @State private var selectedTags: Set<String> = []
     @State private var showBulkDeleteConfirmation = false
 
     var body: some View {
@@ -195,7 +195,7 @@ private struct SpeakersSettingsTab: View {
                         set: { store.parameters.expectedSpeakerCount = $0 == 0 ? nil : $0 }
                     )) {
                         Text("Auto").tag(0)
-                        ForEach(2...5, id: \.self) { n in
+                        ForEach(2...10, id: \.self) { n in
                             Text("\(n)").tag(n)
                         }
                     }
@@ -258,8 +258,8 @@ private struct SpeakersSettingsTab: View {
 
     private var filteredProfiles: [StoredSpeakerProfile] {
         var result = viewModel.speakerProfiles
-        if let tag = selectedTag {
-            result = result.filter { $0.tags.contains(tag) }
+        if !selectedTags.isEmpty {
+            result = result.filter { selectedTags.isSubset(of: $0.tags) }
         }
         if !searchText.isEmpty {
             result = result.filter {
@@ -267,7 +267,7 @@ private struct SpeakersSettingsTab: View {
                 || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
             }
         }
-        return result
+        return result.sorted { $0.lastUsed > $1.lastUsed }
     }
 
     private var filteredProfileIds: Set<UUID> {
@@ -322,12 +322,16 @@ private struct SpeakersSettingsTab: View {
                 if !viewModel.allTags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 4) {
-                            TagFilterPill(label: "All", isSelected: selectedTag == nil) {
-                                selectedTag = nil
+                            TagFilterPill(label: "All", isSelected: selectedTags.isEmpty) {
+                                selectedTags = []
                             }
                             ForEach(viewModel.allTags, id: \.self) { tag in
-                                TagFilterPill(label: tag, isSelected: selectedTag == tag) {
-                                    selectedTag = selectedTag == tag ? nil : tag
+                                TagFilterPill(label: tag, isSelected: selectedTags.contains(tag)) {
+                                    if selectedTags.contains(tag) {
+                                        selectedTags.remove(tag)
+                                    } else {
+                                        selectedTags.insert(tag)
+                                    }
                                 }
                             }
                         }
@@ -594,21 +598,40 @@ private struct SpeakerProfileDetailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Name editing
-            HStack {
-                Text("Name")
+            // Name editing + Lock
+            HStack(spacing: 6) {
+                Button {
+                    onSetLocked(!profile.isLocked)
+                } label: {
+                    Image(systemName: profile.isLocked ? "lock.fill" : "lock")
+                        .font(.caption)
+                        .foregroundStyle(profile.isLocked ? .primary : .tertiary)
+                }
+                .buttonStyle(.borderless)
+                .help(profile.isLocked ? "Unlock speaker" : "Lock speaker")
+                Text("Display Name")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                TextField("Display name...", text: $editingName)
+                TextField("", text: $editingName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { onRename(editingName) }
             }
 
-            // Session info
+            // Session info + Delete
             HStack(spacing: 4) {
                 Text("\(profile.sessionCount) sessions")
                 Text("\u{00B7}")
                 Text("Last: \(Self.dateFormatter.string(from: profile.lastUsed))")
+                Spacer()
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption2)
+                        .foregroundStyle(.red.opacity(0.6))
+                }
+                .buttonStyle(.borderless)
+                .help("Delete profile")
             }
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -662,23 +685,6 @@ private struct SpeakerProfileDetailView: View {
                 }
             }
 
-            // Lock toggle
-            HStack {
-                Toggle("Lock", isOn: Binding(
-                    get: { profile.isLocked },
-                    set: { onSetLocked($0) }
-                ))
-                .font(.caption)
-            }
-
-            // Delete button
-            HStack {
-                Spacer()
-                Button("Delete Profile", role: .destructive) {
-                    onDelete()
-                }
-                .font(.caption)
-            }
         }
         .padding(.leading, 4)
     }
