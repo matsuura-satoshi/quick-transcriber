@@ -139,6 +139,7 @@ private struct SpeakersSettingsTab: View {
     @ObservedObject var store: ParametersStore
     @ObservedObject var viewModel: TranscriptionViewModel
 
+    @AppStorage("showPostMeetingSheet") private var showPostMeetingSheet: Bool = true
     @State private var showNewSpeakerAlert = false
     @State private var newSpeakerName = ""
     @State private var searchText = ""
@@ -183,6 +184,7 @@ private struct SpeakersSettingsTab: View {
         Section("Speaker Detection") {
             Toggle("Enable Speaker Diarization", isOn: $store.parameters.enableSpeakerDiarization)
             if store.parameters.enableSpeakerDiarization {
+                Toggle("Show tag sheet after stopping recording", isOn: $showPostMeetingSheet)
                 Picker("Mode", selection: $store.parameters.diarizationMode) {
                     Text("Auto").tag(DiarizationMode.auto)
                     Text("Manual").tag(DiarizationMode.manual)
@@ -450,8 +452,6 @@ private struct ActiveSpeakerRow: View {
 private struct OutputSettingsTab: View {
     @AppStorage("transcriptsDirectory") private var transcriptsDirectory: String = ""
     @AppStorage("isRecording") private var isRecording: Bool = false
-    @AppStorage("showPostMeetingSheet") private var showPostMeetingSheet: Bool = true
-
     private var displayPath: String {
         let path = transcriptsDirectory.isEmpty
             ? TranscriptFileWriter.defaultDirectory.path
@@ -488,9 +488,6 @@ private struct OutputSettingsTab: View {
                         .font(.callout)
                         .foregroundStyle(.orange)
                 }
-            }
-            Section("After Recording") {
-                Toggle("Show tag sheet after stopping recording", isOn: $showPostMeetingSheet)
             }
             Section {
                 Text("Transcripts are saved as **YYYY-MM-DD_HHmm_qt_transcript.md** with a **qt_transcript.md** symlink pointing to the latest file.")
