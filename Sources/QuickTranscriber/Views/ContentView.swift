@@ -39,7 +39,7 @@ public struct ContentView: View {
             viewModel.toggleRecording()
             return .handled
         }
-        .navigationTitle("Quick Transcriber")
+        .navigationTitle("Quick Transcriber v\(Constants.Version.string)")
         .frame(minWidth: viewModel.translationEnabled ? 900 : 600, minHeight: 400)
         .task {
             await viewModel.loadModel()

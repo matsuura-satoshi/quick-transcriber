@@ -21,6 +21,13 @@ public enum Constants {
         public static let processTimeout: TimeInterval = 10.0
     }
 
+    public enum Version {
+        public static let major = 1
+        public static let minor = 0
+        public static let patch = 58
+        public static let string = "\(major).\(minor).\(patch)"
+    }
+
     public enum Translation {
         public static let groupBoundarySilence: TimeInterval = 2.0
         public static let sentenceEndersEN: Set<Character> = [".", "!", "?"]

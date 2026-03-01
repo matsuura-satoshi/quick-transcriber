@@ -11,8 +11,12 @@ macOSリアルタイム文字起こしアプリ。WhisperKit (large-v3-turbo) + 
 - 完了を宣言する前に `superpowers:verification-before-completion` で検証を行う
 
 ## Build & Run
-```
+```bash
 swift build && swift run QuickTranscriber
+
+# .app バンドルをビルド（配布用）
+./Scripts/build_app.sh
+# → build/QuickTranscriber.app, build/QuickTranscriber-v{version}.zip
 ```
 
 ## Test
@@ -43,6 +47,11 @@ swift test --filter ReazonSpeechBenchmarkTests
 - macOS GUIアプリでは `print()` が出ない。デバッグは `NSLog` を使う
 - テスト実行にはXcodeが必要（Command Line Toolsのみでは不可）
 - `sampleLength` は最大224（WhisperKit内部バッファ制限。448でfatalError）
+
+## Versioning
+- 形式: `Major.Minor.PR#`（例: 1.0.58）
+- 定義場所: `Constants.Version`（Constants.swift）
+- PR作成時に `Constants.Version.patch` を該当PR番号に更新すること
 
 ## Benchmark Datasets
 `Scripts/download_datasets.py` でダウンロード:
