@@ -160,15 +160,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct AboutView: View {
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.blue)
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 64, height: 64)
 
             Text("Quick Transcriber")
                 .font(.title)
                 .fontWeight(.bold)
 
-            Text("Version \(Constants.Version.string)")
+            Text(Constants.Version.versionString)
                 .font(.caption)
                 .foregroundStyle(.secondary)
 

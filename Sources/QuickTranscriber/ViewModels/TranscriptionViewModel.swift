@@ -156,7 +156,7 @@ public final class TranscriptionViewModel: ObservableObject {
 
     public func loadModel() async {
         modelState = .loading
-        NSLog("[QuickTranscriber] v\(Constants.Version.string) — Loading model: \(modelName)")
+        NSLog("[QuickTranscriber] \(Constants.Version.versionString) — Loading model: \(modelName)")
         do {
             try await service.prepare(model: modelName)
             modelState = .ready
