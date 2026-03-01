@@ -368,4 +368,57 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
         let text = TranscriptionUtils.joinSegments(segments, language: "en", silenceThreshold: 1.0)
         XCTAssertTrue(text.contains("Hello glitch continuing"))
     }
+
+    // MARK: - remapSpeaker
+
+    func testRemapSpeaker_mergesLogProbabilities() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        let spkA = UUID()
+        let spkB = UUID()
+
+        let idA = SpeakerIdentification(speakerId: spkA, confidence: 0.8, embedding: [])
+        let idB = SpeakerIdentification(speakerId: spkB, confidence: 0.9, embedding: [])
+        _ = smoother.process(idA)
+        _ = smoother.process(idB)
+        _ = smoother.process(idB)  // speakerB confirmed
+
+        // Remap speakerB → speakerA
+        smoother.remapSpeaker(from: spkB, to: spkA)
+
+        // speakerB's state should be gone; speakerA should work normally
+        let result = smoother.process(idA)
+        XCTAssertEqual(result?.speakerId, spkA)
+    }
+
+    func testRemapSpeaker_unknownSourceIsNoOp() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        let spkA = UUID()
+        let unknownId = UUID()
+
+        let idA = SpeakerIdentification(speakerId: spkA, confidence: 0.8, embedding: [])
+        _ = smoother.process(idA)
+
+        // Remap unknown UUID → no-op
+        smoother.remapSpeaker(from: unknownId, to: spkA)
+
+        let result = smoother.process(idA)
+        XCTAssertEqual(result?.speakerId, spkA)
+    }
+
+    func testRemapSpeaker_updatesConfirmedSpeaker() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        let spkA = UUID()
+        let spkB = UUID()
+
+        // Confirm speakerB
+        let idB = SpeakerIdentification(speakerId: spkB, confidence: 0.9, embedding: [1.0])
+        _ = smoother.process(idB)
+
+        // Remap speakerB → speakerA: confirmed should also update
+        smoother.remapSpeaker(from: spkB, to: spkA)
+
+        // nil input returns confirmed → should be speakerA now
+        let result = smoother.process(nil)
+        XCTAssertEqual(result?.speakerId, spkA)
+    }
 }

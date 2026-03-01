@@ -223,6 +223,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         diarizer?.mergeSpeakerProfiles(from: sourceId, into: targetId)
+        speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
     }
 
     public func cleanup() {

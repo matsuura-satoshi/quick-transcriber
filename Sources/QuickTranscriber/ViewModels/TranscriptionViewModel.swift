@@ -450,8 +450,12 @@ public final class TranscriptionViewModel: ObservableObject {
            let absIdx = speakerProfileStore.profiles.firstIndex(where: { $0.id == absId }) {
             let absProfile = speakerProfileStore.profiles[absIdx]
 
-            // Embedding EMA blending: 0.7 * survivor + 0.3 * absorbed
-            let alpha: Float = 0.3
+            // Embedding blending: proportional to sessionCount
+            let totalSessions = speakerProfileStore.profiles[survIdx].sessionCount
+                + absProfile.sessionCount
+            let alpha: Float = totalSessions > 0
+                ? Float(absProfile.sessionCount) / Float(totalSessions)
+                : 0.5
             speakerProfileStore.profiles[survIdx].embedding = zip(
                 speakerProfileStore.profiles[survIdx].embedding,
                 absProfile.embedding
