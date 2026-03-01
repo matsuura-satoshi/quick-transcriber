@@ -135,6 +135,32 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
         }
     }
 
+    /// Merge speaker state: redirect absorbed speaker's Viterbi state to survivor.
+    /// After merge, the absorbed UUID is removed from the state space, reducing
+    /// transition noise and preventing stale states.
+    public func remapSpeaker(from oldId: UUID, to newId: UUID) {
+        if let oldProb = stateLogProb.removeValue(forKey: oldId) {
+            if let existingProb = stateLogProb[newId] {
+                let maxProb = max(existingProb, oldProb)
+                stateLogProb[newId] = maxProb + log(exp(existingProb - maxProb) + exp(oldProb - maxProb))
+            } else {
+                stateLogProb[newId] = oldProb
+            }
+        }
+
+        if confirmed?.speakerId == oldId {
+            confirmed = SpeakerIdentification(
+                speakerId: newId,
+                confidence: confirmed!.confidence,
+                embedding: confirmed!.embedding
+            )
+        }
+
+        if pendingSpeakerId == oldId {
+            pendingSpeakerId = newId
+        }
+    }
+
     /// Reset transition bias while preserving speaker knowledge.
     /// After significant silence, treats next observation as fresh start
     /// so that any speaker (new or returning) confirms immediately.

@@ -359,10 +359,113 @@ final class SpeakerMergeTests: XCTestCase {
         )
         vm.executeMerge(request)
 
-        // Survivor's embedding should be EMA blend: 0.7 * survivor + 0.3 * absorbed
+        // sessionCount proportional: alpha = absorbed/(survivor+absorbed) = 1/(5+1) ≈ 0.167
         let merged = store.profiles.first { $0.id == idSurvivor }!
-        let expected0 = 0.7 * embSurvivor[0] + 0.3 * embAbsorbed[0]
-        let expected1 = 0.7 * embSurvivor[1] + 0.3 * embAbsorbed[1]
+        let alpha: Float = 1.0 / 6.0
+        let expected0 = (1 - alpha) * embSurvivor[0] + alpha * embAbsorbed[0]
+        let expected1 = (1 - alpha) * embSurvivor[1] + alpha * embAbsorbed[1]
+        XCTAssertEqual(merged.embedding[0], expected0, accuracy: 0.001)
+        XCTAssertEqual(merged.embedding[1], expected1, accuracy: 0.001)
+    }
+
+    func testExecuteMerge_embeddingBlending_proportionalToSessionCount() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let idSurvivor = UUID()
+        let idAbsorbed = UUID()
+        let embSurvivor = makeEmbedding(dominant: 0)
+        let embAbsorbed = makeEmbedding(dominant: 1)
+        store.profiles = [
+            StoredSpeakerProfile(id: idSurvivor, displayName: "Bob", embedding: embSurvivor, sessionCount: 10),
+            StoredSpeakerProfile(id: idAbsorbed, displayName: "Alice", embedding: embAbsorbed, sessionCount: 2)
+        ]
+        let (vm, _) = makeViewModel(speakerProfileStore: store)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: idSurvivor, speakerProfileId: idSurvivor, displayName: "Bob", source: .manual),
+            ActiveSpeaker(id: idAbsorbed, speakerProfileId: idAbsorbed, displayName: "Alice", source: .manual)
+        ]
+
+        let request = SpeakerMergeRequest(
+            sourceEntity: .active(id: idAbsorbed),
+            targetEntity: .active(id: idSurvivor),
+            duplicateName: "Bob",
+            sourceDisplayName: "Alice",
+            targetDisplayName: "Bob"
+        )
+        vm.executeMerge(request)
+
+        // alpha = 2/(10+2) ≈ 0.167 → absorbed influence is small
+        let merged = store.profiles.first { $0.id == idSurvivor }!
+        let alpha: Float = 2.0 / 12.0
+        let expected0 = (1 - alpha) * embSurvivor[0] + alpha * embAbsorbed[0]
+        let expected1 = (1 - alpha) * embSurvivor[1] + alpha * embAbsorbed[1]
+        XCTAssertEqual(merged.embedding[0], expected0, accuracy: 0.001)
+        XCTAssertEqual(merged.embedding[1], expected1, accuracy: 0.001)
+    }
+
+    func testExecuteMerge_embeddingBlending_equalSessionCount() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let idSurvivor = UUID()
+        let idAbsorbed = UUID()
+        let embSurvivor = makeEmbedding(dominant: 0)
+        let embAbsorbed = makeEmbedding(dominant: 1)
+        store.profiles = [
+            StoredSpeakerProfile(id: idSurvivor, displayName: "Bob", embedding: embSurvivor, sessionCount: 3),
+            StoredSpeakerProfile(id: idAbsorbed, displayName: "Alice", embedding: embAbsorbed, sessionCount: 3)
+        ]
+        let (vm, _) = makeViewModel(speakerProfileStore: store)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: idSurvivor, speakerProfileId: idSurvivor, displayName: "Bob", source: .manual),
+            ActiveSpeaker(id: idAbsorbed, speakerProfileId: idAbsorbed, displayName: "Alice", source: .manual)
+        ]
+
+        let request = SpeakerMergeRequest(
+            sourceEntity: .active(id: idAbsorbed),
+            targetEntity: .active(id: idSurvivor),
+            duplicateName: "Bob",
+            sourceDisplayName: "Alice",
+            targetDisplayName: "Bob"
+        )
+        vm.executeMerge(request)
+
+        // alpha = 3/(3+3) = 0.5 → 50/50 blend
+        let merged = store.profiles.first { $0.id == idSurvivor }!
+        let alpha: Float = 0.5
+        let expected0 = (1 - alpha) * embSurvivor[0] + alpha * embAbsorbed[0]
+        let expected1 = (1 - alpha) * embSurvivor[1] + alpha * embAbsorbed[1]
+        XCTAssertEqual(merged.embedding[0], expected0, accuracy: 0.001)
+        XCTAssertEqual(merged.embedding[1], expected1, accuracy: 0.001)
+    }
+
+    func testExecuteMerge_embeddingBlending_zeroSessionCounts() {
+        let store = SpeakerProfileStore(directory: tmpDir)
+        let idSurvivor = UUID()
+        let idAbsorbed = UUID()
+        let embSurvivor = makeEmbedding(dominant: 0)
+        let embAbsorbed = makeEmbedding(dominant: 1)
+        store.profiles = [
+            StoredSpeakerProfile(id: idSurvivor, displayName: "Bob", embedding: embSurvivor, sessionCount: 0),
+            StoredSpeakerProfile(id: idAbsorbed, displayName: "Alice", embedding: embAbsorbed, sessionCount: 0)
+        ]
+        let (vm, _) = makeViewModel(speakerProfileStore: store)
+        vm.activeSpeakers = [
+            ActiveSpeaker(id: idSurvivor, speakerProfileId: idSurvivor, displayName: "Bob", source: .manual),
+            ActiveSpeaker(id: idAbsorbed, speakerProfileId: idAbsorbed, displayName: "Alice", source: .manual)
+        ]
+
+        let request = SpeakerMergeRequest(
+            sourceEntity: .active(id: idAbsorbed),
+            targetEntity: .active(id: idSurvivor),
+            duplicateName: "Bob",
+            sourceDisplayName: "Alice",
+            targetDisplayName: "Bob"
+        )
+        vm.executeMerge(request)
+
+        // Both sessionCount=0 → fallback alpha = 0.5 (50/50 blend)
+        let merged = store.profiles.first { $0.id == idSurvivor }!
+        let alpha: Float = 0.5
+        let expected0 = (1 - alpha) * embSurvivor[0] + alpha * embAbsorbed[0]
+        let expected1 = (1 - alpha) * embSurvivor[1] + alpha * embAbsorbed[1]
         XCTAssertEqual(merged.embedding[0], expected0, accuracy: 0.001)
         XCTAssertEqual(merged.embedding[1], expected1, accuracy: 0.001)
     }
