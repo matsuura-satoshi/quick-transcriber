@@ -49,9 +49,12 @@ swift test --filter ReazonSpeechBenchmarkTests
 - `sampleLength` は最大224（WhisperKit内部バッファ制限。448でfatalError）
 
 ## Versioning
-- 形式: `Major.Minor.PR#`（例: 1.0.58）
+- 形式: `Major.Minor.PR#`（例: 1.0.57）、表示形式は `v1.0.57`
 - 定義場所: `Constants.Version`（Constants.swift）
+- `string`は数値のみ、`versionString`は`v`付き
 - PR作成時に `Constants.Version.patch` を該当PR番号に更新すること
+- **patchの更新はPRのコミット内でのみ行う**（main直pushでバージョンを変更しない）
+- リリースタグ: `v{Major}.{Minor}.{PR#}`（例: `v1.0.57`）
 
 ## Benchmark Datasets
 `Scripts/download_datasets.py` でダウンロード:
