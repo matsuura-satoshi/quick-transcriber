@@ -6,7 +6,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private let diarizer: SpeakerDiarizer?
     private let speakerProfileStore: SpeakerProfileStore?
     private let embeddingHistoryStore: EmbeddingHistoryStore?
-    private var accumulator: ChunkAccumulator
+    private var accumulator: VADChunkAccumulator
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
     private var confirmedSegments: [ConfirmedSegment] = []
@@ -15,8 +15,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
     private var currentParameters: TranscriptionParameters = .default
-    /// Accumulated silence since last confirmed segment (seconds).
-    private var silenceSinceLastSegment: TimeInterval = 0
     /// Whether diarization is active for this streaming session.
     private var diarizationActive = false
 
@@ -32,7 +30,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         self.diarizer = diarizer
         self.speakerProfileStore = speakerProfileStore
         self.embeddingHistoryStore = embeddingHistoryStore
-        self.accumulator = ChunkAccumulator()
+        self.accumulator = VADChunkAccumulator()
     }
 
     public var isStreaming: Bool {
@@ -62,10 +60,13 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
-        accumulator = ChunkAccumulator(
-            chunkDuration: parameters.chunkDuration,
-            silenceCutoffDuration: parameters.silenceCutoffDuration,
-            silenceEnergyThreshold: parameters.silenceEnergyThreshold
+        accumulator = VADChunkAccumulator(
+            maxChunkDuration: parameters.chunkDuration,
+            endOfUtteranceSilence: parameters.silenceCutoffDuration,
+            silenceEnergyThreshold: parameters.silenceEnergyThreshold,
+            speechOnsetThreshold: parameters.speechOnsetThreshold,
+            preRollDuration: parameters.preRollDuration,
+            hangoverDuration: parameters.hangoverDuration
         )
         confirmedSegments = []
         speakerSmoother = ViterbiSpeakerSmoother(stayProbability: parameters.speakerTransitionPenalty)
@@ -98,7 +99,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             diarizer?.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
         }
         pendingSegmentStartIndex = nil
-        silenceSinceLastSegment = 0
         currentLanguage = language
         currentParameters = parameters
         _isStreaming = true
@@ -234,33 +234,21 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     // MARK: - Private
 
-    /// RMS energy threshold for skipping silent chunks.
-    /// Lower than ChunkAccumulator.silenceEnergyThreshold (0.01) to be more conservative.
-    private static let silenceSkipThreshold: Float = Constants.Audio.silenceSkipThreshold
-
     private func processChunk(
         _ chunkResult: ChunkResult,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async {
         let chunk = chunkResult.samples
         let chunkDuration = Double(chunk.count) / Constants.Audio.sampleRate
-        let energy = ChunkAccumulator.rmsEnergy(of: chunk)
 
-        if energy < Self.silenceSkipThreshold {
-            // Silent chunk: accumulate its full duration as silence
-            silenceSinceLastSegment += chunkDuration
-            NSLog("[ChunkedWhisperEngine] Skipping silent chunk: \(String(format: "%.1f", chunkDuration))s, energy=\(String(format: "%.6f", energy)), totalSilence=\(String(format: "%.1f", silenceSinceLastSegment))s")
-            return
-        }
-
-        NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, energy=\(String(format: "%.6f", energy))")
+        NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, precedingSilence=\(String(format: "%.1f", chunkResult.precedingSilenceDuration))s")
 
         do {
             // Run transcription and diarization in parallel when diarizer is available
             let segments: [TranscribedSegment]
             let rawSpeakerResult: SpeakerIdentification?
             if let diarizer, diarizationActive {
-                let significantSilence = silenceSinceLastSegment >= currentParameters.silenceCutoffDuration
+                let significantSilence = chunkResult.precedingSilenceDuration >= currentParameters.silenceCutoffDuration
                 if significantSilence {
                     speakerSmoother.resetForSpeakerChange()
                 }
@@ -317,7 +305,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             for (index, segment) in filtered.enumerated() {
                 let precedingSilence: TimeInterval
                 if index == 0 {
-                    precedingSilence = silenceSinceLastSegment
+                    precedingSilence = chunkResult.precedingSilenceDuration
                 } else {
                     precedingSilence = 0
                 }
@@ -336,9 +324,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 && pendingSegmentStartIndex == nil && !filtered.isEmpty {
                 pendingSegmentStartIndex = confirmedSegments.count - filtered.count
             }
-
-            // Reset silence tracker: start with trailing silence from this chunk
-            silenceSinceLastSegment = chunkResult.trailingSilenceDuration
 
             let confirmedText = TranscriptionUtils.joinSegments(
                 confirmedSegments,

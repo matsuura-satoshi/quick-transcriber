@@ -12,10 +12,13 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
     public var sampleLength: Int
     public var concurrentWorkerCount: Int
 
-    // Chunked engine parameters
+    // Chunked engine parameters (VAD-driven)
     public var chunkDuration: TimeInterval
     public var silenceCutoffDuration: TimeInterval
     public var silenceEnergyThreshold: Float
+    public var speechOnsetThreshold: Float
+    public var preRollDuration: TimeInterval
+    public var hangoverDuration: TimeInterval
 
     // Line break parameters
     public var silenceLineBreakThreshold: TimeInterval
@@ -33,9 +36,12 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         temperatureFallbackCount: Int = 0,
         sampleLength: Int = 224,
         concurrentWorkerCount: Int = 4,
-        chunkDuration: TimeInterval = 5.0,
-        silenceCutoffDuration: TimeInterval = 0.8,
-        silenceEnergyThreshold: Float = 0.01,
+        chunkDuration: TimeInterval = Constants.VAD.defaultMaxChunkDuration,
+        silenceCutoffDuration: TimeInterval = Constants.VAD.defaultEndOfUtteranceSilence,
+        silenceEnergyThreshold: Float = Constants.VAD.defaultSilenceEnergyThreshold,
+        speechOnsetThreshold: Float = Constants.VAD.defaultSpeechOnsetThreshold,
+        preRollDuration: TimeInterval = Constants.VAD.defaultPreRollDuration,
+        hangoverDuration: TimeInterval = Constants.VAD.defaultHangoverDuration,
         silenceLineBreakThreshold: TimeInterval = 1.0,
         enableSpeakerDiarization: Bool = false,
         expectedSpeakerCount: Int? = nil,
@@ -49,6 +55,9 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         self.chunkDuration = chunkDuration
         self.silenceCutoffDuration = silenceCutoffDuration
         self.silenceEnergyThreshold = silenceEnergyThreshold
+        self.speechOnsetThreshold = speechOnsetThreshold
+        self.preRollDuration = preRollDuration
+        self.hangoverDuration = hangoverDuration
         self.silenceLineBreakThreshold = silenceLineBreakThreshold
         self.enableSpeakerDiarization = enableSpeakerDiarization
         self.expectedSpeakerCount = expectedSpeakerCount
@@ -65,6 +74,9 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         chunkDuration = try container.decode(TimeInterval.self, forKey: .chunkDuration)
         silenceCutoffDuration = try container.decode(TimeInterval.self, forKey: .silenceCutoffDuration)
         silenceEnergyThreshold = try container.decode(Float.self, forKey: .silenceEnergyThreshold)
+        speechOnsetThreshold = try container.decodeIfPresent(Float.self, forKey: .speechOnsetThreshold) ?? Constants.VAD.defaultSpeechOnsetThreshold
+        preRollDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .preRollDuration) ?? Constants.VAD.defaultPreRollDuration
+        hangoverDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .hangoverDuration) ?? Constants.VAD.defaultHangoverDuration
         silenceLineBreakThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .silenceLineBreakThreshold) ?? 1.0
         enableSpeakerDiarization = try container.decodeIfPresent(Bool.self, forKey: .enableSpeakerDiarization) ?? false
         expectedSpeakerCount = try container.decodeIfPresent(Int.self, forKey: .expectedSpeakerCount)

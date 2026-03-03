@@ -5,9 +5,12 @@ final class ParametersTests: XCTestCase {
 
     func testDefaultParametersChunkedValues() {
         let params = TranscriptionParameters.default
-        XCTAssertEqual(params.chunkDuration, 5.0)
-        XCTAssertEqual(params.silenceCutoffDuration, 0.8)
+        XCTAssertEqual(params.chunkDuration, 8.0)
+        XCTAssertEqual(params.silenceCutoffDuration, 0.6)
         XCTAssertEqual(params.silenceEnergyThreshold, 0.01)
+        XCTAssertEqual(params.speechOnsetThreshold, 0.02)
+        XCTAssertEqual(params.preRollDuration, 0.3)
+        XCTAssertEqual(params.hangoverDuration, 0.15)
     }
 
     func testDefaultSilenceLineBreakThreshold() {
@@ -24,6 +27,10 @@ final class ParametersTests: XCTestCase {
         let params = try JSONDecoder().decode(TranscriptionParameters.self, from: data)
         XCTAssertEqual(params.silenceLineBreakThreshold, 1.0)
         XCTAssertFalse(params.enableSpeakerDiarization)
+        // VAD fields should get defaults when missing from old JSON
+        XCTAssertEqual(params.speechOnsetThreshold, 0.02)
+        XCTAssertEqual(params.preRollDuration, 0.3)
+        XCTAssertEqual(params.hangoverDuration, 0.15)
     }
 
     func testDefaultEnableSpeakerDiarization() {

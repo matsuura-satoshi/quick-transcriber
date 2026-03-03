@@ -4,7 +4,16 @@ public enum Constants {
     public enum Audio {
         public static let sampleRate: Double = 16000.0
         public static let sampleRateInt: Int = 16000
-        public static let silenceSkipThreshold: Float = 0.005
+    }
+
+    public enum VAD {
+        public static let defaultMaxChunkDuration: TimeInterval = 8.0
+        public static let defaultEndOfUtteranceSilence: TimeInterval = 0.6
+        public static let defaultSilenceEnergyThreshold: Float = 0.01
+        public static let defaultSpeechOnsetThreshold: Float = 0.02
+        public static let defaultPreRollDuration: TimeInterval = 0.3
+        public static let defaultHangoverDuration: TimeInterval = 0.15
+        public static let defaultMinimumUtteranceDuration: TimeInterval = 0.3
     }
 
     public enum Embedding {

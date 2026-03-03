@@ -188,9 +188,11 @@ final class QualityFilterTests: XCTestCase {
             lastState = state
         }
 
-        // Feed 5 seconds of audio to trigger chunk
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        // Feed speech + silence to trigger VAD chunk emission
+        let speechBuf = [Float](repeating: 0.1, count: 32000)
+        let silenceBuf = [Float](repeating: 0.0, count: 11200)
+        mockCapture.simulateBuffer(speechBuf)
+        mockCapture.simulateBuffer(silenceBuf)
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
@@ -221,8 +223,10 @@ final class QualityFilterTests: XCTestCase {
             }
         }
 
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        let speechBuf2 = [Float](repeating: 0.1, count: 32000)
+        let silenceBuf2 = [Float](repeating: 0.0, count: 11200)
+        mockCapture.simulateBuffer(speechBuf2)
+        mockCapture.simulateBuffer(silenceBuf2)
 
         await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(lastState?.confirmedText, "今日はいい天気ですね")
@@ -244,13 +248,13 @@ final class QualityFilterTests: XCTestCase {
 
         try await engine.startStreaming(language: "en") { _ in }
 
-        // Feed 5 seconds of silence (all zeros) → should skip transcription
+        // Feed silence only — VAD should NOT produce any chunks
         let silentBuffer = [Float](repeating: 0.0, count: 80000)
         mockCapture.simulateBuffer(silentBuffer)
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        // Transcriber should NOT have been called for silent chunk
+        // VAD never emits a chunk for pure silence, so transcriber should NOT be called
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 0)
 
         await engine.stopStreaming()
@@ -275,9 +279,11 @@ final class QualityFilterTests: XCTestCase {
             }
         }
 
-        // Feed 5 seconds of non-silent audio
-        let loudBuffer = [Float](repeating: 0.1, count: 80000)
+        // Feed speech + silence to trigger VAD chunk
+        let loudBuffer = [Float](repeating: 0.1, count: 32000)
+        let silBuf = [Float](repeating: 0.0, count: 11200)
         mockCapture.simulateBuffer(loudBuffer)
+        mockCapture.simulateBuffer(silBuf)
 
         await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 1)
@@ -302,8 +308,11 @@ final class QualityFilterTests: XCTestCase {
             lastState = state
         }
 
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        // Feed speech + silence to trigger VAD chunk
+        let repBuf = [Float](repeating: 0.1, count: 32000)
+        let repSil = [Float](repeating: 0.0, count: 11200)
+        mockCapture.simulateBuffer(repBuf)
+        mockCapture.simulateBuffer(repSil)
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
@@ -332,8 +341,11 @@ final class QualityFilterTests: XCTestCase {
             lastState = state
         }
 
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        // Feed speech + silence to trigger VAD chunk
+        let nsBuf = [Float](repeating: 0.1, count: 32000)
+        let nsSil = [Float](repeating: 0.0, count: 11200)
+        mockCapture.simulateBuffer(nsBuf)
+        mockCapture.simulateBuffer(nsSil)
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
@@ -364,8 +376,11 @@ final class QualityFilterTests: XCTestCase {
             }
         }
 
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        // Feed speech + silence to trigger VAD chunk
+        let goodBuf = [Float](repeating: 0.1, count: 32000)
+        let goodSil = [Float](repeating: 0.0, count: 11200)
+        mockCapture.simulateBuffer(goodBuf)
+        mockCapture.simulateBuffer(goodSil)
 
         await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(lastState?.confirmedText, "Hello world")

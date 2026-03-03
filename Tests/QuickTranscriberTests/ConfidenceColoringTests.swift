@@ -369,9 +369,11 @@ final class ConfidenceColoringTests: XCTestCase {
             }
         }
 
-        // Feed 5 seconds of audio to trigger chunk
-        let speechBuffer = [Float](repeating: 0.1, count: 80000)
+        // Feed speech + silence to trigger VAD chunk emission
+        let speechBuffer = [Float](repeating: 0.1, count: 32000)
+        let silenceBuffer = [Float](repeating: 0.0, count: 11200)
         mockCapture.simulateBuffer(speechBuffer)
+        mockCapture.simulateBuffer(silenceBuffer)
 
         await fulfillment(of: [expectation], timeout: 6.0)
 
