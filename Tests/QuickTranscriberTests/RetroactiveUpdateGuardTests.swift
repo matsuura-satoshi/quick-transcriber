@@ -45,8 +45,10 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         }
 
         // First chunk - speaker will be pending (nil)
-        let speech = [Float](repeating: 0.1, count: 80000)
+        let speech = [Float](repeating: 0.1, count: 32000)
+        let silence = [Float](repeating: 0.0, count: 11200)
         mockCapture.simulateBuffer(speech)
+        mockCapture.simulateBuffer(silence)
         await fulfillment(of: [firstChunk], timeout: 6.0)
 
         // Simulate user correction on the first segment by directly modifying engine state
@@ -59,6 +61,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
             TranscribedSegment(text: "second", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1),
         ]
         mockCapture.simulateBuffer(speech)
+        mockCapture.simulateBuffer(silence)
         await fulfillment(of: [secondChunk], timeout: 6.0)
 
         // After retroactive update, first segment should have speaker "A" (since we didn't mark it as user-corrected in engine)
@@ -109,8 +112,10 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         }
 
         // First chunk
-        let speech = [Float](repeating: 0.1, count: 80000)
+        let speech = [Float](repeating: 0.1, count: 32000)
+        let silence = [Float](repeating: 0.0, count: 11200)
         mockCapture.simulateBuffer(speech)
+        mockCapture.simulateBuffer(silence)
         await fulfillment(of: [firstChunk], timeout: 6.0)
 
         // Mark first segment as user-corrected (simulating ViewModel action)
@@ -121,6 +126,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
             TranscribedSegment(text: "second", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1),
         ]
         mockCapture.simulateBuffer(speech)
+        mockCapture.simulateBuffer(silence)
         await fulfillment(of: [secondChunk], timeout: 6.0)
 
         // First segment should still be "B" (user-corrected), not overwritten to "A"
@@ -167,8 +173,10 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         let params = TranscriptionParameters(enableSpeakerDiarization: true)
         try await engine.startStreaming(language: "en", parameters: params) { _ in }
 
-        let speech = [Float](repeating: 0.1, count: 80000)
+        let speech = [Float](repeating: 0.1, count: 32000)
+        let silence = [Float](repeating: 0.0, count: 11200)
         mockCapture.simulateBuffer(speech)
+        mockCapture.simulateBuffer(silence)
         try await Task.sleep(nanoseconds: 500_000_000)
 
         // Mark segment as user-corrected (was originally profileIdA, user changed to some other speaker)

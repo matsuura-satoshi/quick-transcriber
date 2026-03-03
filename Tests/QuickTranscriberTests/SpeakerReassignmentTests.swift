@@ -303,9 +303,11 @@ final class SpeakerReassignmentTests: XCTestCase {
             }
         }
 
-        // Send first chunk (pending speaker)
-        let speech = [Float](repeating: 0.1, count: 80000)
+        // Send speech + silence to trigger VAD chunk (pending speaker)
+        let speech = [Float](repeating: 0.1, count: 32000)
+        let silence = [Float](repeating: 0.0, count: 11200)
         mockCapture.simulateBuffer(speech)
+        mockCapture.simulateBuffer(silence)
         await fulfillment(of: [firstChunkExpectation], timeout: 6.0)
 
         // First segment should have nil speaker (pending)

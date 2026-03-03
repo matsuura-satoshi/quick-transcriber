@@ -69,17 +69,17 @@ private struct TranscriptionSettingsTab: View {
     private var chunkSection: some View {
         Section("Chunk Settings") {
             DoubleSliderRow(
-                label: "Chunk Duration",
+                label: "Max Chunk Duration",
                 value: $store.parameters.chunkDuration,
-                range: 1.0...10.0,
+                range: 3.0...15.0,
                 step: 0.5,
                 format: "%.1f s"
             )
 
             DoubleSliderRow(
-                label: "Silence Cutoff",
+                label: "End-of-Utterance Silence",
                 value: $store.parameters.silenceCutoffDuration,
-                range: 0.3...2.0,
+                range: 0.2...2.0,
                 step: 0.1,
                 format: "%.1f s"
             )
@@ -90,6 +90,30 @@ private struct TranscriptionSettingsTab: View {
                 range: 0.001...0.1,
                 step: 0.001,
                 format: "%.3f"
+            )
+
+            SliderRow(
+                label: "Speech Onset Threshold",
+                value: $store.parameters.speechOnsetThreshold,
+                range: 0.005...0.1,
+                step: 0.005,
+                format: "%.3f"
+            )
+
+            DoubleSliderRow(
+                label: "Pre-roll Duration",
+                value: $store.parameters.preRollDuration,
+                range: 0.1...0.5,
+                step: 0.05,
+                format: "%.2f s"
+            )
+
+            DoubleSliderRow(
+                label: "Hangover Duration",
+                value: $store.parameters.hangoverDuration,
+                range: 0.05...0.5,
+                step: 0.05,
+                format: "%.2f s"
             )
 
             DoubleSliderRow(

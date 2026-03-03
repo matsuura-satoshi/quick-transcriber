@@ -4,218 +4,312 @@ import XCTest
 final class ChunkAccumulatorTests: XCTestCase {
     private let sampleRate: Double = 16000.0
 
-    // MARK: - Max Duration Cut
+    /// Helper: create a buffer of samples with given amplitude and duration.
+    private func makeBuffer(amplitude: Float, duration: TimeInterval) -> [Float] {
+        [Float](repeating: amplitude, count: Int(duration * sampleRate))
+    }
 
-    func testChunkCutAtMaxDuration() {
-        var acc = ChunkAccumulator(chunkDuration: 3.0)
-        let samplesPerSecond = Int(sampleRate)
-        // Feed 2.9 seconds of audio — should not cut yet
-        let buffer1s = [Float](repeating: 0.1, count: samplesPerSecond)
-        for _ in 0..<2 {
-            let result = acc.appendBuffer(buffer1s)
-            XCTAssertNil(result, "Should not cut before max duration")
+    /// Helper: create speech buffer (above onset threshold).
+    private func speechBuffer(duration: TimeInterval) -> [Float] {
+        makeBuffer(amplitude: 0.1, duration: duration)
+    }
+
+    /// Helper: create silence buffer (zero energy).
+    private func silenceBuffer(duration: TimeInterval) -> [Float] {
+        makeBuffer(amplitude: 0.0, duration: duration)
+    }
+
+    /// Feed buffer in 100ms increments (simulating real streaming).
+    private func feedIncrementally(_ acc: inout VADChunkAccumulator, buffer: [Float], incrementDuration: TimeInterval = 0.1) -> [ChunkResult] {
+        let incrementSize = Int(incrementDuration * sampleRate)
+        var results: [ChunkResult] = []
+        var offset = 0
+        while offset < buffer.count {
+            let end = min(offset + incrementSize, buffer.count)
+            let slice = Array(buffer[offset..<end])
+            if let result = acc.appendBuffer(slice) {
+                results.append(result)
+            }
+            offset = end
         }
-        // Feed remaining 1.0s to reach 3.0s — should cut
-        let chunk = acc.appendBuffer(buffer1s)
-        XCTAssertNotNil(chunk, "Should cut at max duration")
-        XCTAssertEqual(chunk!.samples.count, samplesPerSecond * 3)
+        return results
     }
 
-    // MARK: - Silence Detection
+    // MARK: - Idle → Speaking Transition
 
-    func testSilenceDetectionCutsEarly() {
-        var acc = ChunkAccumulator(
-            chunkDuration: 3.0,
-            silenceCutoffDuration: 0.5,
-            silenceEnergyThreshold: 0.01,
-            minimumChunkDuration: 1.0
+    func testIdleToSpeakingTransition() {
+        var acc = VADChunkAccumulator()
+        // Feed speech — should not immediately produce a result (accumulating)
+        let result = acc.appendBuffer(speechBuffer(duration: 0.1))
+        XCTAssertNil(result, "Single speech buffer should not produce a chunk")
+    }
+
+    // MARK: - Pre-roll
+
+    func testPreRollIncludedInChunk() {
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 0.3,
+            preRollDuration: 0.3
         )
-        // Feed 1.2s of speech (above threshold)
-        let speechBuffer = [Float](repeating: 0.1, count: Int(1.2 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(speechBuffer))
+        // Feed 0.5s silence (fills pre-roll)
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.5))
+        // Feed 0.5s speech
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        // Feed 0.4s silence to trigger end-of-utterance (>= 0.3s)
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
 
-        // Feed 0.5s of silence — should trigger cut (total > 1s minimum)
-        let silenceBuffer = [Float](repeating: 0.0, count: Int(0.5 * sampleRate))
-        let chunk = acc.appendBuffer(silenceBuffer)
-        XCTAssertNotNil(chunk, "Should cut after silence threshold")
-        let expectedCount = Int(1.2 * sampleRate) + Int(0.5 * sampleRate)
-        XCTAssertEqual(chunk!.samples.count, expectedCount)
+        XCTAssertEqual(results.count, 1, "Should emit one chunk")
+        // Chunk should contain: pre-roll (0.3s) + speech (0.5s) + trailing silence (>=0.3s)
+        let chunkDuration = TimeInterval(results[0].samples.count) / sampleRate
+        XCTAssertGreaterThanOrEqual(chunkDuration, 0.8, "Chunk should include pre-roll + speech")
     }
 
-    // MARK: - Minimum Chunk Length
+    func testPreRollDoesNotExceedConfiguredDuration() {
+        var acc = VADChunkAccumulator(preRollDuration: 0.3)
+        // Feed 2s of silence (much more than pre-roll)
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 2.0))
+        // Feed 0.5s speech + endOfUtterance silence
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.7))
 
-    func testMinimumChunkLength() {
-        var acc = ChunkAccumulator(
-            chunkDuration: 3.0,
-            silenceCutoffDuration: 0.3,
-            silenceEnergyThreshold: 0.01,
-            minimumChunkDuration: 1.0
+        XCTAssertEqual(results.count, 1)
+        let chunkDuration = TimeInterval(results[0].samples.count) / sampleRate
+        // pre-roll(0.3) + speech(0.5) + trailing(>=0.6) ≈ 1.4-1.5s
+        // Without pre-roll cap it would be much longer
+        XCTAssertLessThan(chunkDuration, 2.0, "Pre-roll should be capped at configured duration")
+    }
+
+    // MARK: - Hangover
+
+    func testHangoverPreventsEarlyCut() {
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 0.6,
+            hangoverDuration: 0.15
         )
-        // Feed 0.5s of speech then 0.3s of silence — below minimum duration, should NOT cut
-        let speechBuffer = [Float](repeating: 0.1, count: Int(0.5 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(speechBuffer))
+        // Feed speech
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 1.0))
+        // Feed short silence (< hangoverDuration) then speech again
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.1))
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        // Feed end-of-utterance silence
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.7))
 
-        let silenceBuffer = [Float](repeating: 0.0, count: Int(0.3 * sampleRate))
-        let chunk = acc.appendBuffer(silenceBuffer)
-        XCTAssertNil(chunk, "Should not cut below minimum chunk duration")
+        // Should produce exactly one chunk (hangover prevented cut at 0.1s silence)
+        XCTAssertEqual(results.count, 1, "Hangover should prevent premature cut")
     }
 
-    // MARK: - RMS Energy Calculation
+    // MARK: - End of Utterance
 
-    func testRMSEnergyCalculation() {
-        // Known input: [0.3, 0.4]
-        // Sum of squares = 0.09 + 0.16 = 0.25
-        // Mean = 0.125
-        // sqrt(0.125) ≈ 0.3536
-        let energy = ChunkAccumulator.rmsEnergy(of: [0.3, 0.4])
-        XCTAssertEqual(energy, sqrt(0.125), accuracy: 0.0001)
+    func testEndOfUtteranceSilenceCutsChunk() {
+        var acc = VADChunkAccumulator(endOfUtteranceSilence: 0.6)
+        // Feed speech
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 1.0))
+        // Feed silence >= endOfUtteranceSilence
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.7))
+
+        XCTAssertEqual(results.count, 1, "Should cut after end-of-utterance silence")
     }
 
-    func testRMSEnergyOfSilence() {
-        let energy = ChunkAccumulator.rmsEnergy(of: [Float](repeating: 0.0, count: 100))
-        XCTAssertEqual(energy, 0.0)
+    // MARK: - Max Duration
+
+    func testMaxDurationForceCut() {
+        var acc = VADChunkAccumulator(maxChunkDuration: 2.0)
+        // Feed continuous speech exceeding maxChunkDuration
+        let results = feedIncrementally(&acc, buffer: speechBuffer(duration: 2.5))
+
+        XCTAssertGreaterThanOrEqual(results.count, 1, "Should force-cut at max duration")
+        let chunkDuration = TimeInterval(results[0].samples.count) / sampleRate
+        XCTAssertEqual(chunkDuration, 2.0, accuracy: 0.15, "Forced cut should be near max duration")
     }
 
-    func testRMSEnergyOfEmptyArray() {
-        let energy = ChunkAccumulator.rmsEnergy(of: [])
-        XCTAssertEqual(energy, 0.0)
-    }
+    // MARK: - Minimum Utterance Filter
 
-    // MARK: - Empty / Silence Only
-
-    func testEmptySilenceProducesNoChunk() {
-        var acc = ChunkAccumulator(
-            chunkDuration: 3.0,
-            silenceCutoffDuration: 0.5,
-            silenceEnergyThreshold: 0.01,
-            minimumChunkDuration: 1.0
+    func testMinimumUtteranceFilterDiscardsTooShort() {
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 0.3,
+            minimumUtteranceDuration: 0.3
         )
-        // Feed only 0.3s of silence — below both min duration and silence cutoff
-        let silenceBuffer = [Float](repeating: 0.0, count: Int(0.3 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(silenceBuffer))
+        // Feed very short speech (50ms) + silence
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.05))
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+
+        XCTAssertEqual(results.count, 0, "Too-short utterance should be discarded")
+    }
+
+    func testShortButValidUtteranceIsEmitted() {
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 0.3,
+            minimumUtteranceDuration: 0.3
+        )
+        // Feed 0.4s speech (above minimum) + silence
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.4))
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+
+        XCTAssertEqual(results.count, 1, "Valid utterance should be emitted")
+    }
+
+    // MARK: - Preceding Silence
+
+    func testPrecedingSilenceAccuracy() {
+        var acc = VADChunkAccumulator(endOfUtteranceSilence: 0.3)
+        // Feed 2.5s silence → then speech + silence
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 2.5))
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results[0].precedingSilenceDuration, 2.5, accuracy: 0.15,
+                       "precedingSilence should reflect idle silence duration")
+    }
+
+    // MARK: - Trailing Silence
+
+    func testTrailingSilenceAccuracy() {
+        var acc = VADChunkAccumulator(endOfUtteranceSilence: 0.6)
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 1.0))
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.7))
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertGreaterThanOrEqual(results[0].trailingSilenceDuration, 0.6,
+                                    "trailingSilence should be at least endOfUtteranceSilence")
+    }
+
+    // MARK: - Silence Carryover
+
+    func testSilenceCarryover() {
+        var acc = VADChunkAccumulator(endOfUtteranceSilence: 0.3)
+        // First utterance
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        let results1 = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+        XCTAssertEqual(results1.count, 1)
+        let trailing1 = results1[0].trailingSilenceDuration
+
+        // Second utterance — its preceding silence should include carryover
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.5))
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        let results2 = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+        XCTAssertEqual(results2.count, 1)
+        // Preceding = trailing from chunk1 + additional silence (0.5s)
+        XCTAssertGreaterThanOrEqual(results2[0].precedingSilenceDuration, trailing1 + 0.4,
+                                    "Carryover should add previous trailing to idle silence")
     }
 
     // MARK: - Flush
 
-    func testFlushReturnsRemainingAudio() {
-        var acc = ChunkAccumulator(chunkDuration: 3.0)
-        // Feed 1.0s of audio
-        let buffer = [Float](repeating: 0.1, count: Int(sampleRate))
-        XCTAssertNil(acc.appendBuffer(buffer))
-        // Flush should return the buffered audio
-        let chunk = acc.flush()
-        XCTAssertNotNil(chunk)
-        XCTAssertEqual(chunk!.samples.count, Int(sampleRate))
+    func testFlushInSpeakingState() {
+        var acc = VADChunkAccumulator()
+        // Feed speech without triggering cut
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 1.0))
+        let result = acc.flush()
+        XCTAssertNotNil(result, "Flush during speaking should emit buffered audio")
+        let chunkDuration = TimeInterval(result!.samples.count) / sampleRate
+        XCTAssertGreaterThanOrEqual(chunkDuration, 0.5)
     }
 
-    func testFlushDiscardsTooShortAudio() {
-        var acc = ChunkAccumulator(chunkDuration: 3.0)
-        // Feed 0.3s of audio — too short to flush
-        let buffer = [Float](repeating: 0.1, count: Int(0.3 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(buffer))
-        let chunk = acc.flush()
-        XCTAssertNil(chunk, "Should not flush audio shorter than 0.5s")
+    func testFlushInIdleState() {
+        var acc = VADChunkAccumulator()
+        // Feed only silence
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 1.0))
+        let result = acc.flush()
+        XCTAssertNil(result, "Flush during idle should return nil")
+    }
+
+    func testFlushInHangoverState() {
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 1.0,
+            hangoverDuration: 0.5
+        )
+        // Feed speech then short silence (enter hangover but not end-of-utterance)
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 1.0))
+        _ = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.3))
+        let result = acc.flush()
+        XCTAssertNotNil(result, "Flush during hangover should emit buffered audio")
+    }
+
+    func testFlushTooShortIsDiscarded() {
+        var acc = VADChunkAccumulator()
+        // Feed very short speech (0.3s)
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.3))
+        let result = acc.flush()
+        XCTAssertNil(result, "Flush with < 0.5s audio should return nil")
     }
 
     // MARK: - Reset
 
-    func testResetClearsBuffer() {
-        var acc = ChunkAccumulator(chunkDuration: 3.0)
-        let buffer = [Float](repeating: 0.1, count: Int(sampleRate))
-        XCTAssertNil(acc.appendBuffer(buffer))
+    func testResetClearsAllState() {
+        var acc = VADChunkAccumulator()
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 1.0))
         acc.reset()
-        let chunk = acc.flush()
-        XCTAssertNil(chunk, "Should have no audio after reset")
-    }
-
-    // MARK: - Multiple Chunks
-
-    func testMultipleChunksProduced() {
-        var acc = ChunkAccumulator(chunkDuration: 2.0)
-        let samplesPerSecond = Int(sampleRate)
-        var chunkCount = 0
-
-        // Feed 5 seconds of audio in 1-second increments
-        for _ in 0..<5 {
-            let buffer = [Float](repeating: 0.1, count: samplesPerSecond)
-            if acc.appendBuffer(buffer) != nil {
-                chunkCount += 1
-            }
-        }
-
-        XCTAssertEqual(chunkCount, 2, "Should produce 2 full chunks from 5s of audio at 2s max")
-    }
-
-    // MARK: - ChunkResult trailing silence
-
-    func testChunkResultContainsTrailingSilenceDuration() {
-        var acc = ChunkAccumulator(
-            chunkDuration: 3.0,
-            silenceCutoffDuration: 0.5,
-            silenceEnergyThreshold: 0.01,
-            minimumChunkDuration: 1.0
-        )
-        // Feed 1.2s speech + 0.5s silence → triggers cut
-        let speech = [Float](repeating: 0.1, count: Int(1.2 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(speech))
-        let silence = [Float](repeating: 0.0, count: Int(0.5 * sampleRate))
-        let result = acc.appendBuffer(silence)
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result!.samples.count, Int(1.2 * sampleRate) + Int(0.5 * sampleRate))
-        XCTAssertEqual(result!.trailingSilenceDuration, 0.5, accuracy: 0.01)
-    }
-
-    func testChunkResultAtMaxDurationCapturesTrailingSilence() {
-        var acc = ChunkAccumulator(chunkDuration: 2.0)
-        // Feed 1.5s speech + 0.5s silence = 2.0s → forced cut
-        let speech = [Float](repeating: 0.1, count: Int(1.5 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(speech))
-        let silence = [Float](repeating: 0.0, count: Int(0.5 * sampleRate))
-        let result = acc.appendBuffer(silence)
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result!.trailingSilenceDuration, 0.5, accuracy: 0.01)
-    }
-
-    func testChunkResultWithNoTrailingSilence() {
-        var acc = ChunkAccumulator(chunkDuration: 2.0)
-        // Feed 2.0s speech → forced cut, no trailing silence
-        let speech = [Float](repeating: 0.1, count: Int(2.0 * sampleRate))
-        let result = acc.appendBuffer(speech)
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result!.trailingSilenceDuration, 0.0, accuracy: 0.001)
-    }
-
-    func testFlushReturnsChunkResult() {
-        var acc = ChunkAccumulator(chunkDuration: 3.0)
-        let speech = [Float](repeating: 0.1, count: Int(sampleRate))
-        XCTAssertNil(acc.appendBuffer(speech))
+        // After reset, flush should return nil
         let result = acc.flush()
-        XCTAssertNotNil(result)
-        XCTAssertEqual(result!.samples.count, Int(sampleRate))
+        XCTAssertNil(result, "Reset should clear all buffered audio")
     }
 
-    // MARK: - Silence Resets After Speech
+    // MARK: - Multiple Utterances
 
-    func testSilenceCounterResetsAfterSpeech() {
-        var acc = ChunkAccumulator(
-            chunkDuration: 5.0,
-            silenceCutoffDuration: 0.5,
+    func testMultipleUtterancesProduceMultipleChunks() {
+        var acc = VADChunkAccumulator(endOfUtteranceSilence: 0.3)
+        // First utterance
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        let results1 = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+        // Second utterance
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        let results2 = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.4))
+
+        XCTAssertEqual(results1.count, 1, "First utterance should produce one chunk")
+        XCTAssertEqual(results2.count, 1, "Second utterance should produce one chunk")
+    }
+
+    // MARK: - Hysteresis
+
+    func testHysteresisOnsetOffsetDifference() {
+        // Energy between offset (0.01) and onset (0.02) should:
+        // - NOT trigger speaking from idle
+        // - Continue speaking if already in speaking state
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 0.3,
             silenceEnergyThreshold: 0.01,
-            minimumChunkDuration: 1.0
+            speechOnsetThreshold: 0.02
         )
-        // Feed 1.0s speech
-        let speech = [Float](repeating: 0.1, count: Int(sampleRate))
-        XCTAssertNil(acc.appendBuffer(speech))
+        // Feed audio at amplitude 0.015 (RMS between offset and onset) — should stay idle
+        _ = feedIncrementally(&acc, buffer: makeBuffer(amplitude: 0.015, duration: 1.0))
+        let result = acc.flush()
+        XCTAssertNil(result, "Energy between offset and onset should not trigger speaking from idle")
+    }
 
-        // Feed 0.3s silence (not enough to trigger)
-        let silence03 = [Float](repeating: 0.0, count: Int(0.3 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(silence03))
+    func testHysteresisSpeakingContinues() {
+        var acc = VADChunkAccumulator(
+            endOfUtteranceSilence: 0.5,
+            silenceEnergyThreshold: 0.01,
+            speechOnsetThreshold: 0.02
+        )
+        // Start speaking with clear speech
+        _ = feedIncrementally(&acc, buffer: speechBuffer(duration: 0.5))
+        // Drop to energy between offset and onset — should continue speaking (not hangover)
+        _ = feedIncrementally(&acc, buffer: makeBuffer(amplitude: 0.015, duration: 0.5))
+        // End-of-utterance silence
+        let results = feedIncrementally(&acc, buffer: silenceBuffer(duration: 0.6))
 
-        // Feed speech again — silence counter should reset
-        let speech2 = [Float](repeating: 0.1, count: Int(0.2 * sampleRate))
-        XCTAssertNil(acc.appendBuffer(speech2))
+        XCTAssertEqual(results.count, 1, "Should produce one chunk")
+        let chunkDuration = TimeInterval(results[0].samples.count) / sampleRate
+        // Should include the mid-energy portion (not cut early)
+        XCTAssertGreaterThanOrEqual(chunkDuration, 0.9, "Mid-energy audio should be included in speaking chunk")
+    }
 
-        // Feed 0.3s silence again — should NOT trigger cut (counter reset)
-        XCTAssertNil(acc.appendBuffer(silence03))
+    // MARK: - RMS Energy (preserved from original)
+
+    func testRMSEnergyCalculation() {
+        let energy = VADChunkAccumulator.rmsEnergy(of: [0.3, 0.4])
+        XCTAssertEqual(energy, sqrt(0.125), accuracy: 0.0001)
+    }
+
+    func testRMSEnergyOfSilence() {
+        let energy = VADChunkAccumulator.rmsEnergy(of: [Float](repeating: 0.0, count: 100))
+        XCTAssertEqual(energy, 0.0)
+    }
+
+    func testRMSEnergyOfEmptyArray() {
+        let energy = VADChunkAccumulator.rmsEnergy(of: [])
+        XCTAssertEqual(energy, 0.0)
     }
 }

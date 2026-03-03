@@ -4,6 +4,18 @@ import XCTest
 final class ChunkedWhisperEngineTests: XCTestCase {
     private var mockCapture: MockAudioCaptureService!
 
+    /// Helper: speech buffer followed by silence to trigger VAD chunk emission.
+    /// Speech (speechDuration) + silence (0.7s, > default endOfUtteranceSilence 0.6s)
+    private func simulateSpeechAndSilence(
+        speechDuration: TimeInterval = 1.0,
+        silenceDuration: TimeInterval = 0.7
+    ) {
+        let speechSamples = [Float](repeating: 0.1, count: Int(speechDuration * 16000))
+        let silenceSamples = [Float](repeating: 0.0, count: Int(silenceDuration * 16000))
+        mockCapture.simulateBuffer(speechSamples)
+        mockCapture.simulateBuffer(silenceSamples)
+    }
+
     override func setUp() {
         super.setUp()
         mockCapture = MockAudioCaptureService()
@@ -87,9 +99,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // Feed 5 seconds of audio (16kHz) to trigger chunk cut
-        let speechBuffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(speechBuffer)
+        // Feed speech + silence to trigger VAD chunk emission
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         await fulfillment(of: [expectation], timeout: 6.0)
 
@@ -111,12 +122,11 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         try await engine.startStreaming(language: "en") { _ in }
 
-        // Feed 5 seconds to trigger chunk — transcription will fail
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        // Feed speech + silence to trigger VAD chunk — transcription will fail
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         // Wait for processing
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await Task.sleep(nanoseconds: 300_000_000)
 
         // Engine should still be streaming despite the error
         let streaming = await engine.isStreaming
@@ -144,8 +154,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        let buffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(buffer)
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         await fulfillment(of: [expectation], timeout: 6.0)
         XCTAssertEqual(mockTranscriber.lastLanguage, "ja")
@@ -166,7 +175,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         try await engine.startStreaming(language: "en") { _ in }
 
-        // Feed 1 second of audio — not enough for chunk cut but enough for flush
+        // Feed 1 second of speech — not enough to trigger VAD cut but enough for flush
         let buffer = [Float](repeating: 0.1, count: 16000)
         mockCapture.simulateBuffer(buffer)
         try await Task.sleep(nanoseconds: 100_000_000)
@@ -179,9 +188,6 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
     func testMultipleChunksAccumulateText() async throws {
         let mockTranscriber = MockChunkTranscriber()
-        var callCount = 0
-        // Return different text for each call
-        // MockChunkTranscriber returns the same result, so we track via callCount
         mockTranscriber.transcribeResults = [
             TranscribedSegment(text: "segment", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
         ]
@@ -198,18 +204,16 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // Feed 10 seconds of audio → 2 chunks at 5s each
-        for _ in 0..<10 {
-            let buffer = [Float](repeating: 0.1, count: 16000)
-            mockCapture.simulateBuffer(buffer)
-        }
+        // Two speech+silence cycles → 2 VAD chunks
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         // Wait for both chunks to be processed
         try await Task.sleep(nanoseconds: 500_000_000)
 
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 2)
 
-        // confirmedText should contain both segments joined by newline
         let lastState = states.last
         XCTAssertEqual(lastState?.confirmedText, "segment segment")
 
@@ -308,9 +312,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // Feed enough audio for a chunk (5s at 16kHz = 80000 samples)
-        let speechBuffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(speechBuffer)
+        // Feed speech + silence to trigger VAD chunk
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         await fulfillment(of: [expectation], timeout: 6.0)
 
@@ -426,9 +429,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             onStateChange: { _ in }
         )
 
-        // Feed a chunk to trigger processChunk
-        let chunk = [Float](repeating: 0.5, count: 80000)
-        mockCapture.simulateBuffer(chunk)
+        // Feed speech + silence to trigger VAD chunk
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         // Give time for processing
         try await Task.sleep(nanoseconds: 500_000_000)
@@ -470,20 +472,19 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // First speech chunk (5s at 16kHz)
-        let speechBuffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(speechBuffer)
+        // First speech + silence → VAD chunk emission
+        // silence 0.7s > endOfUtteranceSilence 0.6s → emit chunk
+        simulateSpeechAndSilence(speechDuration: 2.0, silenceDuration: 0.7)
 
         // Wait for first chunk processing
         try await Task.sleep(nanoseconds: 300_000_000)
 
-        // Silent chunk (1s) to accumulate silence ≥ silenceCutoffDuration (0.8s)
-        let silentBuffer = [Float](repeating: 0.0001, count: 16000)
-        mockCapture.simulateBuffer(silentBuffer)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // Additional silence to accumulate significant silence (>= silenceCutoffDuration)
+        // The VAD carries over trailing silence (0.7s) to next chunk's precedingSilenceDuration.
+        // precedingSilenceDuration (0.7) >= silenceCutoffDuration (0.6) → forceRun: true
 
-        // Second speech chunk after silence
-        mockCapture.simulateBuffer(speechBuffer)
+        // Second speech + silence
+        simulateSpeechAndSilence(speechDuration: 2.0, silenceDuration: 0.7)
 
         await fulfillment(of: [expectation], timeout: 6.0)
 
@@ -523,9 +524,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
             }
         }
 
-        // Feed 5 seconds of audio to trigger chunk processing
-        let speechBuffer = [Float](repeating: 0.1, count: 80000)
-        mockCapture.simulateBuffer(speechBuffer)
+        // Feed speech + silence to trigger VAD chunk
+        simulateSpeechAndSilence(speechDuration: 2.0)
 
         await fulfillment(of: [expectation], timeout: 6.0)
 
