@@ -24,7 +24,7 @@ public enum Constants {
     public enum Version {
         public static let major = 1
         public static let minor = 0
-        public static let patch = 57
+        public static let patch = 59
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
     }

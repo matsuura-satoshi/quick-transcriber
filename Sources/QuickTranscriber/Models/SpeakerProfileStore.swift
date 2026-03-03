@@ -9,7 +9,6 @@ public final class SpeakerProfileStore {
     public var profiles: [StoredSpeakerProfile] = []
 
     private let updateAlpha: Float = 0.3
-    private let lockedProfileSimilarityThreshold: Float = 0.7
 
     public init(directory: URL? = nil) {
         let dir = directory ?? FileManager.default.homeDirectoryForCurrentUser
@@ -114,25 +113,6 @@ public final class SpeakerProfileStore {
         profiles.filter { $0.tags.contains(tag) }
     }
 
-    public func findLockedProfileBySimilarity(embedding: [Float]) -> StoredSpeakerProfile? {
-        guard let index = findLockedProfileIndexBySimilarity(embedding: embedding) else { return nil }
-        return profiles[index]
-    }
-
-    private func findLockedProfileIndexBySimilarity(embedding: [Float]) -> Int? {
-        var bestIndex: Int?
-        var bestSimilarity: Float = lockedProfileSimilarityThreshold
-        for (i, profile) in profiles.enumerated() {
-            guard profile.isLocked else { continue }
-            let similarity = EmbeddingBasedSpeakerTracker.cosineSimilarity(embedding, profile.embedding)
-            if similarity >= bestSimilarity {
-                bestSimilarity = similarity
-                bestIndex = i
-            }
-        }
-        return bestIndex
-    }
-
     public func profiles(matching search: String) -> [StoredSpeakerProfile] {
         guard !search.isEmpty else { return profiles }
         return profiles.filter {
@@ -151,14 +131,6 @@ public final class SpeakerProfileStore {
                 }
                 profiles[idMatchIndex].lastUsed = Date()
                 profiles[idMatchIndex].sessionCount += 1
-            } else if let lockedIndex = findLockedProfileIndexBySimilarity(embedding: embedding) {
-                // Priority 2: Locked profile similarity match (high threshold)
-                let alpha = updateAlpha
-                profiles[lockedIndex].embedding = zip(profiles[lockedIndex].embedding, embedding).map { old, new in
-                    (1 - alpha) * old + alpha * new
-                }
-                profiles[lockedIndex].lastUsed = Date()
-                profiles[lockedIndex].sessionCount += 1
             } else {
                 let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
                 profiles.append(newProfile)
