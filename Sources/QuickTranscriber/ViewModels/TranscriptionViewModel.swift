@@ -1157,18 +1157,11 @@ public final class TranscriptionViewModel: ObservableObject {
             }
             if linkedViaAlias { continue }
 
-            // Priority 2: Locked profile similarity match (high threshold)
+            // Fallback: Create new profile for unlinked speaker
             let speakerIdString = speakerId.uuidString
             guard let embedding = confirmedSegments.first(where: {
                 $0.speaker == speakerIdString
             })?.speakerEmbedding else { continue }
-
-            if let lockedProfile = speakerProfileStore.findLockedProfileBySimilarity(embedding: embedding) {
-                activeSpeakers[i].speakerProfileId = lockedProfile.id
-                continue
-            }
-
-            // Fallback: Create new profile for unlinked speaker
             let displayName = activeSpeakers[i].displayName ?? generateSpeakerName()
             let newProfile = StoredSpeakerProfile(id: speakerId, displayName: displayName, embedding: embedding)
             speakerProfileStore.profiles.append(newProfile)

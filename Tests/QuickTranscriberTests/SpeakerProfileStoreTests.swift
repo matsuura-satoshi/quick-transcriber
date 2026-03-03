@@ -467,7 +467,7 @@ final class SpeakerProfileStoreTests: XCTestCase {
 
     // MARK: - Fix 4: Locked profile similarity matching in mergeSessionProfiles
 
-    func testMergeNewSpeakerMatchesLockedProfileBySimilarity() {
+    func testMergeSimilarEmbeddingDoesNotMatchLockedProfile() {
         let dir = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -482,11 +482,12 @@ final class SpeakerProfileStoreTests: XCTestCase {
         similarEmbedding[1] = 0.1
         store.mergeSessionProfiles([(speakerId: newId, embedding: similarEmbedding, displayName: "Speaker-1")])
 
-        XCTAssertEqual(store.profiles.count, 1,
-                       "Should merge into locked profile, not create new one")
+        XCTAssertEqual(store.profiles.count, 2,
+                       "Should NOT merge into locked profile — should create new profile")
         XCTAssertEqual(store.profiles[0].id, lockedId)
-        XCTAssertEqual(store.profiles[0].displayName, "Alice", "Should preserve locked profile displayName")
-        XCTAssertEqual(store.profiles[0].sessionCount, 2, "Should increment session count")
+        XCTAssertEqual(store.profiles[0].sessionCount, 1, "Locked profile should NOT be updated")
+        XCTAssertEqual(store.profiles[1].id, newId)
+        XCTAssertEqual(store.profiles[1].displayName, "Speaker-1")
     }
 
     func testMergeDoesNotMatchUnlockedProfileBySimilarity() {
@@ -521,37 +522,6 @@ final class SpeakerProfileStoreTests: XCTestCase {
                        "Dissimilar embedding should NOT match locked profile — should create new profile")
     }
 
-    func testFindLockedProfileBySimilarityReturnsMatch() {
-        let dir = makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let store = SpeakerProfileStore(directory: dir)
-        let lockedId = UUID()
-        store.profiles = [
-            StoredSpeakerProfile(id: lockedId, displayName: "Alice", embedding: makeEmbedding(dominant: 0), isLocked: true),
-            StoredSpeakerProfile(displayName: "Bob", embedding: makeEmbedding(dominant: 50)),
-        ]
-
-        var similarEmbedding = makeEmbedding(dominant: 0)
-        similarEmbedding[1] = 0.1
-        let result = store.findLockedProfileBySimilarity(embedding: similarEmbedding)
-
-        XCTAssertNotNil(result, "Should find locked profile with similar embedding")
-        XCTAssertEqual(result?.id, lockedId)
-    }
-
-    func testFindLockedProfileBySimilarityReturnsNilForUnlocked() {
-        let dir = makeTempDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-
-        let store = SpeakerProfileStore(directory: dir)
-        store.profiles = [
-            StoredSpeakerProfile(displayName: "Alice", embedding: makeEmbedding(dominant: 0)),
-        ]
-
-        let result = store.findLockedProfileBySimilarity(embedding: makeEmbedding(dominant: 0))
-        XCTAssertNil(result, "Should not match unlocked profiles")
-    }
 
     // MARK: - forceDelete
 

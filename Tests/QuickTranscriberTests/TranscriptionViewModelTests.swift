@@ -1785,7 +1785,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     // MARK: - Fix 4: Locked profile similarity matching in linkActiveSpeakersToProfiles
 
-    func testLinkActiveSpeakersMatchesLockedProfileBySimilarity() {
+    func testLinkActiveSpeakersDoesNotMatchLockedProfileBySimilarity() {
         let store = SpeakerProfileStore(directory: tmpDir)
         let lockedProfileId = UUID()
         let embedding = makeEmbedding(dominant: 0)
@@ -1811,8 +1811,11 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         vm.linkActiveSpeakersToProfiles()
 
-        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, lockedProfileId,
-                       "Should match locked profile by embedding similarity")
+        XCTAssertNotEqual(vm.activeSpeakers[0].speakerProfileId, lockedProfileId,
+                          "Should NOT match locked profile by embedding similarity")
+        XCTAssertEqual(vm.activeSpeakers[0].speakerProfileId, trackerId,
+                       "Should create new profile with tracker ID instead")
+        XCTAssertEqual(store.profiles.count, 2, "Should have original + new profile")
     }
 
     func testLinkActiveSpeakersDoesNotMatchUnlockedProfileBySimilarity() {
