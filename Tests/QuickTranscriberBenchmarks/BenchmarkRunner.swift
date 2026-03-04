@@ -98,6 +98,9 @@ final class BenchmarkRunner {
         guard !refWords.isEmpty else {
             return hypWords.isEmpty ? 0.0 : 1.0
         }
+        guard !hypWords.isEmpty else {
+            return 1.0  // All reference words are deletions
+        }
 
         let n = refWords.count
         let m = hypWords.count
