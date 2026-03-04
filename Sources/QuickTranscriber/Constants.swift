@@ -31,11 +31,16 @@ public enum Constants {
     }
 
     public enum Version {
-        public static let major = 1
-        public static let minor = 0
-        public static let patch = 60
+        public static let major = 2
+        public static let minor = 1
+        public static let patch = 62
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
+    }
+
+    public enum GitHub {
+        public static let owner = "matsuura-satoshi"
+        public static let repo = "quick-transcriber"
     }
 
     public enum Translation {

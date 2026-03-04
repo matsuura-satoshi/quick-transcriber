@@ -18,10 +18,43 @@ extension Notification.Name {
 struct QuickTranscriberApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var viewModel = TranscriptionViewModel()
+    @StateObject private var updateChecker = UpdateChecker()
+    @AppStorage("lastUpdateCheck") private var lastUpdateCheck: Double = 0
+
+    @State private var showUpdateAvailableAlert = false
+    @State private var showNoUpdateAlert = false
+    @State private var showUpdateErrorAlert = false
+    @State private var isManualCheck = false
 
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
+                .onAppear {
+                    checkForUpdatesOnLaunch()
+                }
+                .alert("Update Available", isPresented: $showUpdateAvailableAlert) {
+                    Button("Download and Install") {
+                        Task { await updateChecker.downloadAndInstall() }
+                    }
+                    Button("View Release Page") {
+                        updateChecker.openReleasePage()
+                    }
+                    Button("Later", role: .cancel) {}
+                } message: {
+                    if let release = updateChecker.latestRelease {
+                        Text("A new version (\(release.tagName)) is available. Current version: \(Constants.Version.versionString)")
+                    }
+                }
+                .alert("No Updates Available", isPresented: $showNoUpdateAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("You are running the latest version (\(Constants.Version.versionString)).")
+                }
+                .alert("Update Check Failed", isPresented: $showUpdateErrorAlert) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(updateChecker.errorMessage ?? "An unknown error occurred.")
+                }
         }
         .commands {
             // Replace the About menu item
@@ -29,6 +62,12 @@ struct QuickTranscriberApp: App {
                 Button("About Quick Transcriber") {
                     appDelegate.showAboutWindow()
                 }
+
+                Button("Check for Updates...") {
+                    isManualCheck = true
+                    Task { await performUpdateCheck() }
+                }
+                .disabled(updateChecker.isChecking)
             }
 
             // File menu
@@ -79,6 +118,30 @@ struct QuickTranscriberApp: App {
 
         Settings {
             SettingsView(viewModel: viewModel)
+        }
+    }
+
+    private func checkForUpdatesOnLaunch() {
+        let now = Date().timeIntervalSince1970
+        let oneDayInSeconds: Double = 24 * 60 * 60
+        guard now - lastUpdateCheck >= oneDayInSeconds else { return }
+
+        isManualCheck = false
+        Task { await performUpdateCheck() }
+    }
+
+    private func performUpdateCheck() async {
+        await updateChecker.checkForUpdates()
+        lastUpdateCheck = Date().timeIntervalSince1970
+
+        if updateChecker.updateAvailable {
+            showUpdateAvailableAlert = true
+        } else if updateChecker.errorMessage != nil {
+            if isManualCheck {
+                showUpdateErrorAlert = true
+            }
+        } else if isManualCheck {
+            showNoUpdateAlert = true
         }
     }
 }
