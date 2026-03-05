@@ -405,6 +405,69 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
         XCTAssertEqual(result?.speakerId, spkA)
     }
 
+    // MARK: - confirmSpeaker (user correction)
+
+    func testConfirmSpeaker_setsConfirmedToTarget() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        // User corrects to speakerB
+        smoother.confirmSpeaker(speakerB)
+        // nil input should return speakerB as confirmed
+        let result = smoother.process(nil)
+        XCTAssertEqual(result?.speakerId, speakerB)
+    }
+
+    func testConfirmSpeaker_subsequentSameSpeakerContinues() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerA, 0.9))
+        // User corrects to speakerB
+        smoother.confirmSpeaker(speakerB)
+        // Next observation of B should continue as B (not flip back to A)
+        let result = smoother.process(id(speakerB, 0.7))
+        XCTAssertEqual(result?.speakerId, speakerB)
+    }
+
+    func testConfirmSpeaker_resistsSwitchBackToOldSpeaker() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerA, 0.9))
+        // User corrects to speakerB
+        smoother.confirmSpeaker(speakerB)
+        // Single A observation should NOT flip back (stayProbability keeps B)
+        let r1 = smoother.process(id(speakerA, 0.7))
+        // Should be B still (or pending/nil, but not confirmed A)
+        if let r1 {
+            XCTAssertEqual(r1.speakerId, speakerB,
+                "After confirmSpeaker(B), single A observation should not override")
+        }
+    }
+
+    func testConfirmSpeaker_clearsPendingState() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        // Start a pending switch to B
+        _ = smoother.process(id(speakerB, 0.95))
+        // User corrects to speakerC while pending
+        smoother.confirmSpeaker(speakerC)
+        // Next observation of C should return C (not be affected by old pending B)
+        let result = smoother.process(id(speakerC, 0.8))
+        XCTAssertEqual(result?.speakerId, speakerC)
+    }
+
+    func testConfirmSpeaker_allowsNaturalSwitchAfter() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        // User corrects to speakerB
+        smoother.confirmSpeaker(speakerB)
+        // Two high-confidence A observations should eventually switch to A
+        _ = smoother.process(id(speakerA, 0.95))  // pending
+        let r2 = smoother.process(id(speakerA, 0.95))  // confirm
+        XCTAssertEqual(r2?.speakerId, speakerA,
+            "Natural speaker switch should still work after confirmSpeaker")
+    }
+
     func testRemapSpeaker_updatesConfirmedSpeaker() {
         let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
         let spkA = UUID()
