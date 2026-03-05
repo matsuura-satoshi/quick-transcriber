@@ -8,3 +8,4 @@ DerivedData/
 *.xcodeproj
 .worktrees/
 /build
+tmp.log
