@@ -1,44 +1,47 @@
 # Quick Transcriber
 
-macOS向けリアルタイム文字起こしアプリ。WhisperKit (large-v3-turbo) による高精度な音声認識、話者識別、リアルタイム翻訳を完全ローカルで実行します。
+[日本語](README_ja.md)
+
+A macOS real-time transcription app. High-accuracy speech recognition with WhisperKit (large-v3-turbo), speaker diarization, and real-time translation — all running completely on-device.
 
 ## Highlights
 
-- **WhisperKit (large-v3-turbo)** — Apple Silicon最適化の高精度文字起こし
-- **話者ダイアライゼーション** — FluidAudioベースの話者識別 + 永続プロファイル管理
-- **リアルタイム翻訳** — Apple Translation frameworkによるEN↔JA翻訳
-- **Markdown自動保存** — YAMLフロントマター付きで自動保存、シンボリックリンクで常に最新ファイルにアクセス
-- **完全ローカル処理** — 全ての処理がデバイス上で完結、ネットワーク不要
+- **WhisperKit (large-v3-turbo)** — Apple Silicon-optimized speech recognition
+- **Speaker Diarization** — FluidAudio-based speaker identification with persistent profiles
+- **Real-time Translation** — EN↔JA translation via Apple Translation framework
+- **Auto-save to Markdown** — Transcripts saved with YAML front matter, symlinked for easy access
+- **Fully Local** — All processing runs on-device, no network required
+- **Auto-Update** — Check for updates from the app menu or automatically on launch
 
 ## Requirements
 
-- macOS 15.0 (Sequoia) 以降
-- Apple Silicon (M1 以降)
-- マイクアクセス許可
+- macOS 15.0 (Sequoia) or later
+- Apple Silicon (M1 or later)
+- Microphone access permission
 
 ## Getting Started
 
 ### Download
 
-[GitHub Releases](https://github.com/matsuura-satoshi/quick-transcriber/releases) からzipをダウンロードし、展開して `Applications` フォルダに移動してください。
+Download the latest zip from [GitHub Releases](https://github.com/matsuura-satoshi/quick-transcriber/releases), extract it, and move `QuickTranscriber.app` to your Applications folder.
 
-アプリは署名・公証されていないため、初回起動前にGatekeeperの隔離属性を解除する必要があります:
+The app is not notarized, so you need to remove the quarantine attribute before first launch:
 
 ```bash
 xattr -d com.apple.quarantine /Applications/QuickTranscriber.app
 ```
 
-初回起動時にWhisperKitモデルが自動ダウンロードされます（約1.5GB、一度のみ）。
+The WhisperKit model will be downloaded automatically on first launch (~1.5 GB, one-time only).
 
 ### Build from Source
 
-Xcode + macOS 15 SDK が必要です。
+Requires Xcode + macOS 15 SDK.
 
 ```bash
-# ビルド＆実行
+# Build & run
 swift build && swift run QuickTranscriber
 
-# .appバンドル生成（配布用）
+# Build .app bundle (for distribution)
 ./Scripts/build_app.sh
 ```
 
@@ -46,71 +49,75 @@ swift build && swift run QuickTranscriber
 
 ### Transcription
 
-WhisperKit large-v3-turboモデルによるリアルタイム文字起こし。English / Japanese に対応し、VAD (Voice Activity Detection) による自然な発話区切りを行います。
+Real-time transcription powered by the WhisperKit large-v3-turbo model. Supports English and Japanese with VAD (Voice Activity Detection) for natural utterance segmentation.
 
-**使い方:** `Space` または `Cmd+R` で録音開始/停止。ツールバーの言語ピッカーで言語を切り替え。
+**Usage:** Press `Space` or `Cmd+R` to start/stop recording. Switch languages using the toolbar picker.
 
 ### Speaker Diarization
 
-FluidAudioによる音声埋め込み抽出、コサイン類似度マッチング、Viterbiスムージングを組み合わせた話者識別。
+Speaker identification using FluidAudio embeddings, cosine similarity matching, and Viterbi smoothing.
 
-- **Auto mode** — 話者を自動検出・追跡
-- **Manual mode** — 事前に参加者を定義して識別
-- **プロファイル永続化** — セッションをまたいで話者を記憶
-- **プロファイル管理** — リネーム、タグ付け、ロック、マージに対応
+- **Auto mode** — Automatically detect and track speakers
+- **Manual mode** — Pre-define participants for identification
+- **Persistent profiles** — Remember speakers across sessions
+- **Profile management** — Rename, tag, lock, and merge speaker profiles
 
-**使い方:** Settings > Speakers で話者識別を有効化。トランスクリプト上の話者ラベルをクリックして再割当て、右クリックメニューから話者を変更。録音終了後のタグシートで話者にタグを付与。
+**Usage:** Enable in Settings > Speakers. Click speaker labels in the transcript to reassign, right-click for the speaker menu. Tag speakers after recording stops.
 
 ### Translation
 
-Apple Translation frameworkによる完全ローカルの EN↔JA リアルタイム翻訳。Two-pass方式で、発話直後に即時翻訳し、グループ確定時に連結テキストで再翻訳して精度を向上します。
+Fully local EN↔JA real-time translation via Apple Translation framework. Uses a two-pass approach: immediate translation on utterance, then re-translation with concatenated text when a group is finalized for improved accuracy.
 
-**使い方:** `Cmd+T` で翻訳パネルを表示/非表示（HSplitView）。初回使用時に翻訳モデルが自動ダウンロードされます。
+**Usage:** `Cmd+T` to toggle the translation panel (HSplitView). Translation models are downloaded automatically on first use.
 
 ### Transcript Output
 
-トランスクリプトを `~/QuickTranscriber/` にMarkdown形式で自動保存します。YAMLフロントマター（日時、言語、話者情報）付き。`~/QuickTranscriber/qt_transcript.md` シンボリックリンクが常に最新のファイルを指します。
+Transcripts are auto-saved to `~/QuickTranscriber/` in Markdown format with YAML front matter (datetime, language, speaker info). A symlink at `~/QuickTranscriber/qt_transcript.md` always points to the latest file.
 
-**使い方:** 録音中に自動保存。Settings > Output で保存先ディレクトリを変更可能。`Cmd+Shift+C` で全テキストをコピー。
+**Usage:** Auto-saved during recording. Change the output directory in Settings > Output. `Cmd+Shift+C` to copy all text.
 
 ## Keyboard Shortcuts
 
-| ショートカット | 操作 |
+| Shortcut | Action |
 |---|---|
-| `Space` | 録音 開始/停止 |
-| `Cmd+R` | 録音 開始/停止 |
-| `Cmd+T` | 翻訳パネル 表示/非表示 |
-| `Cmd+Shift+C` | 全テキストをコピー |
-| `Cmd+E` | エクスポート |
-| `Cmd+Delete` | トランスクリプトをクリア |
-| `Cmd++` / `Cmd+-` | フォントサイズ 拡大/縮小 |
-| `Cmd+0` | フォントサイズ リセット |
-| `Cmd+,` | 設定 |
+| `Space` | Start/Stop recording |
+| `Cmd+R` | Start/Stop recording |
+| `Cmd+T` | Toggle translation panel |
+| `Cmd+Shift+C` | Copy all text |
+| `Cmd+E` | Export |
+| `Cmd+Delete` | Clear transcript |
+| `Cmd++` / `Cmd+-` | Increase/Decrease font size |
+| `Cmd+0` | Reset font size |
+| `Cmd+,` | Settings |
 
 ## Data Storage
 
-トランスクリプトのデフォルト保存先は `~/QuickTranscriber/` で、Settings > Output で変更できます。話者プロファイルは `~/QuickTranscriber/` 固定です。
+Default transcript location is `~/QuickTranscriber/`, configurable in Settings > Output. Speaker profiles are stored in `~/QuickTranscriber/` (fixed).
 
-| データ | ファイル |
+| Data | File |
 |---|---|
-| トランスクリプト | `<出力先>/YYYY-MM-DD_HHmmss.md` |
-| 最新トランスクリプトへのリンク | `<出力先>/qt_transcript.md` (シンボリックリンク) |
-| 話者プロファイル | `~/QuickTranscriber/speakers.json` (固定) |
+| Transcripts | `<output dir>/YYYY-MM-DD_HHmmss.md` |
+| Latest transcript link | `<output dir>/qt_transcript.md` (symlink) |
+| Speaker profiles | `~/QuickTranscriber/speakers.json` (fixed) |
 
 ## Building & Development
 
 ```bash
-# ユニットテスト
+# Unit tests
 swift test --filter QuickTranscriberTests
 
-# ベンチマーク（WhisperKitモデル + テストデータセット必要）
+# Benchmarks (requires WhisperKit model + test datasets)
 swift test --filter QuickTranscriberBenchmarks
 ```
 
-アーキテクチャ: MVVM (Views → TranscriptionViewModel → TranscriptionService → ChunkedWhisperEngine)。詳細は [CLAUDE.md](CLAUDE.md) を参照。
+Architecture: MVVM (Views → TranscriptionViewModel → TranscriptionService → ChunkedWhisperEngine). See [CLAUDE.md](CLAUDE.md) for details.
 
 ## Technologies
 
-- [WhisperKit](https://github.com/argmaxinc/WhisperKit) — Apple Silicon向け音声認識
-- [FluidAudio](https://github.com/FluidInference/FluidAudio) — 話者埋め込み抽出
-- [Apple Translation](https://developer.apple.com/documentation/translation) — オンデバイス翻訳
+- [WhisperKit](https://github.com/argmaxinc/WhisperKit) — Speech recognition for Apple Silicon
+- [FluidAudio](https://github.com/FluidInference/FluidAudio) — Speaker embedding extraction
+- [Apple Translation](https://developer.apple.com/documentation/translation) — On-device translation
+
+## License
+
+[MIT](LICENSE)
