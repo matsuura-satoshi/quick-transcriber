@@ -161,6 +161,17 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
         }
     }
 
+    /// User correction: reset Viterbi state to strongly favor the specified speaker.
+    /// After a user reassigns a speaker label, this method ensures subsequent
+    /// segments continue with the corrected speaker instead of flipping back.
+    public func confirmSpeaker(_ speakerId: UUID) {
+        stateLogProb = stateLogProb.mapValues { _ in -100.0 }
+        stateLogProb[speakerId] = 0.0
+        confirmed = SpeakerIdentification(speakerId: speakerId, confidence: 1.0, embedding: [])
+        pendingSpeakerId = nil
+        pendingCount = 0
+    }
+
     /// Reset transition bias while preserving speaker knowledge.
     /// After significant silence, treats next observation as fresh start
     /// so that any speaker (new or returning) confirms immediately.
