@@ -225,10 +225,12 @@ struct TranscriptionTextView: NSViewRepresentable {
         let oldConfirmed = coordinator.lastConfirmedText
         let oldUnconfirmed = coordinator.lastUnconfirmedText
         let oldFontSize = coordinator.lastFontSize
+        let newSpeakerFingerprint = Self.speakerFingerprint(confirmedSegments)
 
         guard newConfirmed != oldConfirmed
             || newUnconfirmed != oldUnconfirmed
-            || fontSize != oldFontSize else {
+            || fontSize != oldFontSize
+            || newSpeakerFingerprint != coordinator.lastSpeakerFingerprint else {
             return
         }
 
@@ -325,6 +327,19 @@ struct TranscriptionTextView: NSViewRepresentable {
         }
 
         return result
+    }
+
+    // MARK: - Speaker Fingerprint
+
+    /// Lightweight hash of speaker metadata (speaker UUID + confidence) for change detection.
+    /// Used by updateNSView to detect speaker reassignments that don't change the plain text.
+    static func speakerFingerprint(_ segments: [ConfirmedSegment]) -> Int {
+        var hasher = Hasher()
+        for segment in segments {
+            hasher.combine(segment.speaker)
+            hasher.combine(segment.speakerConfidence)
+        }
+        return hasher.finalize()
     }
 
     // MARK: - Segment-Based Rendering
@@ -499,6 +514,7 @@ struct TranscriptionTextView: NSViewRepresentable {
         var lastConfirmedText: String = ""
         var lastUnconfirmedText: String = ""
         var lastFontSize: CGFloat = 0
+        var lastSpeakerFingerprint: Int = 0
 
         func applySegmentUpdate(
             segments: [ConfirmedSegment],
@@ -520,6 +536,8 @@ struct TranscriptionTextView: NSViewRepresentable {
             if let interactiveView = textView as? InteractiveTranscriptionTextView {
                 interactiveView.segmentMap = map
             }
+
+            lastSpeakerFingerprint = TranscriptionTextView.speakerFingerprint(segments)
 
             let newText = attributed.string
             let currentText = textStorage.string
