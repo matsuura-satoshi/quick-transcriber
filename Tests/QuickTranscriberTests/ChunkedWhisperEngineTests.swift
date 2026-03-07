@@ -538,6 +538,112 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
     }
 
+    func testCorrectSpeakerAssignment_skipsViterbiResetForPastSegment() async throws {
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let mockDiarizer = MockSpeakerDiarizer()
+        let currentSpeaker = UUID()
+        let pastSpeaker = UUID()
+        let correctedSpeaker = UUID()
+        // Both chunks: diarizer returns currentSpeaker
+        // If confirmSpeaker was skipped (correct), smoother stays on currentSpeaker → confirms
+        // If confirmSpeaker was called (wrong), smoother resets to correctedSpeaker →
+        //   processes currentSpeaker as different speaker → pending (nil)
+        mockDiarizer.speakerResults = [
+            SpeakerIdentification(speakerId: currentSpeaker, confidence: 0.9, embedding: [0.1]),
+            SpeakerIdentification(speakerId: currentSpeaker, confidence: 0.9, embedding: [0.1]),
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+
+        let firstChunk = XCTestExpectation(description: "First chunk processed")
+        try await engine.startStreaming(language: "en", parameters: params) { state in
+            if !state.confirmedSegments.isEmpty {
+                firstChunk.fulfill()
+            }
+        }
+
+        // Establish currentSpeaker in smoother
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        await fulfillment(of: [firstChunk], timeout: 6.0)
+        XCTAssertEqual(engine.currentConfirmedSegments[0].speaker, currentSpeaker.uuidString)
+
+        // Correct past segment: pastSpeaker → correctedSpeaker
+        // confirmedSpeakerId (currentSpeaker) != pastSpeaker → should skip confirmSpeaker
+        engine.correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
+
+        // Feed second chunk: diarizer returns currentSpeaker again
+        // Since smoother was NOT reset, currentSpeaker matches confirmed → segment shows currentSpeaker
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        let segments = engine.currentConfirmedSegments
+        XCTAssertGreaterThanOrEqual(segments.count, 2)
+        XCTAssertEqual(segments.last?.speaker, currentSpeaker.uuidString,
+            "Past segment correction should not reset Viterbi state; current speaker should persist")
+
+        await engine.stopStreaming()
+    }
+
+    func testCorrectSpeakerAssignment_resetsViterbiForCurrentSpeaker() async throws {
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "Hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let mockDiarizer = MockSpeakerDiarizer()
+        let currentSpeaker = UUID()
+        let correctedSpeaker = UUID()
+        // First chunk: currentSpeaker; Second chunk: correctedSpeaker
+        mockDiarizer.speakerResults = [
+            SpeakerIdentification(speakerId: currentSpeaker, confidence: 0.9, embedding: [0.1]),
+            SpeakerIdentification(speakerId: correctedSpeaker, confidence: 0.9, embedding: [0.2]),
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+
+        var params = TranscriptionParameters.default
+        params.enableSpeakerDiarization = true
+
+        let firstChunk = XCTestExpectation(description: "First chunk processed")
+        try await engine.startStreaming(language: "en", parameters: params) { state in
+            if !state.confirmedSegments.isEmpty {
+                firstChunk.fulfill()
+            }
+        }
+
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        await fulfillment(of: [firstChunk], timeout: 6.0)
+
+        // Correct current speaker: currentSpeaker → correctedSpeaker
+        // confirmedSpeakerId (currentSpeaker) == oldId → should call confirmSpeaker
+        engine.correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
+
+        // Feed second chunk: diarizer returns correctedSpeaker
+        // Since smoother WAS reset to correctedSpeaker, it confirms correctedSpeaker
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        let segments = engine.currentConfirmedSegments
+        XCTAssertGreaterThanOrEqual(segments.count, 2)
+        XCTAssertEqual(segments.last?.speaker, correctedSpeaker.uuidString,
+            "Current speaker correction should reset Viterbi state to corrected speaker")
+
+        await engine.stopStreaming()
+    }
+
     func testStartStreamingLoadsSpeakerProfiles() async throws {
         let mockDiarizer = MockSpeakerDiarizer()
         let dir = makeTempDirectory()
