@@ -18,6 +18,10 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
     private var pendingCount: Int = 0
     private var immediateConfirmNext: Bool = false
 
+    public var confirmedSpeakerId: UUID? {
+        confirmed?.speakerId
+    }
+
     public init(stayProbability: Double = 0.9) {
         self.stayProbability = max(0.5, min(stayProbability, 0.999))
     }

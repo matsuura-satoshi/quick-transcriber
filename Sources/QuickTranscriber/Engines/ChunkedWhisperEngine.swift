@@ -219,7 +219,9 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
-        speakerSmoother.confirmSpeaker(newId)
+        if speakerSmoother.confirmedSpeakerId == oldId {
+            speakerSmoother.confirmSpeaker(newId)
+        }
     }
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {

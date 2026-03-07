@@ -468,6 +468,34 @@ final class ViterbiSpeakerSmootherTests: XCTestCase {
             "Natural speaker switch should still work after confirmSpeaker")
     }
 
+    // MARK: - confirmedSpeakerId
+
+    func testConfirmedSpeakerId_initiallyNil() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        XCTAssertNil(smoother.confirmedSpeakerId)
+    }
+
+    func testConfirmedSpeakerId_afterProcess() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        XCTAssertEqual(smoother.confirmedSpeakerId, speakerA)
+    }
+
+    func testConfirmedSpeakerId_afterSpeakerSwitch() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        _ = smoother.process(id(speakerB, 0.95))
+        _ = smoother.process(id(speakerB, 0.95))  // confirm B
+        XCTAssertEqual(smoother.confirmedSpeakerId, speakerB)
+    }
+
+    func testConfirmedSpeakerId_afterConfirmSpeaker() {
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+        _ = smoother.process(id(speakerA, 0.9))
+        smoother.confirmSpeaker(speakerC)
+        XCTAssertEqual(smoother.confirmedSpeakerId, speakerC)
+    }
+
     func testRemapSpeaker_updatesConfirmedSpeaker() {
         let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
         let spkA = UUID()
