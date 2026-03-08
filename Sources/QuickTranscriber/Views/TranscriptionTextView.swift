@@ -59,7 +59,7 @@ private class BlockReassignInfo: NSObject {
 internal class InteractiveTranscriptionTextView: NSTextView {
     internal var segmentMap: SegmentCharacterMap?
     internal var confirmedSegments: [ConfirmedSegment] = []
-    internal var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
+    internal var availableSpeakers: [SpeakerMenuItem] = []
     internal var onReassignBlock: ((Int, String) -> Void)?
     internal var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
     private var lastEventLocation: NSPoint = .zero
@@ -140,7 +140,7 @@ internal class InteractiveTranscriptionTextView: NSTextView {
         menu.popUp(positioning: nil, at: point, in: self)
     }
 
-    private static func menuTitle(for speaker: TranscriptionViewModel.SpeakerMenuItem) -> String {
+    private static func menuTitle(for speaker: SpeakerMenuItem) -> String {
         if let name = speaker.displayName {
             return name
         }
@@ -172,7 +172,7 @@ struct TranscriptionTextView: NSViewRepresentable {
     var language: String = "en"
     var silenceThreshold: TimeInterval = 1.0
     var speakerDisplayNames: [String: String] = [:]
-    var availableSpeakers: [TranscriptionViewModel.SpeakerMenuItem] = []
+    var availableSpeakers: [SpeakerMenuItem] = []
     var onReassignBlock: ((Int, String) -> Void)?
     var onReassignSelection: ((NSRange, String, SegmentCharacterMap) -> Void)?
 

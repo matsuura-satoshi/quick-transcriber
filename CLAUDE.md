@@ -39,6 +39,13 @@ swift test --filter ReazonSpeechBenchmarkTests
 - ChunkedWhisperEngine: AudioCaptureService → ChunkAccumulator → ChunkTranscriber(WhisperKit) のパイプライン
 - 短チャンク（3秒等）の品質フィルタは全てnil必須（30秒パディングで90%無音になるため）
 
+## Speaker State Mutation Checklist
+話者アイデンティティを変更する操作を追加・修正する際:
+1. SpeakerStateCoordinator経由で操作しているか？
+2. 関連コンポーネントが全て更新されるか？（Tracker, Viterbi, Segments, ActiveSpeakers, DisplayNames, ProfileStore, EmbeddingHistory）
+3. InvariantCheckerが通過するか？
+4. クロスコンポーネントのテストがあるか？
+
 ## Pitfalls
 - WhisperKit init には `load: true` 必須（省略するとtokenizerがロードされない）
 - モデル名は `large-v3-v20240930_turbo`（WhisperKit命名規則）
