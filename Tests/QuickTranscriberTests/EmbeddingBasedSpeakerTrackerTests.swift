@@ -617,4 +617,186 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(profiles.count, 1)
         XCTAssertEqual(profiles[0].embeddingHistory.count, 1)
     }
+
+    // MARK: - Suppress Learning
+
+    func testSuppressLearning_identifyDoesNotUpdateProfiles() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+        tracker.suppressLearning = true
+
+        // Identify 10 times with slight variations — profiles should NOT update
+        for i in 0..<10 {
+            var emb = makeEmbedding(dominant: 0)
+            emb[2] = Float(i) * 0.02
+            _ = tracker.identify(embedding: emb)
+        }
+
+        let detailed = tracker.exportDetailedProfiles()
+        let profileA = detailed.first { $0.speakerId == idA }!
+        let profileB = detailed.first { $0.speakerId == idB }!
+        // Each profile should still have only the initial embedding from loadProfiles
+        XCTAssertEqual(profileA.embeddingHistory.count, 1)
+        XCTAssertEqual(profileB.embeddingHistory.count, 1)
+    }
+
+    func testSuppressLearning_identifyStillReturnsCorrectSpeaker() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+        tracker.suppressLearning = true
+
+        let resultA = tracker.identify(embedding: embA)
+        let resultB = tracker.identify(embedding: embB)
+        XCTAssertEqual(resultA.speakerId, idA)
+        XCTAssertEqual(resultB.speakerId, idB)
+    }
+
+    func testSuppressLearning_correctAssignmentStillWorks() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+        tracker.suppressLearning = true
+
+        // correctAssignment should still update profiles even with suppressLearning
+        tracker.correctAssignment(embedding: embA, from: idA, to: idB)
+
+        let detailed = tracker.exportDetailedProfiles()
+        let profileB = detailed.first { $0.speakerId == idB }!
+        // B should have original embedding + moved embedding
+        XCTAssertEqual(profileB.embeddingHistory.count, 2)
+    }
+
+    func testSuppressLearning_atCapacityDoesNotUpdateProfiles() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+        tracker.suppressLearning = true
+
+        // Identify with a completely different embedding — at capacity, forced to best match
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertTrue(result.speakerId == idA || result.speakerId == idB)
+
+        let detailed = tracker.exportDetailedProfiles()
+        // No profile should have been updated
+        for profile in detailed {
+            XCTAssertEqual(profile.embeddingHistory.count, 1)
+        }
+    }
+
+    // MARK: - At-Capacity Threshold Gate
+
+    func testAtCapacity_lowSimilarityDoesNotUpdateProfile() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+        // suppressLearning=false (auto mode), but low similarity should still be blocked
+
+        // Completely different embedding — cosine sim will be well below 0.5
+        let result = tracker.identify(embedding: makeEmbedding(dominant: 2))
+        XCTAssertTrue(result.speakerId == idA || result.speakerId == idB,
+            "Should still return a speaker ID")
+
+        let detailed = tracker.exportDetailedProfiles()
+        // The matched profile should NOT have the low-similarity embedding added
+        for profile in detailed {
+            XCTAssertEqual(profile.embeddingHistory.count, 1,
+                "Low-similarity embedding should not be added to profile history")
+        }
+    }
+
+    func testAtCapacity_highSimilarityUpdatesProfile() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+        // suppressLearning=false (default), high similarity should update
+
+        // Very similar to A — cosine sim will be well above 0.5
+        var similar = makeEmbedding(dominant: 0)
+        similar[2] = 0.1
+        let result = tracker.identify(embedding: similar)
+        XCTAssertEqual(result.speakerId, idA)
+
+        let detailed = tracker.exportDetailedProfiles()
+        let profileA = detailed.first { $0.speakerId == idA }!
+        // This goes through Path 1 (above threshold), should update
+        XCTAssertEqual(profileA.embeddingHistory.count, 2)
+    }
+
+    // MARK: - Thread Safety
+
+    func testConcurrentIdentifyAndCorrectAssignment() {
+        let tracker = EmbeddingBasedSpeakerTracker(expectedSpeakerCount: 2)
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: embA),
+            (speakerId: idB, embedding: embB)
+        ])
+
+        let expectation = XCTestExpectation(description: "Concurrent access completes without crash")
+        expectation.expectedFulfillmentCount = 2
+
+        // Concurrent identify() calls
+        DispatchQueue.global().async {
+            for i in 0..<100 {
+                var emb = self.makeEmbedding(dominant: 0)
+                emb[2] = Float(i) * 0.01
+                _ = tracker.identify(embedding: emb)
+            }
+            expectation.fulfill()
+        }
+
+        // Concurrent correctAssignment() calls
+        DispatchQueue.global().async {
+            for _ in 0..<100 {
+                let emb = self.makeEmbedding(dominant: 0)
+                tracker.correctAssignment(embedding: emb, from: idA, to: idB)
+                tracker.correctAssignment(embedding: emb, from: idB, to: idA)
+            }
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 10.0)
+        // If we get here without crashing, the test passes
+    }
 }

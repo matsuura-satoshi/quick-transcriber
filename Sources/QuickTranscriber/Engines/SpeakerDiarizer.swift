@@ -13,6 +13,7 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])])
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
     func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID)
+    func setSuppressLearning(_ suppress: Bool)
 }
 
 extension SpeakerDiarizer {
@@ -21,6 +22,10 @@ extension SpeakerDiarizer {
     }
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        // Default no-op
+    }
+
+    public func setSuppressLearning(_ suppress: Bool) {
         // Default no-op
     }
 }
@@ -203,6 +208,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         speakerTracker.mergeProfile(from: sourceId, into: targetId)
+    }
+
+    public func setSuppressLearning(_ suppress: Bool) {
+        speakerTracker.suppressLearning = suppress
     }
 
     /// Find the segment with the most overlap with the latest chunk's time range.
