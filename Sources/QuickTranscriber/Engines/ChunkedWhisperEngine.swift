@@ -11,6 +11,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var streamingTask: Task<Void, Never>?
     private var confirmedSegments: [ConfirmedSegment] = []
     private var speakerSmoother = ViterbiSpeakerSmoother()
+    private let smootherLock = NSLock()
     private var pendingSegmentStartIndex: Int?
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
@@ -82,9 +83,11 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     NSLog("[ChunkedWhisperEngine] Manual mode: loaded \(participantProfiles.count) participant profiles")
                 }
                 diarizer.updateExpectedSpeakerCount(participantProfiles.count)
+                diarizer.setSuppressLearning(true)
             } else {
                 // Auto mode: load all profiles from store
                 diarizationActive = true
+                diarizer.setSuppressLearning(false)
                 diarizer.updateExpectedSpeakerCount(parameters.expectedSpeakerCount)
                 if let store = speakerProfileStore {
                     let profiles = store.profiles.map { (speakerId: $0.id, embedding: $0.embedding) }
@@ -219,14 +222,18 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
-        if speakerSmoother.confirmedSpeakerId == oldId {
-            speakerSmoother.confirmSpeaker(newId)
+        smootherLock.withLock {
+            if speakerSmoother.confirmedSpeakerId == oldId {
+                speakerSmoother.confirmSpeaker(newId)
+            }
         }
     }
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         diarizer?.mergeSpeakerProfiles(from: sourceId, into: targetId)
-        speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
+        smootherLock.withLock {
+            speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
+        }
     }
 
     public func cleanup() {
@@ -253,7 +260,9 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             if let diarizer, diarizationActive {
                 let significantSilence = chunkResult.precedingSilenceDuration >= currentParameters.silenceCutoffDuration
                 if significantSilence {
-                    speakerSmoother.resetForSpeakerChange()
+                    smootherLock.withLock {
+                        speakerSmoother.resetForSpeakerChange()
+                    }
                 }
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
@@ -289,7 +298,9 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedResult: SpeakerIdentification?
             if diarizationActive {
-                smoothedResult = speakerSmoother.process(rawSpeakerResult)
+                smoothedResult = smootherLock.withLock {
+                    speakerSmoother.process(rawSpeakerResult)
+                }
 
                 // Retroactively update pending segments with confidence (skip user-corrected)
                 if let result = smoothedResult, let startIdx = pendingSegmentStartIndex {
