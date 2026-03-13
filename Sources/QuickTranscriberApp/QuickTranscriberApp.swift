@@ -154,6 +154,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+
+        // Intercept space key when no editable text view has focus
+        // (SwiftUI's .onKeyPress requires focus, which is absent on launch)
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 49, // space
+                  event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else {
+                return event
+            }
+            // Let editable text views (e.g., Settings TextFields) handle space normally
+            if let responder = event.window?.firstResponder as? NSTextView,
+               responder.isEditable {
+                return event
+            }
+            NotificationCenter.default.post(name: .menuToggleRecording, object: nil)
+            return nil
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
