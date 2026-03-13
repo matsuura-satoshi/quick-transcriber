@@ -33,7 +33,7 @@ public struct AudioLevelNormalizer: Sendable {
     public mutating func normalize(_ samples: [Float]) -> [Float] {
         guard !samples.isEmpty else { return samples }
 
-        let bufferPeak = samples.map { abs($0) }.max() ?? 0
+        let bufferPeak = samples.reduce(Float(0)) { max($0, abs($1)) }
         let bufferDuration = TimeInterval(samples.count) / sampleRate
         if bufferPeak > runningPeak {
             runningPeak = bufferPeak
