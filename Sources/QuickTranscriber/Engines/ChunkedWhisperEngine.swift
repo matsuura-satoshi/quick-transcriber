@@ -7,6 +7,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private let speakerProfileStore: SpeakerProfileStore?
     private let embeddingHistoryStore: EmbeddingHistoryStore?
     private var accumulator: VADChunkAccumulator
+    private var normalizer = AudioLevelNormalizer()
     private var _isStreaming = false
     private var streamingTask: Task<Void, Never>?
     private var confirmedSegments: [ConfirmedSegment] = []
@@ -69,6 +70,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             preRollDuration: parameters.preRollDuration,
             hangoverDuration: parameters.hangoverDuration
         )
+        normalizer = AudioLevelNormalizer()
         confirmedSegments = []
         speakerSmoother = ViterbiSpeakerSmoother(stayProbability: parameters.speakerTransitionPenalty)
         if let diarizer, parameters.enableSpeakerDiarization {
@@ -114,10 +116,17 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
 
         streamingTask = Task { [weak self] in
+            var bufferCount = 0
             for await samples in bufferStream {
                 guard let self, self._isStreaming else { break }
 
-                if let chunkResult = self.accumulator.appendBuffer(samples) {
+                let normalizedSamples = self.normalizer.normalize(samples)
+                bufferCount += 1
+                if bufferCount % 100 == 0 {
+                    NSLog("[AudioLevelNormalizer] gain=%.2f runningPeak=%.4f", self.normalizer.currentGain, self.normalizer.runningPeak)
+                }
+
+                if let chunkResult = self.accumulator.appendBuffer(normalizedSamples) {
                     await self.processChunk(chunkResult, onStateChange: onStateChange)
                 }
             }

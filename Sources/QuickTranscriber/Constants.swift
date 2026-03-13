@@ -16,6 +16,15 @@ public enum Constants {
         public static let defaultMinimumUtteranceDuration: TimeInterval = 0.3
     }
 
+    public enum AudioNormalization {
+        public static let targetPeak: Float = 0.5
+        public static let minGain: Float = 1.0
+        public static let maxGain: Float = 10.0
+        public static let windowDuration: TimeInterval = 1.0
+        public static let attackCoefficient: Float = 0.1
+        public static let releaseCoefficient: Float = 0.01
+    }
+
     public enum Embedding {
         public static let similarityThreshold: Float = 0.5
     }
@@ -32,8 +41,8 @@ public enum Constants {
 
     public enum Version {
         public static let major = 2
-        public static let minor = 1
-        public static let patch = 68
+        public static let minor = 2
+        public static let patch = 69
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
     }
