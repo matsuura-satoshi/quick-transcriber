@@ -79,4 +79,67 @@ final class AudioLevelNormalizerTests: XCTestCase {
 
         XCTAssertLessThan(peakAfterDecay, peakAfterLoud, "Peak should decay over time")
     }
+
+    // MARK: - Integration: Normalization + VAD
+
+    func testNormalizedQuietAudioTriggersVAD() {
+        var normalizer = AudioLevelNormalizer()
+        var accumulator = VADChunkAccumulator()
+
+        // Quiet speech that would NOT trigger VAD directly (0.005 < onset 0.02)
+        let quietSpeech = makeBuffer(amplitude: 0.005, duration: 0.1)
+        let silence = makeBuffer(amplitude: 0.0, duration: 0.1)
+
+        // Feed quiet speech through normalizer → accumulator
+        var chunkEmitted = false
+        // Warm up the normalizer
+        for _ in 0..<20 {
+            let normalized = normalizer.normalize(quietSpeech)
+            _ = accumulator.appendBuffer(normalized)
+        }
+        // Feed speech then silence to trigger utterance boundary
+        for _ in 0..<30 {
+            let normalized = normalizer.normalize(quietSpeech)
+            _ = accumulator.appendBuffer(normalized)
+        }
+        for _ in 0..<10 {
+            let normalized = normalizer.normalize(silence)
+            if accumulator.appendBuffer(normalized) != nil {
+                chunkEmitted = true
+            }
+        }
+        // Also try flush
+        if accumulator.flush() != nil {
+            chunkEmitted = true
+        }
+
+        XCTAssertTrue(chunkEmitted,
+            "Quiet audio (0.005) should trigger VAD after normalization boosts it above onset threshold (0.02)")
+    }
+
+    func testUnnormalizedQuietAudioDoesNotTriggerVAD() {
+        var accumulator = VADChunkAccumulator()
+
+        // Same quiet speech WITHOUT normalization — should NOT trigger VAD
+        let quietSpeech = makeBuffer(amplitude: 0.005, duration: 0.1)
+        let silence = makeBuffer(amplitude: 0.0, duration: 0.1)
+
+        var chunkEmitted = false
+        for _ in 0..<50 {
+            if accumulator.appendBuffer(quietSpeech) != nil {
+                chunkEmitted = true
+            }
+        }
+        for _ in 0..<10 {
+            if accumulator.appendBuffer(silence) != nil {
+                chunkEmitted = true
+            }
+        }
+        if accumulator.flush() != nil {
+            chunkEmitted = true
+        }
+
+        XCTAssertFalse(chunkEmitted,
+            "Without normalization, quiet audio (0.005) should NOT trigger VAD onset threshold (0.02)")
+    }
 }
