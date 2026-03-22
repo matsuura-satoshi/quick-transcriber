@@ -243,9 +243,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
         let isAtBottom = coordinator.isScrolledToBottom()
 
-        let hasSpeakerConfidence = confirmedSegments.contains { $0.speakerConfidence != nil }
-
-        if hasSpeakerConfidence {
+        if !confirmedSegments.isEmpty {
             coordinator.applySegmentUpdate(
                 segments: confirmedSegments,
                 language: language,
