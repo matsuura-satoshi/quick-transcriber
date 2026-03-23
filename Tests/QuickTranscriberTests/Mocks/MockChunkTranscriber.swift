@@ -24,4 +24,8 @@ final class MockChunkTranscriber: ChunkTranscriber {
         if let error = transcribeError { throw error }
         return transcribeResults
     }
+
+    func transcribeFile(audioPath: String, language: String, onProgress: (@Sendable (Double) -> Void)?) async throws -> [FileTranscriptionSegment] {
+        return []
+    }
 }
