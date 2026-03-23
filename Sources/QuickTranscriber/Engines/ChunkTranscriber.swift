@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import WhisperKit
 
@@ -95,8 +96,7 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
             logProbThreshold: -1.0,
             firstTokenLogProbThreshold: -1.5,
             noSpeechThreshold: 0.6,
-            concurrentWorkerCount: 1,
-            chunkingStrategy: .vad
+            concurrentWorkerCount: 1
         )
 
         let progressCallback: TranscriptionCallback = onProgress != nil ? { progress in
@@ -105,11 +105,59 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
             return nil // continue transcription
         } : nil
 
+        NSLog("[FileTranscription] Starting transcription: %@", audioPath)
+
+        // Load audio ourselves — WhisperKit's AudioProcessor.loadAudioAsFloatArray
+        // may misread our 16kHz Int16 WAV files (produces all-zero output).
+        let audioFile = try AVAudioFile(forReading: URL(fileURLWithPath: audioPath))
+        let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000.0, channels: 1, interleaved: false)!
+        let sourceFormat = audioFile.processingFormat
+        let frameCount = AVAudioFrameCount(audioFile.length)
+
+        let audioArray: [Float]
+        if sourceFormat.sampleRate == 16000.0 && sourceFormat.channelCount == 1 {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount) else {
+                throw TranscriptionEngineError.notInitialized
+            }
+            try audioFile.read(into: buffer)
+            let ptr = buffer.floatChannelData![0]
+            audioArray = Array(UnsafeBufferPointer(start: ptr, count: Int(buffer.frameLength)))
+        } else {
+            guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+                throw TranscriptionEngineError.notInitialized
+            }
+            let outputFrameCount = AVAudioFrameCount(Double(frameCount) * 16000.0 / sourceFormat.sampleRate)
+            guard let readBuffer = AVAudioPCMBuffer(pcmFormat: sourceFormat, frameCapacity: frameCount),
+                  let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount + 100) else {
+                throw TranscriptionEngineError.notInitialized
+            }
+            try audioFile.read(into: readBuffer)
+            var convError: NSError?
+            converter.convert(to: outputBuffer, error: &convError) { _, outStatus in
+                outStatus.pointee = .haveData
+                return readBuffer
+            }
+            if let convError { throw convError }
+            let ptr = outputBuffer.floatChannelData![0]
+            audioArray = Array(UnsafeBufferPointer(start: ptr, count: Int(outputBuffer.frameLength)))
+        }
+
+        NSLog("[FileTranscription] Loaded %d samples (%.1fs)", audioArray.count, Double(audioArray.count) / 16000.0)
+
         let results: [TranscriptionResult] = try await whisperKit.transcribe(
-            audioPath: audioPath,
+            audioArray: audioArray,
             decodeOptions: options,
             callback: progressCallback
         )
+
+        NSLog("[FileTranscription] Results count: %d", results.count)
+        for (i, result) in results.enumerated() {
+            NSLog("[FileTranscription] Result[%d]: segments=%d, text='%@'", i, result.segments.count, String(result.text.prefix(200)))
+            for (j, seg) in result.segments.enumerated() {
+                NSLog("[FileTranscription] Result[%d].seg[%d]: text='%@' start=%.1f end=%.1f noSpeech=%.3f logprob=%.3f compression=%.3f",
+                      i, j, String(seg.text.prefix(100)), seg.start, seg.end, seg.noSpeechProb, seg.avgLogprob, seg.compressionRatio)
+            }
+        }
 
         return results.flatMap { result in
             result.segments.compactMap { segment -> FileTranscriptionSegment? in

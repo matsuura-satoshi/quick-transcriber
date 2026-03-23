@@ -849,6 +849,32 @@ public final class TranscriptionViewModel: ObservableObject {
         fileTranscriptionProgress = 0.0
         transcribingFileName = url.lastPathComponent
 
+        let fileSource = FileAudioSource(fileURL: url)
+        fileSource.onProgress = { [weak self] progress in
+            Task { @MainActor [weak self] in
+                self?.fileTranscriptionProgress = progress
+            }
+        }
+        fileSource.onComplete = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.finishFileTranscription()
+            }
+        }
+
+        // Create separate engine with shared transcriber and diarizer.
+        // Uses proven VAD pipeline (same as real-time) for reliable chunking.
+        let fileEngine = ChunkedWhisperEngine(
+            audioCaptureService: fileSource,
+            transcriber: sharedTranscriber,
+            diarizer: sharedDiarizer,
+            speakerProfileStore: speakerProfileStore,
+            embeddingHistoryStore: coordinator.embeddingHistoryStore
+        )
+        self.fileTranscriptionEngine = fileEngine
+
+        let params = parametersStore.parameters
+
         // Start file writer
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd_HHmm"
@@ -858,54 +884,70 @@ public final class TranscriptionViewModel: ObservableObject {
             fileSessionActive = true
         }
 
-        NSLog("[QuickTranscriber] Starting file transcription (dedicated pipeline): %@", url.lastPathComponent)
+        NSLog("[QuickTranscriber] Starting file transcription (shared pipeline): %@", url.lastPathComponent)
 
-        // Use WhisperKit's file processing directly — bypasses our VAD pipeline.
-        // WhisperKit uses full 30s windows with VAD chunking, quality thresholds,
-        // timestamps, and temperature fallback for maximum accuracy.
         do {
-            let segments = try await sharedTranscriber.transcribeFile(
-                audioPath: url.path,
-                language: currentLanguage.rawValue
-            ) { [weak self] progress in
+            try await fileEngine.startStreaming(
+                language: currentLanguage.rawValue,
+                parameters: params,
+                participantProfiles: nil,
+                audioRecordingDirectory: nil,
+                audioRecordingDatePrefix: nil
+            ) { [weak self] state in
                 Task { @MainActor [weak self] in
-                    self?.fileTranscriptionProgress = min(progress, 1.0)
+                    guard let self, self.isTranscribingFile else { return }
+                    self.unconfirmedText = state.unconfirmedText
+                    var stateSegments = state.confirmedSegments
+                    if stateSegments.isEmpty && !state.confirmedText.isEmpty {
+                        stateSegments = [ConfirmedSegment(text: state.confirmedText)]
+                    }
+                    self.confirmedSegments = Self.mergePreservingUserCorrections(
+                        existing: self.confirmedSegments,
+                        incoming: stateSegments
+                    )
+                    for segment in stateSegments {
+                        if let speakerId = segment.speaker {
+                            self.coordinator.addAutoDetectedSpeaker(
+                                speakerId: speakerId,
+                                embedding: segment.speakerEmbedding
+                            )
+                        }
+                    }
+                    self.syncSpeakerState()
+                    self.fileWriter.updateText(self.confirmedText)
                 }
             }
-
-            guard isTranscribingFile else { return } // cancelled
-
-            // Convert FileTranscriptionSegments to ConfirmedSegments
-            var previousEnd: Float = 0
-            for segment in segments {
-                let precedingSilence = TimeInterval(max(segment.start - previousEnd, 0))
-                previousEnd = segment.end
-                confirmedSegments.append(ConfirmedSegment(
-                    text: segment.text,
-                    precedingSilence: precedingSilence
-                ))
-            }
-
-            fileWriter.updateText(confirmedText)
-            isTranscribingFile = false
-            fileTranscriptionProgress = 1.0
-            transcribingFileName = nil
-            NSLog("[QuickTranscriber] File transcription complete: %d segments", confirmedSegments.count)
         } catch {
             NSLog("[QuickTranscriber] File transcription error: %@", error.localizedDescription)
             fileTranscriptionError = error.localizedDescription
             isTranscribingFile = false
+            fileTranscriptionEngine = nil
             transcribingFileName = nil
         }
     }
 
-    func cancelFileTranscription() {
-        // Setting isTranscribingFile = false causes the guard in beginFileTranscription to skip results
+    private func finishFileTranscription() async {
+        guard let engine = fileTranscriptionEngine else { return }
+        engine.drainOnStop = true
+        await engine.stopStreaming(speakerDisplayNames: speakerDisplayNames)
+        fileTranscriptionEngine = nil
         isTranscribingFile = false
-        fileTranscriptionProgress = 0.0
+        fileTranscriptionProgress = 1.0
         transcribingFileName = nil
-        clearText()
-        NSLog("[QuickTranscriber] File transcription cancelled")
+        NSLog("[QuickTranscriber] File transcription complete: %d segments", confirmedSegments.count)
+    }
+
+    func cancelFileTranscription() {
+        guard let engine = fileTranscriptionEngine else { return }
+        Task {
+            await engine.stopStreaming(speakerDisplayNames: [:])
+            fileTranscriptionEngine = nil
+            clearText()
+            isTranscribingFile = false
+            fileTranscriptionProgress = 0.0
+            transcribingFileName = nil
+            NSLog("[QuickTranscriber] File transcription cancelled")
+        }
     }
 
     func addAutoDetectedSpeaker(speakerId: String, embedding: [Float]?) {
