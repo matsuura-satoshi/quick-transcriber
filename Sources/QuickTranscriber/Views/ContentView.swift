@@ -1,11 +1,13 @@
 import SwiftUI
 import Translation
+import UniformTypeIdentifiers
 
 public struct ContentView: View {
     @ObservedObject var viewModel: TranscriptionViewModel
     @ObservedObject var translationService: TranslationService
     @State private var translationConfig: TranslationSession.Configuration?
     @State private var translationReady: Bool = false
+    @State private var isDropTargeted = false
 
     public init(viewModel: TranscriptionViewModel) {
         self.viewModel = viewModel
@@ -36,11 +38,33 @@ public struct ContentView: View {
         }
         .onKeyPress(.space) {
             guard viewModel.modelState == .ready else { return .ignored }
+            if viewModel.isTranscribingFile {
+                viewModel.cancelFileTranscription()
+                return .handled
+            }
             viewModel.toggleRecording()
             return .handled
         }
         .navigationTitle("Quick Transcriber \(Constants.Version.versionString)")
         .frame(minWidth: viewModel.translationEnabled ? 900 : 600, minHeight: 400)
+        .alert("Re-transcribe from file?", isPresented: $viewModel.showReplaceFileAlert) {
+            Button("Replace") {
+                viewModel.confirmReplaceAndTranscribe()
+            }
+            Button("Cancel", role: .cancel) {
+                viewModel.pendingFileURL = nil
+            }
+        } message: {
+            Text("This will replace the current transcription. Speaker profiles will be preserved.")
+        }
+        .alert("File Transcription Error", isPresented: Binding(
+            get: { viewModel.fileTranscriptionError != nil },
+            set: { if !$0 { viewModel.fileTranscriptionError = nil } }
+        )) {
+            Button("OK") { viewModel.fileTranscriptionError = nil }
+        } message: {
+            Text(viewModel.fileTranscriptionError ?? "")
+        }
         .task {
             await viewModel.loadModel()
             if viewModel.translationEnabled {
@@ -140,13 +164,30 @@ public struct ContentView: View {
                     .foregroundStyle(viewModel.isRecording ? .red : .primary)
             }
             .buttonStyle(.borderless)
-            .disabled(viewModel.modelState != .ready)
+            .disabled(viewModel.modelState != .ready || viewModel.isTranscribingFile)
             if viewModel.isRecording {
                 Label("Recording", systemImage: "waveform")
                     .foregroundStyle(.red)
             } else {
                 Text("Waiting")
                     .foregroundStyle(.secondary)
+            }
+            if viewModel.isTranscribingFile {
+                HStack(spacing: 6) {
+                    ProgressView(value: viewModel.fileTranscriptionProgress)
+                        .frame(width: 100)
+                    Text("Transcribing \(viewModel.transcribingFileName ?? "file")... \(Int(viewModel.fileTranscriptionProgress * 100))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Button {
+                        viewModel.cancelFileTranscription()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             Spacer()
             switch viewModel.modelState {
@@ -188,6 +229,39 @@ public struct ContentView: View {
             }
         )
         .frame(maxHeight: .infinity)
+        .onDrop(of: [.audio], isTargeted: $isDropTargeted) { providers in
+            guard viewModel.modelState == .ready,
+                  !viewModel.isRecording,
+                  !viewModel.isTranscribingFile else { return false }
+            guard let provider = providers.first else { return false }
+
+            provider.loadFileRepresentation(forTypeIdentifier: "public.audio") { url, error in
+                guard let url else { return }
+                let tmpURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: tmpURL)
+                try? FileManager.default.copyItem(at: url, to: tmpURL)
+                Task { @MainActor in
+                    viewModel.transcribeFile(tmpURL)
+                }
+            }
+            return true
+        }
+        .overlay {
+            if !viewModel.isRecording && !viewModel.isTranscribingFile
+                && viewModel.confirmedText.isEmpty && viewModel.unconfirmedText.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.badge.arrow.up")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.tertiary)
+                    Text("Drop audio file to transcribe")
+                        .font(.headline)
+                        .foregroundStyle(.tertiary)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .border(isDropTargeted ? Color.accentColor : Color.clear, width: 2)
     }
 
     private var translationArea: some View {
