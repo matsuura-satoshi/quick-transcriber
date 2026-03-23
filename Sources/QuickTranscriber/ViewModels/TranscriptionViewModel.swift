@@ -873,7 +873,12 @@ public final class TranscriptionViewModel: ObservableObject {
         )
         self.fileTranscriptionEngine = fileEngine
 
-        let params = parametersStore.parameters
+        var params = parametersStore.parameters
+        // File-optimized overrides: larger chunks for more decoder context + temperature fallback
+        params.chunkDuration = Constants.FileTranscription.chunkDuration
+        params.silenceCutoffDuration = Constants.FileTranscription.endOfUtteranceSilence
+        params.temperatureFallbackCount = Constants.FileTranscription.temperatureFallbackCount
+        params.concurrentWorkerCount = 1
 
         // Start file writer
         let formatter = DateFormatter()
