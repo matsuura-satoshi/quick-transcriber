@@ -19,6 +19,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var currentParameters: TranscriptionParameters = .default
     /// Whether diarization is active for this streaming session.
     private var diarizationActive = false
+    private var audioRecorder: AudioRecordingService?
 
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
@@ -60,6 +61,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         language: String,
         parameters: TranscriptionParameters = .default,
         participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
+        audioRecordingDirectory: URL? = nil,
+        audioRecordingDatePrefix: String? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         accumulator = VADChunkAccumulator(
@@ -108,6 +111,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         currentParameters = parameters
         _isStreaming = true
 
+        // Start audio recording if configured
+        if let recordingDir = audioRecordingDirectory, let datePrefix = audioRecordingDatePrefix {
+            let recorder = AudioRecordingService()
+            recorder.startSession(directory: recordingDir, datePrefix: datePrefix)
+            audioRecorder = recorder
+            NSLog("[ChunkedWhisperEngine] Audio recording started: %@", datePrefix)
+        }
+
         let (bufferStream, continuation) = AsyncStream<[Float]>.makeStream()
         self.streamContinuation = continuation
 
@@ -121,6 +132,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 guard let self, self._isStreaming else { break }
 
                 let normalizedSamples = self.normalizer.normalize(samples)
+                self.audioRecorder?.appendSamples(normalizedSamples)
                 bufferCount += 1
                 if bufferCount % 100 == 0 {
                     NSLog("[AudioLevelNormalizer] gain=%.2f runningPeak=%.4f", self.normalizer.currentGain, self.normalizer.runningPeak)
@@ -147,6 +159,13 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         streamingTask?.cancel()
         await streamingTask?.value
         streamingTask = nil
+
+        // Finalize audio recording
+        if let recorder = audioRecorder {
+            recorder.endSession()
+            audioRecorder = nil
+            NSLog("[ChunkedWhisperEngine] Audio recording saved")
+        }
 
         // Now safe to access accumulator — streaming task is fully stopped
         if let remainingResult = accumulator.flush() {

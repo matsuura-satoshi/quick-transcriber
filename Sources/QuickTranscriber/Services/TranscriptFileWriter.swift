@@ -21,7 +21,7 @@ public final class TranscriptFileWriter {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("QuickTranscriber")
     }
 
-    private var resolvedDirectory: URL {
+    public var resolvedDirectory: URL {
         if let explicit = explicitDirectory {
             return explicit
         }
@@ -36,7 +36,7 @@ public final class TranscriptFileWriter {
         return resolvedDirectory.standardizedFileURL != current.standardizedFileURL
     }
 
-    public func startSession(language: Language, initialText: String) {
+    public func startSession(language: Language, initialText: String, datePrefix: String? = nil) {
         let fm = FileManager.default
         let dir = resolvedDirectory
         currentSessionDirectory = dir
@@ -45,9 +45,15 @@ public final class TranscriptFileWriter {
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
         // Generate filename: YYYY-MM-DD_HHmm_qt_transcript.md
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmm"
-        let filename = formatter.string(from: Date()) + Self.fileSuffix + ".md"
+        let prefix: String
+        if let datePrefix {
+            prefix = datePrefix
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd_HHmm"
+            prefix = formatter.string(from: Date())
+        }
+        let filename = prefix + Self.fileSuffix + ".md"
         let fileURL = dir.appendingPathComponent(filename)
 
         // Build frontmatter

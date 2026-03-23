@@ -480,6 +480,7 @@ private struct ActiveSpeakerRow: View {
 private struct OutputSettingsTab: View {
     @AppStorage("transcriptsDirectory") private var transcriptsDirectory: String = ""
     @AppStorage("isRecording") private var isRecording: Bool = false
+    @AppStorage("audioRecordingEnabled") private var audioRecordingEnabled: Bool = false
     private var displayPath: String {
         let path = transcriptsDirectory.isEmpty
             ? TranscriptFileWriter.defaultDirectory.path
@@ -521,6 +522,15 @@ private struct OutputSettingsTab: View {
                 Text("Transcripts are saved as **YYYY-MM-DD_HHmm_qt_transcript.md** with a **qt_transcript.md** symlink pointing to the latest file.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+            Section("Audio Recording") {
+                Toggle("Record audio during transcription", isOn: $audioRecordingEnabled)
+                    .disabled(isRecording)
+                if audioRecordingEnabled {
+                    Text("Audio is saved as WAV (16kHz mono) alongside the transcript file.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

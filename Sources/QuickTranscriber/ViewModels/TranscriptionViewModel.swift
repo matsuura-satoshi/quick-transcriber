@@ -640,12 +640,17 @@ public final class TranscriptionViewModel: ObservableObject {
         coordinator.snapshotDiarizationMode(params.diarizationMode)
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
+        // Generate shared date prefix for transcript and recording files
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HHmm"
+        let datePrefix = formatter.string(from: Date())
+
         if !fileSessionActive {
-            fileWriter.startSession(language: currentLanguage, initialText: confirmedText)
+            fileWriter.startSession(language: currentLanguage, initialText: confirmedText, datePrefix: datePrefix)
             fileSessionActive = true
         } else if fileWriter.hasDirectoryChanged {
             fileWriter.endSession()
-            fileWriter.startSession(language: currentLanguage, initialText: confirmedText)
+            fileWriter.startSession(language: currentLanguage, initialText: confirmedText, datePrefix: datePrefix)
         }
 
         // Resolve participant profiles for manual mode
@@ -663,13 +668,20 @@ public final class TranscriptionViewModel: ObservableObject {
             participantProfiles = nil
         }
 
+        // Resolve audio recording settings
+        let audioRecordingEnabled = UserDefaults.standard.bool(forKey: "audioRecordingEnabled")
+        let audioRecordingDirectory: URL? = audioRecordingEnabled ? fileWriter.resolvedDirectory : nil
+        let audioRecordingDatePrefix: String? = audioRecordingEnabled ? datePrefix : nil
+
         let sessionSegments = self.previousSessionSegments
         Task {
             do {
                 try await service.startTranscription(
                     language: currentLanguage.rawValue,
                     parameters: params,
-                    participantProfiles: participantProfiles
+                    participantProfiles: participantProfiles,
+                    audioRecordingDirectory: audioRecordingDirectory,
+                    audioRecordingDatePrefix: audioRecordingDatePrefix
                 ) { [weak self] state in
                     NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
