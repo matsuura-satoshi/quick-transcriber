@@ -64,6 +64,16 @@ public final class TranscriptionViewModel: ObservableObject {
         currentLanguage == .english ? .japanese : .english
     }
 
+    // MARK: - File Transcription State
+
+    @Published var isTranscribingFile = false
+    @Published var fileTranscriptionProgress: Double = 0.0
+    @Published var showReplaceFileAlert = false
+    @Published var fileTranscriptionError: String?
+    var pendingFileURL: URL?
+    var transcribingFileName: String?
+    private var fileTranscriptionEngine: ChunkedWhisperEngine?
+
     // MARK: - Coordinator
 
     public let coordinator: SpeakerStateCoordinator
@@ -76,6 +86,8 @@ public final class TranscriptionViewModel: ObservableObject {
     private var fileSessionActive: Bool = false
     private var previousSessionSegments: [ConfirmedSegment] = []
     private var cancellables: Set<AnyCancellable> = []
+    private let sharedTranscriber: ChunkTranscriber
+    private let sharedDiarizer: SpeakerDiarizer?
 
     // MARK: - Backward Compatibility (delegate to coordinator)
 
@@ -133,8 +145,14 @@ public final class TranscriptionViewModel: ObservableObject {
         )
         // Always create diarizer so it's available when the user enables it at runtime.
         // The enableSpeakerDiarization parameter controls whether it's actually used.
+        // Store transcriber and diarizer for reuse in file transcription engine.
+        let resolvedDiarizer: SpeakerDiarizer? = diarizer ?? FluidAudioSpeakerDiarizer()
+        let resolvedTranscriber: ChunkTranscriber = WhisperKitChunkTranscriber()
+        self.sharedDiarizer = resolvedDiarizer
+        self.sharedTranscriber = resolvedTranscriber
         let resolvedEngine = engine ?? ChunkedWhisperEngine(
-            diarizer: diarizer ?? FluidAudioSpeakerDiarizer(),
+            transcriber: resolvedTranscriber,
+            diarizer: resolvedDiarizer,
             speakerProfileStore: profileStore,
             embeddingHistoryStore: resolvedEmbeddingHistoryStore
         )
@@ -219,6 +237,7 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func toggleRecording() {
+        guard !isTranscribingFile else { return }
         if isRecording {
             stopRecording()
         } else {
@@ -783,6 +802,155 @@ public final class TranscriptionViewModel: ObservableObject {
                 && !self.coordinator.activeSpeakers.isEmpty {
                 self.showPostMeetingTagging = true
             }
+        }
+    }
+
+    // MARK: - File Transcription
+
+    func transcribeFile(_ url: URL) {
+        guard modelState == .ready else {
+            NSLog("[QuickTranscriber] Cannot transcribe file: model not ready")
+            return
+        }
+        guard !isTranscribingFile else {
+            NSLog("[QuickTranscriber] Already transcribing a file")
+            return
+        }
+        guard !isRecording else {
+            NSLog("[QuickTranscriber] Cannot transcribe file during recording")
+            return
+        }
+
+        // If there's existing text, show confirmation dialog
+        if !confirmedText.isEmpty {
+            pendingFileURL = url
+            showReplaceFileAlert = true
+            return
+        }
+
+        startFileTranscription(url)
+    }
+
+    func confirmReplaceAndTranscribe() {
+        guard let url = pendingFileURL else { return }
+        pendingFileURL = nil
+        startFileTranscription(url)
+    }
+
+    private func startFileTranscription(_ url: URL) {
+        Task {
+            await beginFileTranscription(url)
+        }
+    }
+
+    private func beginFileTranscription(_ url: URL) async {
+        clearText()
+        isTranscribingFile = true
+        fileTranscriptionProgress = 0.0
+        transcribingFileName = url.lastPathComponent
+
+        let fileSource = FileAudioSource(fileURL: url)
+        fileSource.onProgress = { [weak self] progress in
+            Task { @MainActor [weak self] in
+                self?.fileTranscriptionProgress = progress
+            }
+        }
+        fileSource.onComplete = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.finishFileTranscription()
+            }
+        }
+
+        // Create separate engine with shared transcriber and diarizer
+        let fileEngine = ChunkedWhisperEngine(
+            audioCaptureService: fileSource,
+            transcriber: sharedTranscriber,
+            diarizer: sharedDiarizer,
+            speakerProfileStore: speakerProfileStore,
+            embeddingHistoryStore: coordinator.embeddingHistoryStore
+        )
+        self.fileTranscriptionEngine = fileEngine
+
+        // Build accuracy-optimized parameters
+        var params = parametersStore.parameters
+        params.chunkDuration = Constants.FileTranscription.chunkDuration
+        params.silenceCutoffDuration = Constants.FileTranscription.endOfUtteranceSilence
+        params.temperatureFallbackCount = Constants.FileTranscription.temperatureFallbackCount
+
+        // Start file writer
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HHmm"
+        let datePrefix = formatter.string(from: Date())
+        if !fileSessionActive {
+            fileWriter.startSession(language: currentLanguage, initialText: "", datePrefix: datePrefix)
+            fileSessionActive = true
+        }
+
+        NSLog("[QuickTranscriber] Starting file transcription: %@", url.lastPathComponent)
+
+        do {
+            try await fileEngine.startStreaming(
+                language: currentLanguage.rawValue,
+                parameters: params,
+                participantProfiles: nil,
+                audioRecordingDirectory: nil,
+                audioRecordingDatePrefix: nil
+            ) { [weak self] state in
+                Task { @MainActor [weak self] in
+                    guard let self, self.isTranscribingFile else { return }
+                    self.unconfirmedText = state.unconfirmedText
+                    var stateSegments = state.confirmedSegments
+                    if stateSegments.isEmpty && !state.confirmedText.isEmpty {
+                        stateSegments = [ConfirmedSegment(text: state.confirmedText)]
+                    }
+                    self.confirmedSegments = Self.mergePreservingUserCorrections(
+                        existing: self.confirmedSegments,
+                        incoming: stateSegments
+                    )
+                    // Auto-detect speakers (same pattern as startRecording)
+                    for segment in stateSegments {
+                        if let speakerId = segment.speaker {
+                            self.coordinator.addAutoDetectedSpeaker(
+                                speakerId: speakerId,
+                                embedding: segment.speakerEmbedding
+                            )
+                        }
+                    }
+                    self.syncSpeakerState()
+                    self.fileWriter.updateText(self.confirmedText)
+                }
+            }
+        } catch {
+            NSLog("[QuickTranscriber] File transcription error: %@", error.localizedDescription)
+            fileTranscriptionError = error.localizedDescription
+            isTranscribingFile = false
+            fileTranscriptionEngine = nil
+            transcribingFileName = nil
+        }
+    }
+
+    private func finishFileTranscription() async {
+        guard let engine = fileTranscriptionEngine else { return }
+        await engine.stopStreaming(speakerDisplayNames: speakerDisplayNames)
+        fileTranscriptionEngine = nil
+        isTranscribingFile = false
+        fileTranscriptionProgress = 1.0
+        transcribingFileName = nil
+        NSLog("[QuickTranscriber] File transcription complete: %d segments", confirmedSegments.count)
+    }
+
+    func cancelFileTranscription() {
+        guard let engine = fileTranscriptionEngine else { return }
+        Task {
+            // Empty display names → skips profile merge via nil-guard in stopStreaming
+            await engine.stopStreaming(speakerDisplayNames: [:])
+            fileTranscriptionEngine = nil
+            clearText()
+            isTranscribingFile = false
+            fileTranscriptionProgress = 0.0
+            transcribingFileName = nil
+            NSLog("[QuickTranscriber] File transcription cancelled")
         }
     }
 
