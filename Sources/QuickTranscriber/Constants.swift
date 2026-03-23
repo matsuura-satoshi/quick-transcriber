@@ -59,6 +59,12 @@ public enum Constants {
         public static let bitsPerSample: UInt16 = 16
     }
 
+    public enum FileTranscription {
+        public static let chunkDuration: TimeInterval = 15.0
+        public static let endOfUtteranceSilence: TimeInterval = 1.0
+        public static let temperatureFallbackCount: Int = 2
+    }
+
     public enum Translation {
         public static let groupBoundarySilence: TimeInterval = 2.0
         public static let sentenceEndersEN: Set<Character> = [".", "!", "?"]
