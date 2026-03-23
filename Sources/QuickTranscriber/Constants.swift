@@ -41,7 +41,7 @@ public enum Constants {
 
     public enum Version {
         public static let major = 2
-        public static let minor = 2
+        public static let minor = 3
         public static let patch = 71
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
@@ -50,6 +50,13 @@ public enum Constants {
     public enum GitHub {
         public static let owner = "matsuura-satoshi"
         public static let repo = "quick-transcriber"
+    }
+
+    public enum AudioRecording {
+        public static let fileSuffix = "_qt_recording"
+        public static let sampleRate: UInt32 = 16000
+        public static let channels: UInt16 = 1
+        public static let bitsPerSample: UInt16 = 16
     }
 
     public enum Translation {

@@ -31,6 +31,8 @@ public final class TranscriptionService {
         language: String,
         parameters: TranscriptionParameters = .default,
         participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
+        audioRecordingDirectory: URL? = nil,
+        audioRecordingDatePrefix: String? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         guard isReady else {
@@ -39,7 +41,7 @@ public final class TranscriptionService {
         guard await !engine.isStreaming else {
             throw TranscriptionServiceError.alreadyStreaming
         }
-        try await engine.startStreaming(language: language, parameters: parameters, participantProfiles: participantProfiles, onStateChange: onStateChange)
+        try await engine.startStreaming(language: language, parameters: parameters, participantProfiles: participantProfiles, audioRecordingDirectory: audioRecordingDirectory, audioRecordingDatePrefix: audioRecordingDatePrefix, onStateChange: onStateChange)
     }
 
     public func stopTranscription(speakerDisplayNames: [String: String] = [:]) async {

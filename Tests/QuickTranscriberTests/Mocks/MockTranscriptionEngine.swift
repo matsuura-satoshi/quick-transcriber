@@ -36,6 +36,8 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         language: String,
         parameters: TranscriptionParameters = .default,
         participantProfiles: [(speakerId: UUID, embedding: [Float])]? = nil,
+        audioRecordingDirectory: URL? = nil,
+        audioRecordingDatePrefix: String? = nil,
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async throws {
         startStreamingCalled = true
