@@ -20,6 +20,9 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     /// Whether diarization is active for this streaming session.
     private var diarizationActive = false
     private var audioRecorder: AudioRecordingService?
+    /// When true, stopStreaming drains all buffered samples before stopping.
+    /// Used for file transcription where all buffers are queued upfront.
+    public var drainOnStop = false
 
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
@@ -148,17 +151,25 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     }
 
     public func stopStreaming(speakerDisplayNames: [String: String]) async {
-        _isStreaming = false
         audioCaptureService.stopCapture()
 
-        // Finish the stream so for-await loop exits cleanly
-        streamContinuation?.finish()
-        streamContinuation = nil
-
-        // Cancel and wait for task completion before touching shared state
-        streamingTask?.cancel()
-        await streamingTask?.value
-        streamingTask = nil
+        if drainOnStop {
+            // File mode: finish the stream and let the loop drain all buffered samples
+            streamContinuation?.finish()
+            streamContinuation = nil
+            await streamingTask?.value
+            streamingTask = nil
+            _isStreaming = false
+            drainOnStop = false
+        } else {
+            // Live mode: stop immediately
+            _isStreaming = false
+            streamContinuation?.finish()
+            streamContinuation = nil
+            streamingTask?.cancel()
+            await streamingTask?.value
+            streamingTask = nil
+        }
 
         // Finalize audio recording
         if let recorder = audioRecorder {
