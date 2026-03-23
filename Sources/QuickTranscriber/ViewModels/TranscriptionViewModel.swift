@@ -872,11 +872,10 @@ public final class TranscriptionViewModel: ObservableObject {
         )
         self.fileTranscriptionEngine = fileEngine
 
-        // Build accuracy-optimized parameters
-        var params = parametersStore.parameters
-        params.chunkDuration = Constants.FileTranscription.chunkDuration
-        params.silenceCutoffDuration = Constants.FileTranscription.endOfUtteranceSilence
-        params.temperatureFallbackCount = Constants.FileTranscription.temperatureFallbackCount
+        // Use the same parameters as real-time mode.
+        // The proven VAD parameters (8s chunk, 0.6s silence) are benchmarked.
+        // File mode's advantage is complete audio coverage, not different WhisperKit params.
+        let params = parametersStore.parameters
 
         // Start file writer
         let formatter = DateFormatter()
