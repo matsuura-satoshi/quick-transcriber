@@ -11,6 +11,7 @@ final class MockChunkTranscriber: ChunkTranscriber {
     var transcribeCallCount = 0
     var lastAudioArray: [Float]?
     var lastLanguage: String?
+    var lastParameters: TranscriptionParameters?
 
     func setup(model: String) async throws {
         setupCalled = true
@@ -21,11 +22,8 @@ final class MockChunkTranscriber: ChunkTranscriber {
         transcribeCallCount += 1
         lastAudioArray = audioArray
         lastLanguage = language
+        lastParameters = parameters
         if let error = transcribeError { throw error }
         return transcribeResults
-    }
-
-    func transcribeFile(audioPath: String, language: String, onProgress: (@Sendable (Double) -> Void)?) async throws -> [FileTranscriptionSegment] {
-        return []
     }
 }

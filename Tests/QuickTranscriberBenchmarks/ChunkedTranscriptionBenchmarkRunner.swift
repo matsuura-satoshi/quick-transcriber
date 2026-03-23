@@ -119,8 +119,15 @@ final class ChunkedTranscriptionBenchmarkRunner {
         // without normalization, VAD onset threshold (0.02) is never reached.
         let normalizedSamples = Self.normalizeAudio(audioSamples, targetPeak: 0.5)
 
-        // Set up accumulator
-        var vadAccumulator = VADChunkAccumulator()
+        // Set up accumulator with parameters from TranscriptionParameters
+        var vadAccumulator = VADChunkAccumulator(
+            maxChunkDuration: parameters.chunkDuration,
+            endOfUtteranceSilence: parameters.silenceCutoffDuration,
+            silenceEnergyThreshold: parameters.silenceEnergyThreshold,
+            speechOnsetThreshold: parameters.speechOnsetThreshold,
+            preRollDuration: parameters.preRollDuration,
+            hangoverDuration: parameters.hangoverDuration
+        )
         var fixedAccumulator = FixedChunkSimulator()
 
         // Collect chunks
@@ -174,24 +181,32 @@ final class ChunkedTranscriptionBenchmarkRunner {
         var totalInference: TimeInterval = 0
         var chunkDurations: [Double] = []
 
-        let decodingOptions = DecodingOptions(
-            task: .transcribe,
-            language: language,
-            temperature: parameters.temperature,
-            temperatureFallbackCount: parameters.temperatureFallbackCount,
-            sampleLength: parameters.sampleLength,
-            skipSpecialTokens: true,
-            withoutTimestamps: true,
-            compressionRatioThreshold: nil,
-            logProbThreshold: nil,
-            firstTokenLogProbThreshold: nil,
-            noSpeechThreshold: nil,
-            concurrentWorkerCount: parameters.concurrentWorkerCount
-        )
-
         for chunk in chunks {
             let chunkDuration = TimeInterval(chunk.samples.count) / sampleRate
             chunkDurations.append(chunkDuration)
+
+            // Apply quality thresholds only for long chunks (file mode optimization).
+            // Short chunks padded to 30s mel spectrogram are ~90% silence → thresholds would discard valid segments.
+            let useQualityThresholds = chunkDuration >= parameters.qualityThresholdMinChunkDuration
+                && parameters.compressionRatioThreshold != nil
+
+            let decodingOptions = DecodingOptions(
+                task: .transcribe,
+                language: language,
+                temperature: parameters.temperature,
+                temperatureIncrementOnFallback: 0.2,
+                temperatureFallbackCount: parameters.temperatureFallbackCount,
+                sampleLength: parameters.sampleLength,
+                skipSpecialTokens: true,
+                withoutTimestamps: true,
+                suppressBlank: useQualityThresholds ? parameters.suppressBlank : false,
+                compressionRatioThreshold: useQualityThresholds ? parameters.compressionRatioThreshold : nil,
+                logProbThreshold: useQualityThresholds ? parameters.logProbThreshold : nil,
+                firstTokenLogProbThreshold: useQualityThresholds ? parameters.firstTokenLogProbThreshold : nil,
+                noSpeechThreshold: useQualityThresholds ? parameters.noSpeechThreshold : nil,
+                concurrentWorkerCount: parameters.concurrentWorkerCount
+            )
+
             let inferenceStart = CFAbsoluteTimeGetCurrent()
             let results = try await whisperKit.transcribe(
                 audioArray: chunk.samples,

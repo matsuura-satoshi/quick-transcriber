@@ -31,6 +31,16 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
     public var speakerTransitionPenalty: Double
     public var diarizationMode: DiarizationMode
 
+    // WhisperKit quality thresholds (nil = disabled, used for file mode)
+    public var compressionRatioThreshold: Float?
+    public var logProbThreshold: Float?
+    public var firstTokenLogProbThreshold: Float?
+    public var noSpeechThreshold: Float?
+    public var suppressBlank: Bool
+    /// Minimum chunk duration (seconds) to apply quality thresholds.
+    /// Chunks shorter than this use nil thresholds (safe for padded mel spectrograms).
+    public var qualityThresholdMinChunkDuration: TimeInterval
+
     public init(
         temperature: Float = 0.0,
         temperatureFallbackCount: Int = 0,
@@ -46,7 +56,13 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         enableSpeakerDiarization: Bool = false,
         expectedSpeakerCount: Int? = nil,
         speakerTransitionPenalty: Double = 0.8,
-        diarizationMode: DiarizationMode = .auto
+        diarizationMode: DiarizationMode = .auto,
+        compressionRatioThreshold: Float? = nil,
+        logProbThreshold: Float? = nil,
+        firstTokenLogProbThreshold: Float? = nil,
+        noSpeechThreshold: Float? = nil,
+        suppressBlank: Bool = false,
+        qualityThresholdMinChunkDuration: TimeInterval = Constants.FileTranscription.qualityThresholdMinChunkDuration
     ) {
         self.temperature = temperature
         self.temperatureFallbackCount = temperatureFallbackCount
@@ -63,6 +79,12 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         self.expectedSpeakerCount = expectedSpeakerCount
         self.speakerTransitionPenalty = speakerTransitionPenalty
         self.diarizationMode = diarizationMode
+        self.compressionRatioThreshold = compressionRatioThreshold
+        self.logProbThreshold = logProbThreshold
+        self.firstTokenLogProbThreshold = firstTokenLogProbThreshold
+        self.noSpeechThreshold = noSpeechThreshold
+        self.suppressBlank = suppressBlank
+        self.qualityThresholdMinChunkDuration = qualityThresholdMinChunkDuration
     }
 
     public init(from decoder: Decoder) throws {
@@ -82,6 +104,12 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         expectedSpeakerCount = try container.decodeIfPresent(Int.self, forKey: .expectedSpeakerCount)
         speakerTransitionPenalty = try container.decodeIfPresent(Double.self, forKey: .speakerTransitionPenalty) ?? 0.9
         diarizationMode = try container.decodeIfPresent(DiarizationMode.self, forKey: .diarizationMode) ?? .auto
+        compressionRatioThreshold = try container.decodeIfPresent(Float.self, forKey: .compressionRatioThreshold)
+        logProbThreshold = try container.decodeIfPresent(Float.self, forKey: .logProbThreshold)
+        firstTokenLogProbThreshold = try container.decodeIfPresent(Float.self, forKey: .firstTokenLogProbThreshold)
+        noSpeechThreshold = try container.decodeIfPresent(Float.self, forKey: .noSpeechThreshold)
+        suppressBlank = try container.decodeIfPresent(Bool.self, forKey: .suppressBlank) ?? false
+        qualityThresholdMinChunkDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .qualityThresholdMinChunkDuration) ?? Constants.FileTranscription.qualityThresholdMinChunkDuration
     }
 
     public static let `default` = TranscriptionParameters()

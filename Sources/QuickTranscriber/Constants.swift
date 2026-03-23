@@ -42,7 +42,7 @@ public enum Constants {
     public enum Version {
         public static let major = 2
         public static let minor = 3
-        public static let patch = 74
+        public static let patch = 75
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
     }
@@ -60,9 +60,10 @@ public enum Constants {
     }
 
     public enum FileTranscription {
-        public static let chunkDuration: TimeInterval = 15.0
+        public static let chunkDuration: TimeInterval = 25.0
         public static let endOfUtteranceSilence: TimeInterval = 1.0
         public static let temperatureFallbackCount: Int = 2
+        public static let qualityThresholdMinChunkDuration: TimeInterval = 15.0
     }
 
     public enum Translation {
