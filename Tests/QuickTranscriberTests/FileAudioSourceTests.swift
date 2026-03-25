@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import QuickTranscriberLib
 
@@ -185,6 +186,148 @@ final class FileAudioSourceTests: XCTestCase {
         XCTAssertTrue(wasCapturingDuringBuffer, "Should be true during buffer delivery")
         lock.unlock()
     }
+
+    // MARK: - Multi-Format Support Tests
+
+    /// Create a PCM audio file at the given URL.
+    /// File type is inferred from URL extension (supports .wav, .aiff, .caf).
+    private func createPCMFile(samples: [Float], url: URL) throws {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16000,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw AudioCaptureError.formatCreationFailed
+        }
+
+        let file = try AVAudioFile(
+            forWriting: url,
+            settings: format.settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else {
+            throw AudioCaptureError.formatCreationFailed
+        }
+
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        if let channelData = buffer.floatChannelData {
+            for i in 0..<samples.count {
+                channelData[0][i] = samples[i]
+            }
+        }
+        try file.write(from: buffer)
+    }
+
+    /// Create an AAC-encoded M4A file.
+    private func createM4AFile(sampleCount: Int, url: URL) throws {
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 64000,
+        ]
+
+        let file = try AVAudioFile(
+            forWriting: url,
+            settings: outputSettings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+
+        let processingFormat = file.processingFormat
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: processingFormat,
+            frameCapacity: AVAudioFrameCount(sampleCount)
+        ) else {
+            throw AudioCaptureError.formatCreationFailed
+        }
+
+        buffer.frameLength = AVAudioFrameCount(sampleCount)
+        if let channelData = buffer.floatChannelData {
+            for i in 0..<sampleCount {
+                channelData[0][i] = sin(Float(i) * 0.1) * 0.5
+            }
+        }
+        try file.write(from: buffer)
+    }
+
+    /// Verify that FileAudioSource can read a file and delivers buffers.
+    private func assertCanReadAudioFile(
+        at url: URL,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        let sut = FileAudioSource(fileURL: url)
+        let completeExpectation = expectation(description: "onComplete for \(url.pathExtension)")
+        var totalSamples = 0
+        let lock = NSLock()
+
+        sut.onComplete = { completeExpectation.fulfill() }
+
+        try await sut.startCapture { buffer in
+            lock.lock()
+            totalSamples += buffer.count
+            lock.unlock()
+        }
+
+        await fulfillment(of: [completeExpectation], timeout: 10.0)
+
+        lock.lock()
+        XCTAssertGreaterThan(
+            totalSamples, 0,
+            "Should have received samples from .\(url.pathExtension) file",
+            file: file, line: line
+        )
+        lock.unlock()
+    }
+
+    func testAIFFFileCanBeRead() async throws {
+        let url = tmpDir.appendingPathComponent("test.aiff")
+        try createPCMFile(samples: [Float](repeating: 0.5, count: 3200), url: url)
+        try await assertCanReadAudioFile(at: url)
+    }
+
+    func testCAFFileCanBeRead() async throws {
+        let url = tmpDir.appendingPathComponent("test.caf")
+        try createPCMFile(samples: [Float](repeating: 0.5, count: 3200), url: url)
+        try await assertCanReadAudioFile(at: url)
+    }
+
+    func testM4AFileCanBeRead() async throws {
+        let url = tmpDir.appendingPathComponent("test.m4a")
+        try createM4AFile(sampleCount: 44100, url: url)
+        try await assertCanReadAudioFile(at: url)
+    }
+
+    func testUnsupportedFormatShowsDescriptiveError() async {
+        let oggURL = tmpDir.appendingPathComponent("test.ogg")
+        FileManager.default.createFile(atPath: oggURL.path, contents: Data("not audio data".utf8))
+
+        let sut = FileAudioSource(fileURL: oggURL)
+
+        do {
+            try await sut.startCapture { _ in }
+            XCTFail("Should have thrown for unsupported format")
+        } catch {
+            let description = error.localizedDescription
+            XCTAssertTrue(
+                description.lowercased().contains("ogg"),
+                "Error should mention the file extension: \(description)"
+            )
+            XCTAssertTrue(
+                description.contains("WAV") || description.contains("Supported"),
+                "Error should mention supported formats: \(description)"
+            )
+        }
+    }
+
+    // MARK: - Existing Tests
 
     func testEmptyFileCallsComplete() async throws {
         let fileURL = createWavFile(samples: [])

@@ -93,6 +93,7 @@ public enum AudioCaptureError: LocalizedError {
     case microphonePermissionDenied
     case formatCreationFailed
     case converterCreationFailed
+    case unsupportedFileFormat(String)
 
     public var errorDescription: String? {
         switch self {
@@ -102,6 +103,8 @@ public enum AudioCaptureError: LocalizedError {
             return "Failed to create target audio format."
         case .converterCreationFailed:
             return "Failed to create audio converter."
+        case .unsupportedFileFormat(let ext):
+            return "Unsupported audio format: .\(ext). Supported formats: WAV, MP3, M4A, AAC, AIFF, CAF."
         }
     }
 }

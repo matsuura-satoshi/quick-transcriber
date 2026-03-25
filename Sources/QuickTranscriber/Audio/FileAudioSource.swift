@@ -19,7 +19,16 @@ public final class FileAudioSource: AudioCaptureService {
     }
 
     public func startCapture(onBuffer: @escaping @Sendable ([Float]) -> Void) async throws {
-        let audioFile = try AVAudioFile(forReading: fileURL)
+        let audioFile: AVAudioFile
+        do {
+            audioFile = try AVAudioFile(forReading: fileURL)
+        } catch {
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                let ext = fileURL.pathExtension.lowercased()
+                throw AudioCaptureError.unsupportedFileFormat(ext)
+            }
+            throw error
+        }
         let totalFrames = AVAudioFrameCount(audioFile.length)
 
         let targetSampleRate = Constants.Audio.sampleRate
