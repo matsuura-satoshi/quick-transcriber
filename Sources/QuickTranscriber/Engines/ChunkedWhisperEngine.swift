@@ -17,6 +17,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
     private var currentParameters: TranscriptionParameters = .default
+    private var currentParticipantIds: Set<UUID> = []
     /// Whether diarization is active for this streaming session.
     private var diarizationActive = false
     private var audioRecorder: AudioRecordingService?
@@ -78,6 +79,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         )
         normalizer = AudioLevelNormalizer()
         confirmedSegments = []
+        currentParticipantIds = []
         speakerSmoother = ViterbiSpeakerSmoother(stayProbability: parameters.speakerTransitionPenalty)
         if let diarizer, parameters.enableSpeakerDiarization {
             if let participantProfiles, parameters.diarizationMode == .manual {
@@ -88,6 +90,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 } else {
                     diarizationActive = true
                     diarizer.loadSpeakerProfiles(participantProfiles)
+                    currentParticipantIds = Set(participantProfiles.map { $0.speakerId })
                     NSLog("[ChunkedWhisperEngine] Manual mode: loaded \(participantProfiles.count) participant profiles")
                 }
                 diarizer.updateExpectedSpeakerCount(participantProfiles.count)
@@ -243,6 +246,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 NSLog("[ChunkedWhisperEngine] Saved \(entries.count) speaker histories")
             }
         }
+        currentParticipantIds = []
         NSLog("[ChunkedWhisperEngine] Streaming stopped. Total segments: \(confirmedSegments.count)")
     }
 
