@@ -305,6 +305,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     public func reset() {
         lock.withLock {
             profiles = []
+            lastConfirmedId = nil
         }
     }
 
@@ -334,6 +335,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 SpeakerProfile(id: $0.speakerId, embedding: $0.embedding, hitCount: 1,
                                embeddingHistory: [WeightedEmbedding(embedding: $0.embedding, confidence: 1.0)])
             }
+            lastConfirmedId = nil
         }
     }
 
