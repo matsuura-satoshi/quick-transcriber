@@ -902,4 +902,24 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(newEntry.confidence, Constants.Embedding.userCorrectionConfidence, accuracy: 0.001)
         XCTAssertEqual(newEntry.embedding, bogus)
     }
+
+    // MARK: - correctAssignment with approximate match
+
+    func testCorrectAssignment_removesMatchingEntryDespiteFloatJitter() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embOriginal = makeEmbedding(dominant: 0)
+        let rA = tracker.identify(embedding: embOriginal)
+
+        // 浮動小数点の僅かな揺らぎをシミュレート (最後の有効桁)
+        var embJittered = embOriginal
+        embJittered[0] = embOriginal[0] + 1e-7
+
+        // jittered を使って修正（value exact match は失敗するはず）
+        tracker.correctAssignment(embedding: embJittered, from: rA.speakerId, to: UUID())
+
+        let detailed = tracker.exportDetailedProfiles()
+        // rA の profile は空になって消えているはず (履歴 1 件だったのが 0 件 → 削除)
+        XCTAssertFalse(detailed.contains(where: { $0.speakerId == rA.speakerId }),
+            "jittered embedding should match within tolerance and trigger removal")
+    }
 }

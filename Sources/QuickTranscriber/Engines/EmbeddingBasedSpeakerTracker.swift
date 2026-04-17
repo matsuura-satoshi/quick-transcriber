@@ -240,7 +240,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             // Auto mode: 従来どおり centroid を更新するが、confidence を下げて
             // 汚染速度を緩和する。
             if let oldIdx = profiles.firstIndex(where: { $0.id == oldId }) {
-                profiles[oldIdx].embeddingHistory.removeAll { $0.embedding == embedding }
+                _ = Self.removeClosestMatch(in: &profiles[oldIdx].embeddingHistory, target: embedding)
                 if profiles[oldIdx].embeddingHistory.isEmpty {
                     profiles.remove(at: oldIdx)
                 } else {
@@ -313,5 +313,24 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         let denom = sqrt(normA) * sqrt(normB)
         guard denom > 0 else { return 0 }
         return dot / denom
+    }
+
+    /// Remove the embedding history entry most similar to `target` (≥ 0.9999 cosine).
+    /// Returns true if an entry was removed.
+    private static func removeClosestMatch(in history: inout [WeightedEmbedding], target: [Float]) -> Bool {
+        var bestIndex = -1
+        var bestSim: Float = 0.9999  // threshold: 実質同一
+        for (i, entry) in history.enumerated() {
+            let sim = cosineSimilarity(entry.embedding, target)
+            if sim >= bestSim {
+                bestSim = sim
+                bestIndex = i
+            }
+        }
+        if bestIndex >= 0 {
+            history.remove(at: bestIndex)
+            return true
+        }
+        return false
     }
 }
