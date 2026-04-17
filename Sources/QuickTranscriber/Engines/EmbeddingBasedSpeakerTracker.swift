@@ -77,8 +77,9 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     private var identifyCount: Int = 0
     private let lock = NSLock()
 
-    /// When true, `identify()` will not update profile embeddings.
-    /// `correctAssignment()` is unaffected and always updates profiles.
+    /// When true, `identify()` will not update profile embeddings, and
+    /// `correctAssignment()` will record a `UserCorrection` without mutating
+    /// any profile centroid (centroid is frozen for post-hoc learning later).
     public var suppressLearning: Bool = false
 
     /// - Parameters:

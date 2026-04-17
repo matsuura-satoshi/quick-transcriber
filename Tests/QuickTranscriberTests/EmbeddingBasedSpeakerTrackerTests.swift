@@ -463,7 +463,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let profileB = profiles.first { $0.speakerId == idB }!
         XCTAssertEqual(profileA.hitCount, 1)
         XCTAssertEqual(profileA.embedding, embA1)
-        // B has 2 embeddings: embB (conf 1.0, new speaker) + embA2 (conf 1.0, user-corrected)
+        // B has 2 embeddings: embB (conf 1.0, new speaker) + embA2 (conf userCorrectionConfidence, user-corrected)
         XCTAssertEqual(profileB.hitCount, 2)
     }
 
