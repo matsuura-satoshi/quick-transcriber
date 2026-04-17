@@ -137,4 +137,23 @@ public final class SpeakerProfileStore {
             }
         }
     }
+
+    /// Apply a weighted update to an existing profile's embedding.
+    /// Used by Manual mode post-hoc learning where α is controlled by
+    /// the caller based on session sample count.
+    ///
+    /// - Parameters:
+    ///   - speakerId: Target profile UUID. No-op if not found.
+    ///   - sessionCentroid: Computed centroid of session's non-corrected samples.
+    ///   - alpha: Blend weight in [0, 1]. New = (1-α)*existing + α*sessionCentroid.
+    public func applyPostHocLearning(speakerId: UUID, sessionCentroid: [Float], alpha: Float) {
+        guard let idx = profiles.firstIndex(where: { $0.id == speakerId }) else { return }
+        let existing = profiles[idx].embedding
+        guard existing.count == sessionCentroid.count else { return }
+        profiles[idx].embedding = zip(existing, sessionCentroid).map { old, new in
+            (1 - alpha) * old + alpha * new
+        }
+        profiles[idx].lastUsed = Date()
+        profiles[idx].sessionCount += 1
+    }
 }
