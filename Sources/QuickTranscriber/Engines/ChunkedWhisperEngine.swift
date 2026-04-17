@@ -329,11 +329,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         let dims = first.count
         guard dims > 0 else { return nil }
         var sum = [Float](repeating: 0, count: dims)
+        var included = 0
         for e in embeddings {
             guard e.count == dims else { continue }
             for i in 0..<dims { sum[i] += e[i] }
+            included += 1
         }
-        let count = Float(embeddings.count)
+        guard included > 0 else { return nil }
+        let count = Float(included)
         return sum.map { $0 / count }
     }
 

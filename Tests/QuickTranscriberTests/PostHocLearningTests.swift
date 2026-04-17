@@ -143,4 +143,36 @@ final class PostHocLearningTests: XCTestCase {
         let updated = store.profiles.first!
         XCTAssertEqual(updated.embedding, initial, "should skip when too few high-confidence samples")
     }
+
+    func testCentroid_skipsDimensionMismatchCorrectly() {
+        let store = SpeakerProfileStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("PostHocLearningTests-\(UUID().uuidString)"))
+        let id = UUID()
+        let initial: [Float] = [1.0, 0.0, 0.0, 0.0]
+        store.profiles.append(StoredSpeakerProfile(id: id, displayName: "A", embedding: initial))
+
+        let engine = makeEngine(store: store)
+
+        // 3 normal + 1 wrong-dim → wrong-dim is skipped
+        let good: [Float] = [0.0, 1.0, 0.0, 0.0]
+        let wrongDim: [Float] = [0.0, 1.0]
+        let segs: [ConfirmedSegment] = [
+            ConfirmedSegment(text: "s1", speaker: id.uuidString, speakerConfidence: 0.8, speakerEmbedding: good),
+            ConfirmedSegment(text: "s2", speaker: id.uuidString, speakerConfidence: 0.8, speakerEmbedding: good),
+            ConfirmedSegment(text: "s3", speaker: id.uuidString, speakerConfidence: 0.8, speakerEmbedding: good),
+            ConfirmedSegment(text: "bad", speaker: id.uuidString, speakerConfidence: 0.8, speakerEmbedding: wrongDim)
+        ]
+
+        engine.applyManualModePostHocLearningForTesting(
+            store: store,
+            participantIds: [id],
+            segments: segs
+        )
+
+        // centroid of 3 good samples = [0,1,0,0], α = min(0.2, 4/50) = 0.08
+        // (note: 4 segments pass confidence/embedding filter, but only 3 have correct dimension)
+        // expected = 0.92*[1,0,0,0] + 0.08*[0,1,0,0] = [0.92, 0.08, 0, 0]
+        let updated = store.profiles.first!
+        XCTAssertEqual(updated.embedding[0], 0.92, accuracy: 1e-5)
+        XCTAssertEqual(updated.embedding[1], 0.08, accuracy: 1e-5)
+    }
 }
