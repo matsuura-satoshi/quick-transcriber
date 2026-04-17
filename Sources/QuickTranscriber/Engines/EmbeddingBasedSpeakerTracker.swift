@@ -306,6 +306,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         lock.withLock {
             profiles = []
             lastConfirmedId = nil
+            userCorrections = []
         }
     }
 
@@ -336,6 +337,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                                embeddingHistory: [WeightedEmbedding(embedding: $0.embedding, confidence: 1.0)])
             }
             lastConfirmedId = nil
+            userCorrections = []
         }
     }
 
