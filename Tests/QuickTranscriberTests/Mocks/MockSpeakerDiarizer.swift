@@ -50,4 +50,10 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         correctedAssignments.append((embedding: embedding, oldId: oldId, newId: newId))
     }
+
+    var userCorrectionsToExport: [UserCorrection] = []
+
+    func exportUserCorrections() -> [UserCorrection] {
+        userCorrectionsToExport
+    }
 }
