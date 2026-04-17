@@ -819,4 +819,19 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let a = WeightedEmbedding(entryId: id, embedding: [1.0], confidence: 1.0)
         XCTAssertEqual(a.entryId, id)
     }
+
+    // MARK: - UserCorrections
+
+    func testExportUserCorrections_initiallyEmpty() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        XCTAssertTrue(tracker.exportUserCorrections().isEmpty)
+    }
+
+    func testResetUserCorrections_clearsList() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        // 後段のタスクで correctAssignment 経由で要素を追加するが、
+        // ここでは API の存在だけを検証する
+        tracker.resetUserCorrections()
+        XCTAssertTrue(tracker.exportUserCorrections().isEmpty)
+    }
 }

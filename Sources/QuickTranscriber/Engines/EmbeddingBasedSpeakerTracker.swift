@@ -42,6 +42,18 @@ extension WeightedEmbedding: Equatable {
     }
 }
 
+public struct UserCorrection: Sendable, Equatable {
+    public let entryId: UUID
+    public let fromId: UUID
+    public let toId: UUID
+
+    public init(entryId: UUID, fromId: UUID, toId: UUID) {
+        self.entryId = entryId
+        self.fromId = fromId
+        self.toId = toId
+    }
+}
+
 /// Tracks speakers across diarization calls using embedding cosine similarity.
 ///
 /// FluidAudio reassigns internal speaker IDs on each `process()` call,
@@ -57,6 +69,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     }
 
     private var profiles: [SpeakerProfile] = []
+    private var userCorrections: [UserCorrection] = []
     private let similarityThreshold: Float
     private let updateAlpha: Float
     public var expectedSpeakerCount: Int?
@@ -247,6 +260,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         lock.withLock {
             profiles.map { ($0.id, $0.embedding, $0.hitCount) }
         }
+    }
+
+    public func exportUserCorrections() -> [UserCorrection] {
+        lock.withLock { userCorrections }
+    }
+
+    public func resetUserCorrections() {
+        lock.withLock { userCorrections = [] }
     }
 
     public func exportDetailedProfiles() -> [(speakerId: UUID, embedding: [Float], hitCount: Int, embeddingHistory: [WeightedEmbedding])] {
