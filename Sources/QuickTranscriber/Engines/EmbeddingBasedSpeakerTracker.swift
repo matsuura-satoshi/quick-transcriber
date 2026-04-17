@@ -20,13 +20,25 @@ public struct SpeakerIdentification: Sendable, Equatable {
     }
 }
 
-public struct WeightedEmbedding: Sendable, Equatable {
+public struct WeightedEmbedding: Sendable {
+    /// Unique identifier for this embedding entry. Used by correctAssignment
+    /// to remove by identity rather than embedding-value match.
+    public let entryId: UUID
     public let embedding: [Float]
     public let confidence: Float
 
-    public init(embedding: [Float], confidence: Float) {
+    public init(entryId: UUID = UUID(), embedding: [Float], confidence: Float) {
+        self.entryId = entryId
         self.embedding = embedding
         self.confidence = confidence
+    }
+}
+
+extension WeightedEmbedding: Equatable {
+    /// Equality compares semantic content only; entryId is a tracking ID
+    /// and is intentionally excluded so value-based assertions remain stable.
+    public static func == (lhs: WeightedEmbedding, rhs: WeightedEmbedding) -> Bool {
+        lhs.embedding == rhs.embedding && lhs.confidence == rhs.confidence
     }
 }
 

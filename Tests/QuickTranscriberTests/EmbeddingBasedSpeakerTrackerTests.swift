@@ -799,4 +799,24 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         wait(for: [expectation], timeout: 10.0)
         // If we get here without crashing, the test passes
     }
+
+    // MARK: - WeightedEmbedding entryId
+
+    func testWeightedEmbedding_hasUniqueEntryId() {
+        let a = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        let b = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        XCTAssertNotEqual(a.entryId, b.entryId, "Two WeightedEmbedding instances should have distinct entryIds even with identical content")
+    }
+
+    func testWeightedEmbedding_equalityIgnoresEntryId() {
+        let a = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        let b = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        XCTAssertEqual(a, b, "Equality should compare embedding + confidence, not entryId")
+    }
+
+    func testWeightedEmbedding_explicitEntryIdPreserved() {
+        let id = UUID()
+        let a = WeightedEmbedding(entryId: id, embedding: [1.0], confidence: 1.0)
+        XCTAssertEqual(a.entryId, id)
+    }
 }
