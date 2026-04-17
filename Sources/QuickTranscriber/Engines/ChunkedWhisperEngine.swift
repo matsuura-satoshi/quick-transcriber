@@ -188,38 +188,52 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
         accumulator.reset()
         if let diarizer, diarizationActive, let store = speakerProfileStore {
-            let sessionProfiles = diarizer.exportSpeakerProfiles()
-            if !sessionProfiles.isEmpty {
-                // Filter out profiles for speakers that were user-corrected
-                let correctedOriginalSpeakers = Set(
-                    confirmedSegments
-                        .filter { $0.isUserCorrected }
-                        .compactMap { $0.originalSpeaker }
+            if currentParameters.diarizationMode == .manual && !currentParticipantIds.isEmpty {
+                // Manual mode: confirmedSegments の非修正サンプルから weighted merge
+                applyManualModePostHocLearning(
+                    store: store,
+                    participantIds: currentParticipantIds,
+                    segments: confirmedSegments
                 )
-                let filteredProfiles: [(speakerId: UUID, embedding: [Float])]
-                if correctedOriginalSpeakers.isEmpty {
-                    filteredProfiles = sessionProfiles
-                } else {
-                    filteredProfiles = sessionProfiles.filter { !correctedOriginalSpeakers.contains($0.speakerId.uuidString) }
-                    NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
+                do {
+                    try store.save()
+                } catch {
+                    NSLog("[ChunkedWhisperEngine] Failed to save after post-hoc learning: \(error)")
                 }
-                if !filteredProfiles.isEmpty {
-                    let mergeProfiles = filteredProfiles.compactMap { profile
-                        -> (speakerId: UUID, embedding: [Float], displayName: String)? in
-                        guard let name = speakerDisplayNames[profile.speakerId.uuidString] else {
-                            NSLog("[ChunkedWhisperEngine] Skipping unmapped profile \(profile.speakerId)")
-                            return nil
-                        }
-                        return (speakerId: profile.speakerId, embedding: profile.embedding, displayName: name)
+            } else {
+                // Auto mode: 従来どおり tracker profile を merge
+                let sessionProfiles = diarizer.exportSpeakerProfiles()
+                if !sessionProfiles.isEmpty {
+                    let correctedOriginalSpeakers = Set(
+                        confirmedSegments
+                            .filter { $0.isUserCorrected }
+                            .compactMap { $0.originalSpeaker }
+                    )
+                    let filteredProfiles: [(speakerId: UUID, embedding: [Float])]
+                    if correctedOriginalSpeakers.isEmpty {
+                        filteredProfiles = sessionProfiles
+                    } else {
+                        filteredProfiles = sessionProfiles.filter { !correctedOriginalSpeakers.contains($0.speakerId.uuidString) }
+                        NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
                     }
-                    if !mergeProfiles.isEmpty {
-                        store.mergeSessionProfiles(mergeProfiles)
-                        do {
-                            try store.save()
-                        } catch {
-                            NSLog("[ChunkedWhisperEngine] Failed to save speaker profiles: \(error)")
+                    if !filteredProfiles.isEmpty {
+                        let mergeProfiles = filteredProfiles.compactMap { profile
+                            -> (speakerId: UUID, embedding: [Float], displayName: String)? in
+                            guard let name = speakerDisplayNames[profile.speakerId.uuidString] else {
+                                NSLog("[ChunkedWhisperEngine] Skipping unmapped profile \(profile.speakerId)")
+                                return nil
+                            }
+                            return (speakerId: profile.speakerId, embedding: profile.embedding, displayName: name)
                         }
-                        NSLog("[ChunkedWhisperEngine] Saved \(mergeProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - mergeProfiles.count))")
+                        if !mergeProfiles.isEmpty {
+                            store.mergeSessionProfiles(mergeProfiles)
+                            do {
+                                try store.save()
+                            } catch {
+                                NSLog("[ChunkedWhisperEngine] Failed to save speaker profiles: \(error)")
+                            }
+                            NSLog("[ChunkedWhisperEngine] Saved \(mergeProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - mergeProfiles.count))")
+                        }
                     }
                 }
             }
@@ -261,6 +275,66 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments[index].speaker = speaker
         confirmedSegments[index].speakerConfidence = 1.0
         confirmedSegments[index].isUserCorrected = true
+    }
+
+    /// Manual mode の post-hoc 学習を実行する。
+    /// Tracker 側は suppressLearning により不動だが、session 中に高 confidence で
+    /// 識別された非修正 segment を集めて profile を緩やかに更新する。
+    internal func applyManualModePostHocLearning(
+        store: SpeakerProfileStore,
+        participantIds: Set<UUID>,
+        segments: [ConfirmedSegment]
+    ) {
+        for participantId in participantIds {
+            let samples = segments.filter { seg in
+                seg.speaker == participantId.uuidString
+                    && !seg.isUserCorrected
+                    && (seg.speakerConfidence ?? 0) >= Constants.Embedding.similarityThreshold
+                    && seg.speakerEmbedding != nil
+            }
+
+            guard samples.count >= Constants.Embedding.sessionLearningMinSamples else { continue }
+            guard let existing = store.profiles.first(where: { $0.id == participantId }),
+                  !existing.isLocked else { continue }
+
+            let embeddings = samples.compactMap { $0.speakerEmbedding }
+            guard let centroid = Self.centroid(of: embeddings) else { continue }
+
+            let alpha = min(
+                Constants.Embedding.sessionLearningAlphaMax,
+                Float(samples.count) / Float(Constants.Embedding.sessionLearningSamplesForMaxAlpha)
+            )
+            store.applyPostHocLearning(
+                speakerId: participantId,
+                sessionCentroid: centroid,
+                alpha: alpha
+            )
+            NSLog("[ChunkedWhisperEngine] Post-hoc learning for \(participantId): \(samples.count) samples, alpha=\(alpha)")
+        }
+    }
+
+    #if DEBUG
+    /// Test-only hook exposing applyManualModePostHocLearning without requiring the audio pipeline.
+    public func applyManualModePostHocLearningForTesting(
+        store: SpeakerProfileStore,
+        participantIds: Set<UUID>,
+        segments: [ConfirmedSegment]
+    ) {
+        applyManualModePostHocLearning(store: store, participantIds: participantIds, segments: segments)
+    }
+    #endif
+
+    private static func centroid(of embeddings: [[Float]]) -> [Float]? {
+        guard let first = embeddings.first else { return nil }
+        let dims = first.count
+        guard dims > 0 else { return nil }
+        var sum = [Float](repeating: 0, count: dims)
+        for e in embeddings {
+            guard e.count == dims else { continue }
+            for i in 0..<dims { sum[i] += e[i] }
+        }
+        let count = Float(embeddings.count)
+        return sum.map { $0 / count }
     }
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
