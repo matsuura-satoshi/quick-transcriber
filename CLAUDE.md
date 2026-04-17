@@ -1,14 +1,17 @@
-# Quick Transcriber
+# 最重要
 
-macOSリアルタイム文字起こしアプリ。WhisperKit (large-v3-turbo) + SwiftUI。
+Skillである superpowers を全ての開発工程において利用する。例外的にsuperpowersを利用しない方が良いと判断した場合は、その明確な根拠を必ず示さなくてはならない。
 
-## Development Rules
-実装の全ての過程において、該当するsuperpowersスキルを必ず利用すること。全てのシーンに対応するスキルが存在する。スキップしてはならない。
+全てのシーンに対応するスキルが存在する。スキップしてはならない。
 
 例:
 - 機能追加・設計判断の前に `superpowers:brainstorming` で要件と設計を探索する
 - 実装コードを書く前に `superpowers:test-driven-development` でテストファーストを徹底する
 - 完了を宣言する前に `superpowers:verification-before-completion` で検証を行う
+
+# Quick Transcriber
+
+macOSリアルタイム文字起こしアプリ。WhisperKit (large-v3-turbo) + SwiftUI。
 
 ## Build & Run
 ```bash

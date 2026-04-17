@@ -98,20 +98,7 @@ public struct ContentView: View {
             }
         }
         .translationTask(translationConfig) { session in
-            let segments = viewModel.confirmedSegments
-            await translationService.translateNewSegments(
-                segments,
-                using: session,
-                sourceLanguage: viewModel.currentLanguage.rawValue
-            )
-            if !viewModel.isRecording {
-                await translationService.finalizeLastGroup(
-                    segments, using: session
-                )
-            }
-            if !translationReady {
-                translationReady = true
-            }
+            await runTranslationTask(session: session)
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("QuickTranscriber.menuCopyAll"))) { _ in
             viewModel.copyAllText()
@@ -273,6 +260,21 @@ public struct ContentView: View {
             speakerDisplayNames: viewModel.speakerDisplayNames
         )
         .frame(maxHeight: .infinity)
+    }
+
+    private func runTranslationTask(session: TranslationSession) async {
+        let segments = viewModel.confirmedSegments
+        await translationService.translateNewSegments(
+            segments,
+            using: session,
+            sourceLanguage: viewModel.currentLanguage.rawValue
+        )
+        if !viewModel.isRecording {
+            await translationService.finalizeLastGroup(segments, using: session)
+        }
+        if !translationReady {
+            translationReady = true
+        }
     }
 
     private func updateTranslationConfig() {

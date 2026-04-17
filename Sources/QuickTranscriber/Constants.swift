@@ -27,6 +27,17 @@ public enum Constants {
 
     public enum Embedding {
         public static let similarityThreshold: Float = 0.5
+        /// Auto mode で correctAssignment が新 embedding を profile に追加するときの confidence。
+        /// 1.0 だと 1 回の修正で centroid が大きくシフトし、汚染フィードバックループを起こす。
+        public static let userCorrectionConfidence: Float = 0.3
+        /// Manual mode の post-hoc 学習で適用する weighted merge の α 上限。
+        public static let sessionLearningAlphaMax: Float = 0.2
+        /// α が上限に達するために必要なサンプル数。
+        public static let sessionLearningSamplesForMaxAlpha: Int = 50
+        /// post-hoc 学習を行う最小サンプル数。これ未満の場合はノイズ過大とみなしスキップ。
+        public static let sessionLearningMinSamples: Int = 3
+        /// identify() の tie-breaker で「ほぼ同値」とみなす similarity 差の閾値。
+        public static let tieBreakerEpsilon: Float = 0.005
     }
 
     public enum QualityFilter {
@@ -41,8 +52,8 @@ public enum Constants {
 
     public enum Version {
         public static let major = 2
-        public static let minor = 3
-        public static let patch = 76
+        public static let minor = 4
+        public static let patch = 77
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
     }

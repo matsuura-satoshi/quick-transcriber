@@ -12,6 +12,7 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
     func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])]
     func loadSpeakerProfiles(_ profiles: [(speakerId: UUID, embedding: [Float])])
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
+    func exportUserCorrections() -> [UserCorrection]
     func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID)
     func setSuppressLearning(_ suppress: Bool)
 }
@@ -19,6 +20,10 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
 extension SpeakerDiarizer {
     public func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
         await identifySpeaker(audioChunk: audioChunk, forceRun: false)
+    }
+
+    public func exportUserCorrections() -> [UserCorrection] {
+        []
     }
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
@@ -204,6 +209,10 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         speakerTracker.correctAssignment(embedding: embedding, from: oldId, to: newId)
+    }
+
+    public func exportUserCorrections() -> [UserCorrection] {
+        speakerTracker.exportUserCorrections()
     }
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {

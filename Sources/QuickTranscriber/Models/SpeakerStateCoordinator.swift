@@ -269,9 +269,16 @@ public final class SpeakerStateCoordinator {
     func reassignSegment(at index: Int, to newSpeaker: String, segments: inout [ConfirmedSegment]) {
         guard index < segments.count else { return }
         let originalSpeaker = segments[index].speaker
-        if let embedding = segments[index].speakerEmbedding, let oldSpeaker = originalSpeaker {
-            service?.correctSpeakerAssignment(embedding: embedding, from: oldSpeaker, to: newSpeaker)
+
+        if let oldSpeaker = originalSpeaker {
+            if let embedding = segments[index].speakerEmbedding {
+                service?.correctSpeakerAssignment(
+                    embedding: embedding, from: oldSpeaker, to: newSpeaker)
+            } else {
+                service?.syncViterbiConfirm(to: newSpeaker)
+            }
         }
+
         segments[index].originalSpeaker = originalSpeaker
         segments[index].speaker = newSpeaker
         segments[index].speakerConfidence = 1.0

@@ -463,7 +463,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let profileB = profiles.first { $0.speakerId == idB }!
         XCTAssertEqual(profileA.hitCount, 1)
         XCTAssertEqual(profileA.embedding, embA1)
-        // B has 2 embeddings: embB (conf 1.0, new speaker) + embA2 (conf 1.0, user-corrected)
+        // B has 2 embeddings: embB (conf 1.0, new speaker) + embA2 (conf userCorrectionConfidence, user-corrected)
         XCTAssertEqual(profileB.hitCount, 2)
     }
 
@@ -569,7 +569,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(detailed[0].embeddingHistory[0].confidence, 1.0)
     }
 
-    func testCorrectAssignmentSetsConfidenceToOne() {
+    func testCorrectAssignmentSetsUserCorrectionConfidence() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let embA = makeEmbedding(dominant: 0)
         let embB = makeEmbedding(dominant: 1)
@@ -580,10 +580,11 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
         let detailed = tracker.exportDetailedProfiles()
         let profileA = detailed.first { $0.speakerId == idA }!
-        // The moved embedding should have confidence 1.0 (user-confirmed)
+        // Auto mode: moved embedding should have userCorrectionConfidence (0.3), not 1.0,
+        // to reduce centroid pollution speed.
         let movedEntry = profileA.embeddingHistory.first { $0.embedding == embB }
         XCTAssertNotNil(movedEntry)
-        XCTAssertEqual(movedEntry?.confidence, 1.0)
+        XCTAssertEqual(movedEntry!.confidence, Constants.Embedding.userCorrectionConfidence, accuracy: 0.001)
     }
 
     // MARK: - mergeProfile
@@ -665,7 +666,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(resultB.speakerId, idB)
     }
 
-    func testSuppressLearning_correctAssignmentStillWorks() {
+    func testSuppressLearning_correctAssignmentRecordsCorrection_notCentroid() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let embA = makeEmbedding(dominant: 0)
         let embB = makeEmbedding(dominant: 1)
@@ -677,13 +678,21 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         ])
         tracker.suppressLearning = true
 
-        // correctAssignment should still update profiles even with suppressLearning
+        // Manual mode: correctAssignment should record UserCorrection, NOT update centroid
         tracker.correctAssignment(embedding: embA, from: idA, to: idB)
 
+        // Profiles must remain unchanged (centroid frozen)
         let detailed = tracker.exportDetailedProfiles()
+        let profileA = detailed.first { $0.speakerId == idA }!
         let profileB = detailed.first { $0.speakerId == idB }!
-        // B should have original embedding + moved embedding
-        XCTAssertEqual(profileB.embeddingHistory.count, 2)
+        XCTAssertEqual(profileA.embeddingHistory.count, 1, "profileA centroid must not change")
+        XCTAssertEqual(profileB.embeddingHistory.count, 1, "profileB centroid must not change")
+
+        // The correction is recorded in userCorrections
+        let corrections = tracker.exportUserCorrections()
+        XCTAssertEqual(corrections.count, 1)
+        XCTAssertEqual(corrections[0].fromId, idA)
+        XCTAssertEqual(corrections[0].toId, idB)
     }
 
     func testSuppressLearning_atCapacityDoesNotUpdateProfiles() {
@@ -798,5 +807,163 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
         wait(for: [expectation], timeout: 10.0)
         // If we get here without crashing, the test passes
+    }
+
+    // MARK: - WeightedEmbedding entryId
+
+    func testWeightedEmbedding_hasUniqueEntryId() {
+        let a = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        let b = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        XCTAssertNotEqual(a.entryId, b.entryId, "Two WeightedEmbedding instances should have distinct entryIds even with identical content")
+    }
+
+    func testWeightedEmbedding_equalityIgnoresEntryId() {
+        let a = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        let b = WeightedEmbedding(embedding: [1.0, 2.0], confidence: 0.5)
+        XCTAssertEqual(a, b, "Equality should compare embedding + confidence, not entryId")
+    }
+
+    func testWeightedEmbedding_explicitEntryIdPreserved() {
+        let id = UUID()
+        let a = WeightedEmbedding(entryId: id, embedding: [1.0], confidence: 1.0)
+        XCTAssertEqual(a.entryId, id)
+    }
+
+    // MARK: - UserCorrections
+
+    func testExportUserCorrections_initiallyEmpty() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        XCTAssertTrue(tracker.exportUserCorrections().isEmpty)
+    }
+
+    func testResetUserCorrections_clearsList() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        // 後段のタスクで correctAssignment 経由で要素を追加するが、
+        // ここでは API の存在だけを検証する
+        tracker.resetUserCorrections()
+        XCTAssertTrue(tracker.exportUserCorrections().isEmpty)
+    }
+
+    // MARK: - correctAssignment with suppressLearning
+
+    func testCorrectAssignment_suppressLearning_doesNotMutateCentroid() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let rA = tracker.identify(embedding: embA)
+        let rB = tracker.identify(embedding: embB)
+
+        tracker.suppressLearning = true
+        let profileBefore = tracker.exportProfiles().map { (id: $0.speakerId, emb: $0.embedding) }
+
+        // 誤認された embedding を修正する操作を 10 回繰り返す
+        let bogus = makeEmbedding(dominant: 2)
+        for _ in 0..<10 {
+            tracker.correctAssignment(embedding: bogus, from: rB.speakerId, to: rA.speakerId)
+        }
+
+        let profileAfter = tracker.exportProfiles().map { (id: $0.speakerId, emb: $0.embedding) }
+
+        XCTAssertEqual(profileBefore.count, profileAfter.count)
+        for (before, after) in zip(profileBefore, profileAfter) {
+            XCTAssertEqual(before.id, after.id)
+            XCTAssertEqual(before.emb, after.emb, "centroid must not change while suppressLearning=true")
+        }
+    }
+
+    func testCorrectAssignment_suppressLearning_recordsUserCorrection() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let rA = tracker.identify(embedding: makeEmbedding(dominant: 0))
+        let rB = tracker.identify(embedding: makeEmbedding(dominant: 1))
+
+        tracker.suppressLearning = true
+        tracker.correctAssignment(embedding: makeEmbedding(dominant: 2), from: rB.speakerId, to: rA.speakerId)
+
+        let corrections = tracker.exportUserCorrections()
+        XCTAssertEqual(corrections.count, 1)
+        XCTAssertEqual(corrections[0].fromId, rB.speakerId)
+        XCTAssertEqual(corrections[0].toId, rA.speakerId)
+    }
+
+    func testCorrectAssignment_nonSuppress_usesLowerConfidence() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embA = makeEmbedding(dominant: 0)
+        let embB = makeEmbedding(dominant: 1)
+        let rA = tracker.identify(embedding: embA)
+        _ = tracker.identify(embedding: embB)
+
+        // suppressLearning=false （デフォルト）
+        let bogus = makeEmbedding(dominant: 2)
+        tracker.correctAssignment(embedding: bogus, from: UUID(), to: rA.speakerId)
+
+        // rA の profile に低 confidence (0.3) で追加されているはず
+        let detailed = tracker.exportDetailedProfiles().first { $0.speakerId == rA.speakerId }!
+        let newEntry = detailed.embeddingHistory.last!
+        XCTAssertEqual(newEntry.confidence, Constants.Embedding.userCorrectionConfidence, accuracy: 0.001)
+        XCTAssertEqual(newEntry.embedding, bogus)
+    }
+
+    // MARK: - correctAssignment with approximate match
+
+    func testCorrectAssignment_removesMatchingEntryDespiteFloatJitter() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let embOriginal = makeEmbedding(dominant: 0)
+        let rA = tracker.identify(embedding: embOriginal)
+
+        // 浮動小数点の僅かな揺らぎをシミュレート (最後の有効桁)
+        var embJittered = embOriginal
+        embJittered[0] = embOriginal[0] + 1e-7
+
+        // jittered を使って修正（value exact match は失敗するはず）
+        tracker.correctAssignment(embedding: embJittered, from: rA.speakerId, to: UUID())
+
+        let detailed = tracker.exportDetailedProfiles()
+        // rA の profile は空になって消えているはず (履歴 1 件だったのが 0 件 → 削除)
+        XCTAssertFalse(detailed.contains(where: { $0.speakerId == rA.speakerId }),
+            "jittered embedding should match within tolerance and trigger removal")
+    }
+
+    // MARK: - Tie-breaker
+
+    func testIdentify_tieBreaker_prefersHigherHitCount() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+
+        // 2 つの profile を初期化 (直接 loadProfiles で)
+        let idA = UUID()
+        let idB = UUID()
+        let baseA = makeEmbedding(dominant: 0)
+        let baseB = makeEmbedding(dominant: 1)
+        tracker.loadProfiles([(speakerId: idA, embedding: baseA), (speakerId: idB, embedding: baseB)])
+
+        // A を何度も identify して hitCount を増やす
+        for _ in 0..<5 {
+            _ = tracker.identify(embedding: baseA)
+        }
+
+        // A と B に等距離の embedding を投入
+        let midpoint = zip(baseA, baseB).map { 0.5 * $0 + 0.5 * $1 }
+        let result = tracker.identify(embedding: midpoint)
+
+        XCTAssertEqual(result.speakerId, idA, "tie should prefer higher hitCount")
+    }
+
+    func testIdentify_tieBreaker_prefersLastConfirmed() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+
+        let idA = UUID()
+        let idB = UUID()
+        let baseA = makeEmbedding(dominant: 0)
+        let baseB = makeEmbedding(dominant: 1)
+        tracker.loadProfiles([(speakerId: idA, embedding: baseA), (speakerId: idB, embedding: baseB)])
+        tracker.suppressLearning = true   // hitCount 増加を防ぐため
+
+        // 最後に B を confirm
+        _ = tracker.identify(embedding: baseB)
+
+        // 等距離 embedding を投入
+        let midpoint = zip(baseA, baseB).map { 0.5 * $0 + 0.5 * $1 }
+        let result = tracker.identify(embedding: midpoint)
+
+        XCTAssertEqual(result.speakerId, idB, "tie with equal hitCount should prefer lastConfirmedId")
     }
 }

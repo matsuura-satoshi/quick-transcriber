@@ -480,4 +480,50 @@ final class SpeakerStateCoordinatorTests: XCTestCase {
         XCTAssertEqual(coord.activeSpeakers.count, 1)
         XCTAssertEqual(coord.activeSpeakers[0].id, id1)
     }
+
+    // MARK: - reassignSegment nil embedding path
+
+    func testReassignSegment_withNilEmbedding_callsViterbiSync() {
+        let (coord, _) = makeCoordinator()
+        let mockEngine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: mockEngine)
+        coord.setService(service)
+
+        let oldId = UUID()
+        let newId = UUID()
+        var segments: [ConfirmedSegment] = [
+            ConfirmedSegment(text: "hello", speaker: oldId.uuidString, speakerEmbedding: nil)
+        ]
+
+        coord.reassignSegment(at: 0, to: newId.uuidString, segments: &segments)
+
+        XCTAssertTrue(mockEngine.correctedAssignments.isEmpty,
+            "should not call correctSpeakerAssignment when embedding is nil")
+        XCTAssertEqual(mockEngine.syncViterbiConfirmCalls.count, 1)
+        XCTAssertEqual(mockEngine.syncViterbiConfirmCalls[0], newId)
+        XCTAssertEqual(segments[0].speaker, newId.uuidString)
+        XCTAssertTrue(segments[0].isUserCorrected)
+    }
+
+    func testReassignSegment_withEmbedding_callsCorrectAssignment() {
+        let (coord, _) = makeCoordinator()
+        let mockEngine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: mockEngine)
+        coord.setService(service)
+
+        let oldId = UUID()
+        let newId = UUID()
+        let embedding: [Float] = [1.0, 2.0, 3.0]
+        var segments: [ConfirmedSegment] = [
+            ConfirmedSegment(text: "hi", speaker: oldId.uuidString, speakerEmbedding: embedding)
+        ]
+
+        coord.reassignSegment(at: 0, to: newId.uuidString, segments: &segments)
+
+        XCTAssertEqual(mockEngine.correctedAssignments.count, 1)
+        XCTAssertEqual(mockEngine.correctedAssignments[0].oldId, oldId)
+        XCTAssertEqual(mockEngine.correctedAssignments[0].newId, newId)
+        XCTAssertTrue(mockEngine.syncViterbiConfirmCalls.isEmpty,
+            "correctAssignment path should NOT call syncViterbiConfirm separately (correctAssignment already triggers Viterbi sync internally)")
+    }
 }

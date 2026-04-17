@@ -20,13 +20,37 @@ public struct SpeakerIdentification: Sendable, Equatable {
     }
 }
 
-public struct WeightedEmbedding: Sendable, Equatable {
+public struct WeightedEmbedding: Sendable {
+    /// Unique identifier for this embedding entry. Used by correctAssignment
+    /// to remove by identity rather than embedding-value match.
+    public let entryId: UUID
     public let embedding: [Float]
     public let confidence: Float
 
-    public init(embedding: [Float], confidence: Float) {
+    public init(entryId: UUID = UUID(), embedding: [Float], confidence: Float) {
+        self.entryId = entryId
         self.embedding = embedding
         self.confidence = confidence
+    }
+}
+
+extension WeightedEmbedding: Equatable {
+    /// Equality compares semantic content only; entryId is a tracking ID
+    /// and is intentionally excluded so value-based assertions remain stable.
+    public static func == (lhs: WeightedEmbedding, rhs: WeightedEmbedding) -> Bool {
+        lhs.embedding == rhs.embedding && lhs.confidence == rhs.confidence
+    }
+}
+
+public struct UserCorrection: Sendable, Equatable {
+    public let entryId: UUID
+    public let fromId: UUID
+    public let toId: UUID
+
+    public init(entryId: UUID, fromId: UUID, toId: UUID) {
+        self.entryId = entryId
+        self.fromId = fromId
+        self.toId = toId
     }
 }
 
@@ -45,15 +69,18 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     }
 
     private var profiles: [SpeakerProfile] = []
+    private var userCorrections: [UserCorrection] = []
     private let similarityThreshold: Float
     private let updateAlpha: Float
     public var expectedSpeakerCount: Int?
     private let strategy: ProfileStrategy
     private var identifyCount: Int = 0
     private let lock = NSLock()
+    private var lastConfirmedId: UUID?
 
-    /// When true, `identify()` will not update profile embeddings.
-    /// `correctAssignment()` is unaffected and always updates profiles.
+    /// When true, `identify()` will not update profile embeddings, and
+    /// `correctAssignment()` will record a `UserCorrection` without mutating
+    /// any profile centroid (centroid is frozen for post-hoc learning later).
     public var suppressLearning: Bool = false
 
     /// - Parameters:
@@ -88,11 +115,38 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 }
             }
 
+            // Tie-breaker: bestSimilarity と tieBreakerEpsilon 内のすべての候補を集める
+            if bestIndex >= 0 && profiles.count > 1 {
+                var candidates: [(index: Int, profile: SpeakerProfile)] = []
+                for (i, profile) in profiles.enumerated() {
+                    let sim = Self.cosineSimilarity(embedding, profile.embedding)
+                    if abs(sim - bestSimilarity) <= Constants.Embedding.tieBreakerEpsilon {
+                        candidates.append((i, profile))
+                    }
+                }
+                if candidates.count > 1 {
+                    // 1. hitCount 最大を優先
+                    let maxHit = candidates.map { $0.profile.hitCount }.max()!
+                    let byHit = candidates.filter { $0.profile.hitCount == maxHit }
+                    if byHit.count == 1 {
+                        bestIndex = byHit[0].index
+                    } else if let lastId = lastConfirmedId,
+                              let lastMatch = byHit.first(where: { $0.profile.id == lastId }) {
+                        // 2. hitCount 同値の場合は lastConfirmedId を優先
+                        bestIndex = lastMatch.index
+                    } else {
+                        // 3. enumerate 順（最初の候補）
+                        bestIndex = byHit[0].index
+                    }
+                }
+            }
+
             if bestIndex >= 0 && bestSimilarity >= similarityThreshold {
                 if !suppressLearning {
                     profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
                     recalculateEmbedding(at: bestIndex)
                 }
+                lastConfirmedId = profiles[bestIndex].id
                 return SpeakerIdentification(speakerId: profiles[bestIndex].id, confidence: bestSimilarity, embedding: embedding)
             }
 
@@ -102,6 +156,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                     profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
                     recalculateEmbedding(at: bestIndex)
                 }
+                lastConfirmedId = profiles[bestIndex].id
                 return SpeakerIdentification(speakerId: profiles[bestIndex].id, confidence: bestSimilarity, embedding: embedding)
             }
 
@@ -112,6 +167,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                         profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
                         recalculateEmbedding(at: bestIndex)
                     }
+                    lastConfirmedId = profiles[bestIndex].id
                     return SpeakerIdentification(speakerId: profiles[bestIndex].id, confidence: bestSimilarity, embedding: embedding)
                 }
             }
@@ -119,6 +175,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             // Register new speaker
             let newId = UUID()
             profiles.append(SpeakerProfile(id: newId, embedding: embedding, hitCount: 1, embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]))
+            lastConfirmedId = newId
             return SpeakerIdentification(speakerId: newId, confidence: 1.0, embedding: embedding)
         }
     }
@@ -192,17 +249,36 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
     }
 
-    /// Correct a speaker assignment by moving an embedding from one profile to another.
+    /// Correct a speaker assignment by recording the user's reassignment.
+    ///
+    /// Behavior depends on `suppressLearning`:
+    /// - When `true` (Manual mode): the profile centroid is not mutated.
+    ///   A `UserCorrection` is appended to `userCorrections` for post-hoc learning.
+    /// - When `false` (Auto mode): the embedding is removed from `oldId`'s history
+    ///   via near-exact cosine match (≥ 0.9999, tolerant to floating-point jitter),
+    ///   then appended to `newId`'s profile with confidence = `userCorrectionConfidence`.
     ///
     /// - Parameters:
-    ///   - embedding: The embedding vector to reassign (matched by value)
+    ///   - embedding: The embedding vector associated with the reassigned segment
     ///   - oldId: The current speaker UUID
-    ///   - newId: The target speaker UUID (created if it doesn't exist)
+    ///   - newId: The target speaker UUID (created if it doesn't exist in Auto mode)
     public func correctAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         lock.withLock {
-            // Remove from old profile
+            if suppressLearning {
+                // Manual mode: profile centroid は動かさない。
+                // 修正情報だけ記録して post-hoc 学習で使う。
+                userCorrections.append(UserCorrection(
+                    entryId: UUID(),
+                    fromId: oldId,
+                    toId: newId
+                ))
+                return
+            }
+
+            // Auto mode: 従来どおり centroid を更新するが、confidence を下げて
+            // 汚染速度を緩和する。
             if let oldIdx = profiles.firstIndex(where: { $0.id == oldId }) {
-                profiles[oldIdx].embeddingHistory.removeAll { $0.embedding == embedding }
+                _ = Self.removeClosestMatch(in: &profiles[oldIdx].embeddingHistory, target: embedding)
                 if profiles[oldIdx].embeddingHistory.isEmpty {
                     profiles.remove(at: oldIdx)
                 } else {
@@ -210,16 +286,17 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 }
             }
 
-            // Add to new/existing profile with confidence 1.0 (user-confirmed)
+            let addConfidence = Constants.Embedding.userCorrectionConfidence
             if let newIdx = profiles.firstIndex(where: { $0.id == newId }) {
-                profiles[newIdx].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: 1.0))
+                profiles[newIdx].embeddingHistory.append(
+                    WeightedEmbedding(embedding: embedding, confidence: addConfidence))
                 recalculateEmbedding(at: newIdx)
             } else {
                 profiles.append(SpeakerProfile(
                     id: newId,
                     embedding: embedding,
                     hitCount: 1,
-                    embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]
+                    embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: addConfidence)]
                 ))
             }
         }
@@ -228,6 +305,8 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     public func reset() {
         lock.withLock {
             profiles = []
+            lastConfirmedId = nil
+            userCorrections = []
         }
     }
 
@@ -235,6 +314,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         lock.withLock {
             profiles.map { ($0.id, $0.embedding, $0.hitCount) }
         }
+    }
+
+    public func exportUserCorrections() -> [UserCorrection] {
+        lock.withLock { userCorrections }
+    }
+
+    public func resetUserCorrections() {
+        lock.withLock { userCorrections = [] }
     }
 
     public func exportDetailedProfiles() -> [(speakerId: UUID, embedding: [Float], hitCount: Int, embeddingHistory: [WeightedEmbedding])] {
@@ -249,6 +336,8 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 SpeakerProfile(id: $0.speakerId, embedding: $0.embedding, hitCount: 1,
                                embeddingHistory: [WeightedEmbedding(embedding: $0.embedding, confidence: 1.0)])
             }
+            lastConfirmedId = nil
+            userCorrections = []
         }
     }
 
@@ -266,5 +355,24 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         let denom = sqrt(normA) * sqrt(normB)
         guard denom > 0 else { return 0 }
         return dot / denom
+    }
+
+    /// Remove the embedding history entry most similar to `target` (≥ 0.9999 cosine).
+    /// Returns true if an entry was removed.
+    private static func removeClosestMatch(in history: inout [WeightedEmbedding], target: [Float]) -> Bool {
+        var bestIndex = -1
+        var bestSim: Float = 0.9999  // threshold: 実質同一
+        for (i, entry) in history.enumerated() {
+            let sim = cosineSimilarity(entry.embedding, target)
+            if sim >= bestSim {
+                bestSim = sim
+                bestIndex = i
+            }
+        }
+        if bestIndex >= 0 {
+            history.remove(at: bestIndex)
+            return true
+        }
+        return false
     }
 }

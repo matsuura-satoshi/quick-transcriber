@@ -53,6 +53,11 @@ public final class TranscriptionService {
         engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
     }
 
+    public func syncViterbiConfirm(to newSpeaker: String) {
+        guard let newId = UUID(uuidString: newSpeaker) else { return }
+        engine.syncViterbiConfirm(to: newId)
+    }
+
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         engine.mergeSpeakerProfiles(from: sourceId, into: targetId)
     }

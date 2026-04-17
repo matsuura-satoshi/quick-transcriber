@@ -556,4 +556,44 @@ final class SpeakerProfileStoreTests: XCTestCase {
             XCTAssertEqual(error as? SpeakerProfileStoreError, .profileNotFound)
         }
     }
+
+    // MARK: - applyPostHocLearning
+
+    func testApplyPostHocLearning_updatesEmbeddingWithAlpha() {
+        let store = SpeakerProfileStore(directory: makeTempDirectory())
+        let id = UUID()
+        let initial: [Float] = [1.0, 0.0, 0.0]
+        store.profiles.append(StoredSpeakerProfile(id: id, displayName: "A", embedding: initial))
+
+        let session: [Float] = [0.0, 1.0, 0.0]
+        let alpha: Float = 0.2
+        store.applyPostHocLearning(speakerId: id, sessionCentroid: session, alpha: alpha)
+
+        let expected: [Float] = [0.8, 0.2, 0.0]
+        let updated = store.profiles.first(where: { $0.id == id })!.embedding
+        for (e, u) in zip(expected, updated) {
+            XCTAssertEqual(e, u, accuracy: 1e-5)
+        }
+    }
+
+    func testApplyPostHocLearning_incrementsSessionCount() {
+        let store = SpeakerProfileStore(directory: makeTempDirectory())
+        let id = UUID()
+        store.profiles.append(StoredSpeakerProfile(id: id, displayName: "A", embedding: [1.0]))
+        let before = store.profiles.first!.sessionCount
+
+        store.applyPostHocLearning(speakerId: id, sessionCentroid: [1.0], alpha: 0.1)
+
+        XCTAssertEqual(store.profiles.first!.sessionCount, before + 1)
+    }
+
+    func testApplyPostHocLearning_nonexistentId_doesNothing() {
+        let store = SpeakerProfileStore(directory: makeTempDirectory())
+        let id = UUID()
+        store.profiles.append(StoredSpeakerProfile(id: id, displayName: "A", embedding: [1.0]))
+        let before = store.profiles.map { $0.embedding }
+        store.applyPostHocLearning(speakerId: UUID(), sessionCentroid: [2.0], alpha: 0.2)
+        let after = store.profiles.map { $0.embedding }
+        XCTAssertEqual(after, before)
+    }
 }
