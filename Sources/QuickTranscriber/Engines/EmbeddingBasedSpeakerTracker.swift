@@ -225,7 +225,19 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     ///   - newId: The target speaker UUID (created if it doesn't exist)
     public func correctAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         lock.withLock {
-            // Remove from old profile
+            if suppressLearning {
+                // Manual mode: profile centroid は動かさない。
+                // 修正情報だけ記録して post-hoc 学習で使う。
+                userCorrections.append(UserCorrection(
+                    entryId: UUID(),
+                    fromId: oldId,
+                    toId: newId
+                ))
+                return
+            }
+
+            // Auto mode: 従来どおり centroid を更新するが、confidence を下げて
+            // 汚染速度を緩和する。
             if let oldIdx = profiles.firstIndex(where: { $0.id == oldId }) {
                 profiles[oldIdx].embeddingHistory.removeAll { $0.embedding == embedding }
                 if profiles[oldIdx].embeddingHistory.isEmpty {
@@ -235,16 +247,17 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 }
             }
 
-            // Add to new/existing profile with confidence 1.0 (user-confirmed)
+            let addConfidence = Constants.Embedding.userCorrectionConfidence
             if let newIdx = profiles.firstIndex(where: { $0.id == newId }) {
-                profiles[newIdx].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: 1.0))
+                profiles[newIdx].embeddingHistory.append(
+                    WeightedEmbedding(embedding: embedding, confidence: addConfidence))
                 recalculateEmbedding(at: newIdx)
             } else {
                 profiles.append(SpeakerProfile(
                     id: newId,
                     embedding: embedding,
                     hitCount: 1,
-                    embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]
+                    embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: addConfidence)]
                 ))
             }
         }
