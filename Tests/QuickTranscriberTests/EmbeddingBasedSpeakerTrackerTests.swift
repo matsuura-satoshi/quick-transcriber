@@ -922,4 +922,48 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertFalse(detailed.contains(where: { $0.speakerId == rA.speakerId }),
             "jittered embedding should match within tolerance and trigger removal")
     }
+
+    // MARK: - Tie-breaker
+
+    func testIdentify_tieBreaker_prefersHigherHitCount() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+
+        // 2 つの profile を初期化 (直接 loadProfiles で)
+        let idA = UUID()
+        let idB = UUID()
+        let baseA = makeEmbedding(dominant: 0)
+        let baseB = makeEmbedding(dominant: 1)
+        tracker.loadProfiles([(speakerId: idA, embedding: baseA), (speakerId: idB, embedding: baseB)])
+
+        // A を何度も identify して hitCount を増やす
+        for _ in 0..<5 {
+            _ = tracker.identify(embedding: baseA)
+        }
+
+        // A と B に等距離の embedding を投入
+        let midpoint = zip(baseA, baseB).map { 0.5 * $0 + 0.5 * $1 }
+        let result = tracker.identify(embedding: midpoint)
+
+        XCTAssertEqual(result.speakerId, idA, "tie should prefer higher hitCount")
+    }
+
+    func testIdentify_tieBreaker_prefersLastConfirmed() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+
+        let idA = UUID()
+        let idB = UUID()
+        let baseA = makeEmbedding(dominant: 0)
+        let baseB = makeEmbedding(dominant: 1)
+        tracker.loadProfiles([(speakerId: idA, embedding: baseA), (speakerId: idB, embedding: baseB)])
+        tracker.suppressLearning = true   // hitCount 増加を防ぐため
+
+        // 最後に B を confirm
+        _ = tracker.identify(embedding: baseB)
+
+        // 等距離 embedding を投入
+        let midpoint = zip(baseA, baseB).map { 0.5 * $0 + 0.5 * $1 }
+        let result = tracker.identify(embedding: midpoint)
+
+        XCTAssertEqual(result.speakerId, idB, "tie with equal hitCount should prefer lastConfirmedId")
+    }
 }
