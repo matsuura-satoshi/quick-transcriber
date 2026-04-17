@@ -268,6 +268,12 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
     }
 
+    public func syncViterbiConfirm(to newId: UUID) {
+        smootherLock.withLock {
+            speakerSmoother.confirmSpeaker(newId)
+        }
+    }
+
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         diarizer?.mergeSpeakerProfiles(from: sourceId, into: targetId)
         smootherLock.withLock {

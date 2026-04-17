@@ -68,9 +68,14 @@ final class MockTranscriptionEngine: TranscriptionEngine {
 
     var correctedAssignments: [(embedding: [Float], oldId: UUID, newId: UUID)] = []
     var mergedProfiles: [(sourceId: UUID, targetId: UUID)] = []
+    var syncViterbiConfirmCalls: [UUID] = []
 
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         correctedAssignments.append((embedding: embedding, oldId: oldId, newId: newId))
+    }
+
+    func syncViterbiConfirm(to newId: UUID) {
+        syncViterbiConfirmCalls.append(newId)
     }
 
     func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {

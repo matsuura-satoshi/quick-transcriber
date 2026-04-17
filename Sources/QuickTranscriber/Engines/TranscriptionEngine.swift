@@ -36,6 +36,7 @@ public protocol TranscriptionEngine: AnyObject {
     var isStreaming: Bool { get async }
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
     func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID)
+    func syncViterbiConfirm(to newId: UUID)
 }
 
 extension TranscriptionEngine {
@@ -56,6 +57,10 @@ extension TranscriptionEngine {
     }
 
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+        // Default no-op for engines without diarization
+    }
+
+    public func syncViterbiConfirm(to newId: UUID) {
         // Default no-op for engines without diarization
     }
 }
