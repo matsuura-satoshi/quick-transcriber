@@ -218,12 +218,19 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
     }
 
-    /// Correct a speaker assignment by moving an embedding from one profile to another.
+    /// Correct a speaker assignment by recording the user's reassignment.
+    ///
+    /// Behavior depends on `suppressLearning`:
+    /// - When `true` (Manual mode): the profile centroid is not mutated.
+    ///   A `UserCorrection` is appended to `userCorrections` for post-hoc learning.
+    /// - When `false` (Auto mode): the embedding is removed from `oldId`'s history
+    ///   via near-exact cosine match (≥ 0.9999, tolerant to floating-point jitter),
+    ///   then appended to `newId`'s profile with confidence = `userCorrectionConfidence`.
     ///
     /// - Parameters:
-    ///   - embedding: The embedding vector to reassign (matched by value)
+    ///   - embedding: The embedding vector associated with the reassigned segment
     ///   - oldId: The current speaker UUID
-    ///   - newId: The target speaker UUID (created if it doesn't exist)
+    ///   - newId: The target speaker UUID (created if it doesn't exist in Auto mode)
     public func correctAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         lock.withLock {
             if suppressLearning {
