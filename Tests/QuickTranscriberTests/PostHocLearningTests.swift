@@ -21,7 +21,7 @@ final class PostHocLearningTests: XCTestCase {
         )
     }
 
-    func testPostHocLearning_updatesProfileFromNonCorrectedSegments() {
+    func testPostHocLearning_updatesProfileFromAllQualifyingSegments() {
         let store = SpeakerProfileStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("PostHocLearningTests-\(UUID().uuidString)"))
         let idA = UUID()
         let idB = UUID()
@@ -40,8 +40,10 @@ final class PostHocLearningTests: XCTestCase {
             ConfirmedSegment(text: "s3", speaker: idA.uuidString, speakerConfidence: 0.8, speakerEmbedding: sessionEmb),
             ConfirmedSegment(text: "s4", speaker: idA.uuidString, speakerConfidence: 0.8, speakerEmbedding: sessionEmb),
             ConfirmedSegment(text: "s5", speaker: idA.uuidString, speakerConfidence: 0.8, speakerEmbedding: sessionEmb),
-            ConfirmedSegment(text: "sc", speaker: idA.uuidString, speakerConfidence: 0.8, isUserCorrected: true, originalSpeaker: idB.uuidString, speakerEmbedding: correctedEmb),
-            // B は 2 サンプルのみ → MIN_SAMPLES (3) 未満でスキップされるはず
+            // User-corrected segment: a trusted ground-truth sample for idA.
+            // Under the new design this is INCLUDED in post-hoc learning.
+            ConfirmedSegment(text: "sc", speaker: idA.uuidString, speakerConfidence: 1.0, isUserCorrected: true, originalSpeaker: idB.uuidString, speakerEmbedding: correctedEmb),
+            // B has only 2 samples → below MIN_SAMPLES (3), skipped
             ConfirmedSegment(text: "b1", speaker: idB.uuidString, speakerConfidence: 0.8, speakerEmbedding: makeEmbedding(dominant: 1)),
             ConfirmedSegment(text: "b2", speaker: idB.uuidString, speakerConfidence: 0.8, speakerEmbedding: makeEmbedding(dominant: 1))
         ]
@@ -52,16 +54,60 @@ final class PostHocLearningTests: XCTestCase {
             segments: segments
         )
 
-        // A は 5 サンプル → α = min(0.2, 5/50) = 0.1
+        // A has 6 qualifying samples (5 non-corrected with sessionEmb + 1 corrected with correctedEmb)
+        // centroid = (5 * sessionEmb + 1 * correctedEmb) / 6
+        // α = min(0.2, 6/50) = 0.12
+        let dims = initialA.count
+        var centroid = [Float](repeating: 0, count: dims)
+        for i in 0..<dims {
+            centroid[i] = (5 * sessionEmb[i] + 1 * correctedEmb[i]) / 6
+        }
         let updatedA = store.profiles.first(where: { $0.id == idA })!
-        let expectedA: [Float] = zip(initialA, sessionEmb).map { 0.9 * $0 + 0.1 * $1 }
+        let alpha: Float = 0.12
+        let expectedA: [Float] = zip(initialA, centroid).map { (1 - alpha) * $0 + alpha * $1 }
         for (e, u) in zip(expectedA, updatedA.embedding) {
             XCTAssertEqual(e, u, accuracy: 1e-5)
         }
 
-        // B は 2 サンプルのみなので不変
+        // B has only 2 samples → unchanged
         let updatedB = store.profiles.first(where: { $0.id == idB })!
         XCTAssertEqual(updatedB.embedding, initialB)
+    }
+
+    func testPostHocLearning_includesUserCorrectedSegments() {
+        // Regression guard for the "manual label is trusted truth" design:
+        // corrected segments alone must be enough to drive post-hoc learning,
+        // even when the auto-labeled sample count is below MIN_SAMPLES.
+        let store = SpeakerProfileStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("PostHocLearningTests-\(UUID().uuidString)"))
+        let id = UUID()
+        let initial = makeEmbedding(dominant: 0)
+        store.profiles.append(StoredSpeakerProfile(id: id, displayName: "A", embedding: initial))
+
+        let engine = makeEngine(store: store)
+
+        let sessionEmb = makeEmbedding(dominant: 1)
+        // 1 non-corrected + 2 user-corrected = 3 total (meets MIN_SAMPLES only if corrected are counted).
+        let segs: [ConfirmedSegment] = [
+            ConfirmedSegment(text: "auto", speaker: id.uuidString, speakerConfidence: 0.8, speakerEmbedding: sessionEmb),
+            ConfirmedSegment(text: "cor1", speaker: id.uuidString, speakerConfidence: 1.0, isUserCorrected: true, originalSpeaker: UUID().uuidString, speakerEmbedding: sessionEmb),
+            ConfirmedSegment(text: "cor2", speaker: id.uuidString, speakerConfidence: 1.0, isUserCorrected: true, originalSpeaker: UUID().uuidString, speakerEmbedding: sessionEmb)
+        ]
+
+        engine.applyManualModePostHocLearningForTesting(
+            store: store,
+            participantIds: [id],
+            segments: segs
+        )
+
+        // 3 samples, all with sessionEmb → centroid = sessionEmb; α = min(0.2, 3/50) = 0.06
+        let alpha: Float = 0.06
+        let expected = zip(initial, sessionEmb).map { (1 - alpha) * $0 + alpha * $1 }
+        let updated = store.profiles.first!
+        XCTAssertNotEqual(updated.embedding, initial,
+            "corrected segments must contribute to post-hoc learning even when non-corrected samples are below MIN_SAMPLES alone")
+        for (e, u) in zip(expected, updated.embedding) {
+            XCTAssertEqual(e, u, accuracy: 1e-5)
+        }
     }
 
     func testPostHocLearning_skipsLockedProfile() {

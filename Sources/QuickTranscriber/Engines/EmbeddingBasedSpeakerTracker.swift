@@ -252,8 +252,12 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     /// Correct a speaker assignment by recording the user's reassignment.
     ///
     /// Behavior depends on `suppressLearning`:
-    /// - When `true` (Manual mode): the profile centroid is not mutated.
-    ///   A `UserCorrection` is appended to `userCorrections` for post-hoc learning.
+    /// - When `true` (Manual mode): the manual label is treated as a trusted
+    ///   ground-truth sample for the target speaker. The embedding is appended
+    ///   to the target's history with full confidence (1.0) so the next
+    ///   `identify()` call on a similar embedding prefers the corrected target.
+    ///   The source profile is left untouched (Manual mode never updates source
+    ///   centroids). A `UserCorrection` is also recorded for downstream export.
     /// - When `false` (Auto mode): the embedding is removed from `oldId`'s history
     ///   via near-exact cosine match (≥ 0.9999, tolerant to floating-point jitter),
     ///   then appended to `newId`'s profile with confidence = `userCorrectionConfidence`.
@@ -265,13 +269,21 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     public func correctAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         lock.withLock {
             if suppressLearning {
-                // Manual mode: profile centroid は動かさない。
-                // 修正情報だけ記録して post-hoc 学習で使う。
                 userCorrections.append(UserCorrection(
                     entryId: UUID(),
                     fromId: oldId,
                     toId: newId
                 ))
+                // Manual mode: 手動ラベルは信頼サンプル（= 現時点の正解）。
+                // target profile に confidence=1.0 で追加し、以降の identify() が
+                // 更新後の centroid を使うようにする。source profile は動かさない
+                // （Manual mode では auto 判定の汚染を避けるため従来通り凍結）。
+                if let newIdx = profiles.firstIndex(where: { $0.id == newId }) {
+                    profiles[newIdx].embeddingHistory.append(
+                        WeightedEmbedding(embedding: embedding, confidence: 1.0)
+                    )
+                    recalculateEmbedding(at: newIdx)
+                }
                 return
             }
 

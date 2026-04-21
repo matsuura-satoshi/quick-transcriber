@@ -666,7 +666,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(resultB.speakerId, idB)
     }
 
-    func testSuppressLearning_correctAssignmentRecordsCorrection_notCentroid() {
+    func testSuppressLearning_correctAssignment_appendsTargetHistoryAsTrustedSample() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let embA = makeEmbedding(dominant: 0)
         let embB = makeEmbedding(dominant: 1)
@@ -678,17 +678,26 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         ])
         tracker.suppressLearning = true
 
-        // Manual mode: correctAssignment should record UserCorrection, NOT update centroid
+        // Manual mode: a manual correction is a trusted ground-truth sample for the target speaker.
+        // correctAssignment should append the embedding to target history with full confidence (1.0)
+        // while leaving the source profile untouched. The UserCorrection is also recorded.
         tracker.correctAssignment(embedding: embA, from: idA, to: idB)
 
-        // Profiles must remain unchanged (centroid frozen)
         let detailed = tracker.exportDetailedProfiles()
         let profileA = detailed.first { $0.speakerId == idA }!
         let profileB = detailed.first { $0.speakerId == idB }!
-        XCTAssertEqual(profileA.embeddingHistory.count, 1, "profileA centroid must not change")
-        XCTAssertEqual(profileB.embeddingHistory.count, 1, "profileB centroid must not change")
 
-        // The correction is recorded in userCorrections
+        // Source (A) unchanged — Manual mode never touches source centroid
+        XCTAssertEqual(profileA.embeddingHistory.count, 1, "source profile history must not change")
+
+        // Target (B) gains the corrected embedding as a trusted sample
+        XCTAssertEqual(profileB.embeddingHistory.count, 2, "target profile gains the corrected embedding")
+        let appended = profileB.embeddingHistory.last!
+        XCTAssertEqual(appended.embedding, embA)
+        XCTAssertEqual(appended.confidence, 1.0, accuracy: 0.001,
+            "manual labels are trusted ground truth, stored with confidence 1.0")
+
+        // UserCorrection remains recorded alongside the centroid update
         let corrections = tracker.exportUserCorrections()
         XCTAssertEqual(corrections.count, 1)
         XCTAssertEqual(corrections[0].fromId, idA)
@@ -846,7 +855,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
     // MARK: - correctAssignment with suppressLearning
 
-    func testCorrectAssignment_suppressLearning_doesNotMutateCentroid() {
+    func testCorrectAssignment_suppressLearning_movesTargetCentroidOnly() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let embA = makeEmbedding(dominant: 0)
         let embB = makeEmbedding(dominant: 1)
@@ -854,21 +863,66 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let rB = tracker.identify(embedding: embB)
 
         tracker.suppressLearning = true
-        let profileBefore = tracker.exportProfiles().map { (id: $0.speakerId, emb: $0.embedding) }
+        let profilesBefore = tracker.exportProfiles()
+        let initialA = profilesBefore.first { $0.speakerId == rA.speakerId }!.embedding
+        let initialB = profilesBefore.first { $0.speakerId == rB.speakerId }!.embedding
 
-        // 誤認された embedding を修正する操作を 10 回繰り返す
-        let bogus = makeEmbedding(dominant: 2)
+        // 10 回の手動訂正で同じ embedding を target A に学習させる
+        let newSample = makeEmbedding(dominant: 2)
         for _ in 0..<10 {
-            tracker.correctAssignment(embedding: bogus, from: rB.speakerId, to: rA.speakerId)
+            tracker.correctAssignment(embedding: newSample, from: rB.speakerId, to: rA.speakerId)
         }
 
-        let profileAfter = tracker.exportProfiles().map { (id: $0.speakerId, emb: $0.embedding) }
+        let profilesAfter = tracker.exportProfiles()
+        let finalA = profilesAfter.first { $0.speakerId == rA.speakerId }!.embedding
+        let finalB = profilesAfter.first { $0.speakerId == rB.speakerId }!.embedding
 
-        XCTAssertEqual(profileBefore.count, profileAfter.count)
-        for (before, after) in zip(profileBefore, profileAfter) {
-            XCTAssertEqual(before.id, after.id)
-            XCTAssertEqual(before.emb, after.emb, "centroid must not change while suppressLearning=true")
+        // Source profile (B) unchanged
+        XCTAssertEqual(finalB, initialB,
+            "source profile must stay frozen — manual mode never updates source centroid")
+
+        // Target profile (A) moved significantly toward the newly learned sample
+        XCTAssertNotEqual(finalA, initialA,
+            "target profile centroid must shift toward corrected embedding")
+        let shiftTowardNew = EmbeddingBasedSpeakerTracker.cosineSimilarity(finalA, newSample)
+        let originalToNew = EmbeddingBasedSpeakerTracker.cosineSimilarity(initialA, newSample)
+        XCTAssertGreaterThan(shiftTowardNew, originalToNew,
+            "target centroid should be closer to the learned sample after repeated corrections")
+    }
+
+    func testCorrectAssignment_suppressLearning_subsequentIdentifyPrefersCorrectedSpeaker() {
+        // End-to-end scenario matching the user complaint:
+        // A new speaker (B) joins a regular meeting where A is well-established.
+        // B's voice happens to look A-like on the embedding axis, so the tracker
+        // initially mis-identifies B's utterances as A. After the user corrects
+        // the assignment, subsequent chunks must prefer B without further clicks.
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let idA = UUID()
+        let idB = UUID()
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: makeEmbedding(dominant: 0)),
+            (speakerId: idB, embedding: makeEmbedding(dominant: 3))
+        ])
+        tracker.suppressLearning = true
+
+        var ambiguous = [Float](repeating: 0.01, count: 256)
+        ambiguous[0] = 0.7   // A-like component (why it gets misidentified)
+        ambiguous[3] = 0.3   // actual B component
+
+        // Before correction: tracker picks the well-established A
+        let beforeCorrection = tracker.identify(embedding: ambiguous)
+        XCTAssertEqual(beforeCorrection.speakerId, idA,
+            "initial identification favors the well-established A due to embedding similarity")
+
+        // User manually corrects across the continuous utterance
+        for _ in 0..<3 {
+            tracker.correctAssignment(embedding: ambiguous, from: idA, to: idB)
         }
+
+        // Next chunk of the same voice: must now prefer B thanks to the trusted learning
+        let afterCorrection = tracker.identify(embedding: ambiguous)
+        XCTAssertEqual(afterCorrection.speakerId, idB,
+            "after corrections, B's centroid has been taught; subsequent identify must return B")
     }
 
     func testCorrectAssignment_suppressLearning_recordsUserCorrection() {
