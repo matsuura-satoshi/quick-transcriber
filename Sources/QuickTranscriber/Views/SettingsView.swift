@@ -24,7 +24,8 @@ public struct SettingsView: View {
                     Label("Output", systemImage: "folder")
                 }
         }
-        .frame(minWidth: 520, maxWidth: 520, minHeight: 500, maxHeight: 5000)
+        .frame(minWidth: 520, minHeight: 500)
+        .background(SettingsWindowAccessor())
     }
 }
 
@@ -881,4 +882,22 @@ private struct StepperRow: View {
             }
         }
     }
+}
+
+// MARK: - Window Size Persistence
+
+/// Settings ウインドウのサイズ・位置を macOS 標準の仕組み（`NSWindow Frame <name>`）で保存・復元する。
+/// SwiftUI の `Settings {}` シーンは内部で NSWindow を生成するが、frame autosave 名を設定する手段を
+/// 公開していないため、View ツリーから `view.window` を辿って一度だけ設定する。
+private struct SettingsWindowAccessor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.setFrameAutosaveName("QuickTranscriberSettings")
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

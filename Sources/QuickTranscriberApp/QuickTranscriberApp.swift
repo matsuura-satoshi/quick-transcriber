@@ -119,6 +119,7 @@ struct QuickTranscriberApp: App {
         Settings {
             SettingsView(viewModel: viewModel)
         }
+        .windowResizability(.contentSize)
     }
 
     private func checkForUpdatesOnLaunch() {
