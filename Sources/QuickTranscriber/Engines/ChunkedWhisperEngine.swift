@@ -278,8 +278,14 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     }
 
     /// Manual mode の post-hoc 学習を実行する。
-    /// Tracker 側は suppressLearning により不動だが、session 中に高 confidence で
-    /// 識別された非修正 segment を集めて profile を緩やかに更新する。
+    /// Tracker 側は session 中、auto 判定の混入を避けるため centroid を控えめに扱い、
+    /// 手動訂正は信頼サンプルとして扱う。session 終了時にはその両方を集めて
+    /// store 側 profile centroid を緩やかに更新する。
+    ///
+    /// 前提: user がラベルを付け替えた segment は「現時点の正解」。ラベルを
+    /// 付け替えていない segment は auto 推定の結果にすぎず、ground truth とは
+    /// 見なさない（user が監視役ではないため）。高 confidence フィルタだけに
+    /// 頼り、修正 / 非修正で区別はしない。
     internal func applyManualModePostHocLearning(
         store: SpeakerProfileStore,
         participantIds: Set<UUID>,
@@ -288,7 +294,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         for participantId in participantIds {
             let samples = segments.filter { seg in
                 seg.speaker == participantId.uuidString
-                    && !seg.isUserCorrected
                     && (seg.speakerConfidence ?? 0) >= Constants.Embedding.similarityThreshold
                     && seg.speakerEmbedding != nil
             }

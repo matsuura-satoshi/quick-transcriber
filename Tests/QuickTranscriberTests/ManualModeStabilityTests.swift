@@ -12,7 +12,7 @@ final class ManualModeStabilityTests: XCTestCase {
         return v
     }
 
-    func testCorrection_doesNotAmplifyMisidentification() {
+    func testCorrection_trustedLearningReducesFutureMisidentification() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let idA = UUID()
         let idB = UUID()
@@ -22,11 +22,11 @@ final class ManualModeStabilityTests: XCTestCase {
         tracker.expectedSpeakerCount = 2
         tracker.suppressLearning = true
 
-        // A さんの typical な embedding を 10 回投入。ただし
-        // そのうち 3 回は「曖昧」で B に引き寄せられるバージョン。
         let typicalA = makeEmbedding(dominant: 0)
-        var ambiguousA = makeEmbedding(dominant: 0)
-        ambiguousA[1] = 0.4  // B 方向にブレ
+        // Utterance by speaker A that is acoustically ambiguous and initially
+        // gets misidentified as B. (dim 1 dominant, but with dim 0 component.)
+        var ambiguousA = makeEmbedding(dominant: 1)
+        ambiguousA[0] = 0.5
 
         var misidentifications = 0
         for i in 0..<10 {
@@ -34,29 +34,27 @@ final class ManualModeStabilityTests: XCTestCase {
             let result = tracker.identify(embedding: emb)
             if result.speakerId != idA {
                 misidentifications += 1
-                // ユーザーが手動で A に修正
                 tracker.correctAssignment(embedding: emb, from: result.speakerId, to: idA)
             }
         }
 
-        // Manual mode では centroid が不動なので誤認の確率は一定
-        // （フィードバックループなし）。3 回の ambiguous サンプルで
-        // すべてが誤認されても、以降の typical サンプルには影響しない。
-        let typicalResults = (0..<10).filter { ![1, 4, 7].contains($0) }.map { _ -> UUID in
-            tracker.identify(embedding: typicalA).speakerId
-        }
-
-        // typical な embedding は安定して A と識別される
-        for r in typicalResults {
-            XCTAssertEqual(r, idA, "typical A embeddings should always identify as A (no drift)")
-        }
-
-        // userCorrections に記録されている（profile は不動だが修正情報は残る）
+        // Setup must actually exercise the correction path; otherwise the test is vacuous.
+        XCTAssertGreaterThan(misidentifications, 0,
+            "ambiguous embedding must trigger at least one misidentification for this test to be meaningful")
         XCTAssertEqual(tracker.exportUserCorrections().count, misidentifications)
 
-        // Profile A の centroid は初期値のまま
-        let exported = tracker.exportProfiles().first(where: { $0.speakerId == idA })!
-        XCTAssertEqual(exported.embedding, profileA, "profile must remain frozen in Manual mode")
+        // After trusted-learning from corrections, typical A embeddings still identify as A:
+        // the centroid shift is bounded and does not corrupt the core identity.
+        for _ in 0..<10 {
+            XCTAssertEqual(tracker.identify(embedding: typicalA).speakerId, idA,
+                "typical A must remain correctly identified even after centroid updates from manual corrections")
+        }
+
+        // And the "learning" property: a later ambiguous utterance from A is now less likely
+        // to be misidentified — the centroid has moved toward the ambiguous sample.
+        let finalAmbiguousResult = tracker.identify(embedding: ambiguousA).speakerId
+        XCTAssertEqual(finalAmbiguousResult, idA,
+            "after enough trusted corrections, ambiguous A utterances should also identify as A")
     }
 
     func testAutoMode_correctionCentroidShiftIsLimited() {
