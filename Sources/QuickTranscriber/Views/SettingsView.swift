@@ -4,25 +4,29 @@ import AppKit
 public struct SettingsView: View {
     @ObservedObject private var store = ParametersStore.shared
     @ObservedObject var viewModel: TranscriptionViewModel
+    @AppStorage("settingsSelectedTab") private var selectedTab: String = "speakers"
 
     public init(viewModel: TranscriptionViewModel) {
         self.viewModel = viewModel
     }
 
     public var body: some View {
-        TabView {
+        TabView(selection: $selectedTab) {
             TranscriptionSettingsTab(store: store, viewModel: viewModel)
                 .tabItem {
                     Label("Transcription", systemImage: "waveform")
                 }
+                .tag("transcription")
             SpeakersSettingsTab(store: store, viewModel: viewModel)
                 .tabItem {
                     Label("Speakers", systemImage: "person.2")
                 }
+                .tag("speakers")
             OutputSettingsTab()
                 .tabItem {
                     Label("Output", systemImage: "folder")
                 }
+                .tag("output")
         }
         .frame(minWidth: 520, minHeight: 500)
         .background(SettingsWindowAccessor())
@@ -366,7 +370,7 @@ private struct SpeakersSettingsTab: View {
                 bulkActionButtons
 
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(filteredProfiles, id: \.id) { profile in
+                    ForEach(Array(filteredProfiles.enumerated()), id: \.element.id) { index, profile in
                         DisclosureGroup {
                             SpeakerProfileDetailView(
                                 profile: profile,
@@ -391,6 +395,10 @@ private struct SpeakersSettingsTab: View {
                                 }
                             )
                         }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(index.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.04))
                         Divider()
                     }
                 }
@@ -886,15 +894,17 @@ private struct StepperRow: View {
 
 // MARK: - Window Size Persistence
 
-/// Settings ウインドウのサイズ・位置を macOS 標準の仕組み（`NSWindow Frame <name>`）で保存・復元する。
-/// SwiftUI の `Settings {}` シーンは内部で NSWindow を生成するが、frame autosave 名を設定する手段を
-/// 公開していないため、View ツリーから `view.window` を辿って一度だけ設定する。
+/// Settings ウインドウのサイズ・位置を macOS 標準の仕組み（`NSWindow Frame <name>`）で
+/// 保存・復元する。Window scene が生成する通常の NSWindow に対して frame autosave 名を
+/// 登録するだけで、resize 自体は Window scene 側の `.windowResizability(.contentMinSize)`
+/// に委ねる。
 private struct SettingsWindowAccessor: NSViewRepresentable {
+    private static let autosaveName = "QuickTranscriberSettings.v3"
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            guard let window = view.window else { return }
-            window.setFrameAutosaveName("QuickTranscriberSettings")
+            view.window?.setFrameAutosaveName(Self.autosaveName)
         }
         return view
     }
