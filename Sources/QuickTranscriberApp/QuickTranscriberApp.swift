@@ -70,6 +70,12 @@ struct QuickTranscriberApp: App {
                 .disabled(updateChecker.isChecking)
             }
 
+            // Replace the default Settings menu item so cmd+, opens our Window scene
+            // (Settings {} scene on macOS 26+ ignores .resizable styleMask).
+            CommandGroup(replacing: .appSettings) {
+                SettingsMenuButton()
+            }
+
             // File menu
             CommandGroup(after: .newItem) {
                 Button(viewModel.isRecording ? "Stop" : "Record") {
@@ -116,9 +122,11 @@ struct QuickTranscriberApp: App {
             }
         }
 
-        Settings {
+        Window("Settings", id: "qt-settings") {
             SettingsView(viewModel: viewModel)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 520, height: 500)
     }
 
     private func checkForUpdatesOnLaunch() {
@@ -143,6 +151,21 @@ struct QuickTranscriberApp: App {
         } else if isManualCheck {
             showNoUpdateAlert = true
         }
+    }
+}
+
+// MARK: - Settings Menu Button
+
+/// `cmd+,` で Settings window を開くメニュー項目。`@Environment(\.openWindow)` を使うため
+/// `App` 内に直接書けず、View ラッパーにしている。
+private struct SettingsMenuButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("Settings...") {
+            openWindow(id: "qt-settings")
+        }
+        .keyboardShortcut(",", modifiers: .command)
     }
 }
 
