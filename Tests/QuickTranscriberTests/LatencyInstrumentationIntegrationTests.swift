@@ -77,6 +77,7 @@ final class LatencyInstrumentationIntegrationTests: XCTestCase {
         let lifecycleGroup = byUtterance.values.first { group in
             let stages = Set(group.map(\.stage))
             return stages.contains(.vadOnset)
+                && stages.contains(.vadConfirmSilence)
                 && stages.contains(.chunkDispatched)
                 && stages.contains(.inferenceStart)
                 && stages.contains(.inferenceEnd)
@@ -84,11 +85,36 @@ final class LatencyInstrumentationIntegrationTests: XCTestCase {
                 && stages.contains(.diarizeEnd)
                 && stages.contains(.emitToUI)
         }
-        XCTAssertNotNil(lifecycleGroup, "Expected at least one utterance with full stage coverage")
+        XCTAssertNotNil(lifecycleGroup, "Expected at least one utterance with full 8-stage coverage")
 
-        // And verify that utteranceId is a non-empty UUID-like string.
+        // Verify that utteranceId is a non-empty UUID-like string.
         if let group = lifecycleGroup, let id = group.first?.utteranceId {
             XCTAssertFalse(id.isEmpty)
+        }
+
+        // Verify stage ordering within the lifecycle group.
+        // Expected monotonic order (timestamps): vadOnset -> vadConfirmSilence -> chunkDispatched
+        // -> inferenceStart -> inferenceEnd -> emitToUI. diarize pair interleaves with inference
+        // (parallel dispatch) so only assert diarizeStart precedes diarizeEnd.
+        if let group = lifecycleGroup {
+            func ts(_ stage: LatencyStage) -> UInt64? {
+                group.first(where: { $0.stage == stage })?.timestampNanos
+            }
+            let vadOnset = ts(.vadOnset)!
+            let vadSilence = ts(.vadConfirmSilence)!
+            let dispatched = ts(.chunkDispatched)!
+            let infStart = ts(.inferenceStart)!
+            let infEnd = ts(.inferenceEnd)!
+            let emit = ts(.emitToUI)!
+            XCTAssertLessThanOrEqual(vadOnset, vadSilence)
+            XCTAssertLessThanOrEqual(vadSilence, dispatched)
+            XCTAssertLessThanOrEqual(dispatched, infStart)
+            XCTAssertLessThanOrEqual(infStart, infEnd)
+            XCTAssertLessThanOrEqual(infEnd, emit)
+
+            let diarStart = ts(.diarizeStart)!
+            let diarEnd = ts(.diarizeEnd)!
+            XCTAssertLessThanOrEqual(diarStart, diarEnd)
         }
     }
 
