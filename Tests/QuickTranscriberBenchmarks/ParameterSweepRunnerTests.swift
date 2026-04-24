@@ -130,3 +130,94 @@ final class ParameterSweepRunnerManifestTests: XCTestCase {
         }
     }
 }
+
+final class ParameterSweepRunnerRunTests: XCTestCase {
+    func test_run_dryRun_writesResultJsonWithOneEntryPerConfig() async throws {
+        let tmpPath = "/tmp/test_sweep_\(UUID().uuidString).json"
+        defer { try? FileManager.default.removeItem(atPath: tmpPath) }
+
+        let manifest = ParameterSweepRunner.Manifest(
+            stage: 1,
+            outputPath: tmpPath,
+            configs: [
+                .init(id: "c1", dataset: "fixture_en", subsetSeed: 1, subsetSize: 1, overrides: [:]),
+                .init(
+                    id: "c2",
+                    dataset: "fixture_en",
+                    subsetSeed: 1,
+                    subsetSize: 1,
+                    overrides: ["sampleLength": .int(128)]
+                )
+            ]
+        )
+
+        try await ParameterSweepRunner.run(manifest: manifest, dryRun: true)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: tmpPath))
+        let results = try JSONDecoder().decode([ParameterSweepRunner.RunResult].self, from: data)
+        XCTAssertEqual(results.count, 2)
+        XCTAssertEqual(Set(results.map { $0.configId }), ["c1", "c2"])
+        XCTAssertTrue(results.allSatisfy { $0.completed })
+    }
+
+    func test_run_skipsCompletedConfigs() async throws {
+        let tmpPath = "/tmp/test_sweep_resume_\(UUID().uuidString).json"
+        defer { try? FileManager.default.removeItem(atPath: tmpPath) }
+
+        let preExisting = [
+            ParameterSweepRunner.RunResult(
+                configId: "c1",
+                stage: 1,
+                dataset: "fixture_en",
+                metrics: ["wer": 0.1],
+                latencyBreakdown: nil,
+                completed: true
+            )
+        ]
+        try JSONEncoder().encode(preExisting).write(to: URL(fileURLWithPath: tmpPath))
+
+        let manifest = ParameterSweepRunner.Manifest(
+            stage: 1,
+            outputPath: tmpPath,
+            configs: [
+                .init(id: "c1", dataset: "fixture_en", subsetSeed: 1, subsetSize: 1, overrides: [:]),
+                .init(id: "c2", dataset: "fixture_en", subsetSeed: 1, subsetSize: 1, overrides: [:])
+            ]
+        )
+
+        try await ParameterSweepRunner.run(manifest: manifest, dryRun: true)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: tmpPath))
+        let results = try JSONDecoder().decode([ParameterSweepRunner.RunResult].self, from: data)
+        XCTAssertEqual(results.count, 2)
+        let c1 = results.first(where: { $0.configId == "c1" })
+        XCTAssertEqual(c1?.metrics["wer"], 0.1, "c1 result should be preserved, not overwritten")
+    }
+
+    func test_run_persistsAfterEveryConfig() async throws {
+        // Verify that partial progress is written after each config so a crash
+        // mid-sweep keeps earlier results.
+        let tmpPath = "/tmp/test_sweep_persist_\(UUID().uuidString).json"
+        defer { try? FileManager.default.removeItem(atPath: tmpPath) }
+
+        let manifest = ParameterSweepRunner.Manifest(
+            stage: 1,
+            outputPath: tmpPath,
+            configs: (0..<5).map { i in
+                ParameterSweepRunner.Config(
+                    id: "c\(i)",
+                    dataset: "fixture_en",
+                    subsetSeed: 1,
+                    subsetSize: 1,
+                    overrides: [:]
+                )
+            }
+        )
+
+        try await ParameterSweepRunner.run(manifest: manifest, dryRun: true)
+
+        let data = try Data(contentsOf: URL(fileURLWithPath: tmpPath))
+        let results = try JSONDecoder().decode([ParameterSweepRunner.RunResult].self, from: data)
+        XCTAssertEqual(results.count, 5)
+    }
+}

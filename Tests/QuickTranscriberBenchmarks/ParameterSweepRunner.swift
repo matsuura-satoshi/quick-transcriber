@@ -97,11 +97,64 @@ public enum ParameterSweepRunner {
         }
     }
 
+    // MARK: - Result model
+
+    public struct LatencyAggregate: Codable, Sendable {
+        public let medianTotalSeconds: Double
+        public let medianInferenceSeconds: Double
+        public let medianVadWaitSeconds: Double
+        public let p95TotalSeconds: Double
+        public let sampleCount: Int
+
+        public init(
+            medianTotalSeconds: Double,
+            medianInferenceSeconds: Double,
+            medianVadWaitSeconds: Double,
+            p95TotalSeconds: Double,
+            sampleCount: Int
+        ) {
+            self.medianTotalSeconds = medianTotalSeconds
+            self.medianInferenceSeconds = medianInferenceSeconds
+            self.medianVadWaitSeconds = medianVadWaitSeconds
+            self.p95TotalSeconds = p95TotalSeconds
+            self.sampleCount = sampleCount
+        }
+    }
+
+    public struct RunResult: Codable, Sendable {
+        public let configId: String
+        public let stage: Int
+        public let dataset: String
+        public let metrics: [String: Double]
+        public let latencyBreakdown: LatencyAggregate?
+        public let completed: Bool
+
+        public init(
+            configId: String,
+            stage: Int,
+            dataset: String,
+            metrics: [String: Double],
+            latencyBreakdown: LatencyAggregate?,
+            completed: Bool
+        ) {
+            self.configId = configId
+            self.stage = stage
+            self.dataset = dataset
+            self.metrics = metrics
+            self.latencyBreakdown = latencyBreakdown
+            self.completed = completed
+        }
+    }
+
     // MARK: - Errors
 
     public enum ApplyError: Error, Equatable {
         case unknownKey(String)
         case typeMismatch(key: String, expected: String)
+    }
+
+    public enum RunError: Error, Equatable {
+        case notImplemented(stage: Int)
     }
 
     // MARK: - API
@@ -190,5 +243,62 @@ public enum ParameterSweepRunner {
         }
 
         return residual
+    }
+
+    /// Run the manifest. Writes results to `manifest.outputPath` after every
+    /// config so a crash resumes cleanly on re-run. When `dryRun == true` each
+    /// config is recorded with a placeholder result and no real work happens —
+    /// used by unit tests.
+    public static func run(manifest: Manifest, dryRun: Bool = false) async throws {
+        let url = URL(fileURLWithPath: manifest.outputPath)
+        try ensureParentDirectory(for: url)
+
+        var existing: [RunResult] = []
+        if FileManager.default.fileExists(atPath: manifest.outputPath) {
+            let data = try Data(contentsOf: url)
+            existing = (try? JSONDecoder().decode([RunResult].self, from: data)) ?? []
+        }
+        let completedIds = Set(existing.filter { $0.completed }.map { $0.configId })
+        var results = existing
+
+        for config in manifest.configs where !completedIds.contains(config.id) {
+            let result: RunResult
+            if dryRun {
+                result = RunResult(
+                    configId: config.id,
+                    stage: manifest.stage,
+                    dataset: config.dataset,
+                    metrics: ["wer": 0.0],
+                    latencyBreakdown: nil,
+                    completed: true
+                )
+            } else {
+                result = try await executeSingle(config: config, stage: manifest.stage)
+            }
+            results.append(result)
+
+            // Persist progress after every config. `.atomic` ensures no
+            // half-written file is left if the process is killed.
+            let data = try JSONEncoder().encode(results)
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Execute one config. Implemented per-stage in later tasks (Stage 1: Task 6,
+    /// Stage 2: Task 11). Throws `RunError.notImplemented` until filled in.
+    public static func executeSingle(config: Config, stage: Int) async throws -> RunResult {
+        throw RunError.notImplemented(stage: stage)
+    }
+
+    // MARK: - Helpers
+
+    private static func ensureParentDirectory(for url: URL) throws {
+        let parent = url.deletingLastPathComponent()
+        if !FileManager.default.fileExists(atPath: parent.path) {
+            try FileManager.default.createDirectory(
+                at: parent,
+                withIntermediateDirectories: true
+            )
+        }
     }
 }
