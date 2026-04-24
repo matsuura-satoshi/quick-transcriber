@@ -6,7 +6,7 @@ struct DiarizationTimeoutError: Error {}
 /// Protocol for identifying the current speaker from an audio chunk.
 public protocol SpeakerDiarizer: AnyObject, Sendable {
     func setup() async throws
-    func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification?
+    func identifySpeaker(audioChunk: [Float], forceRun: Bool, utteranceId: String) async -> SpeakerIdentification?
     func updateExpectedSpeakerCount(_ count: Int?)
     func exportSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float])]
     func exportDetailedSpeakerProfiles() -> [(speakerId: UUID, embedding: [Float], embeddingHistory: [WeightedEmbedding])]
@@ -19,7 +19,13 @@ public protocol SpeakerDiarizer: AnyObject, Sendable {
 
 extension SpeakerDiarizer {
     public func identifySpeaker(audioChunk: [Float]) async -> SpeakerIdentification? {
-        await identifySpeaker(audioChunk: audioChunk, forceRun: false)
+        await identifySpeaker(audioChunk: audioChunk, forceRun: false, utteranceId: UUID().uuidString)
+    }
+
+    /// Back-compat overload used by benchmarks/tests that don't track an upstream
+    /// utterance id. Production paths always supply a real id.
+    public func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification? {
+        await identifySpeaker(audioChunk: audioChunk, forceRun: forceRun, utteranceId: UUID().uuidString)
     }
 
     public func exportUserCorrections() -> [UserCorrection] {
@@ -121,7 +127,9 @@ public final class FluidAudioSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendab
         }
     }
 
-    public func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification? {
+    public func identifySpeaker(audioChunk: [Float], forceRun: Bool, utteranceId: String) async -> SpeakerIdentification? {
+        LatencyInstrumentation.mark(.diarizeStart, utteranceId: utteranceId)
+        defer { LatencyInstrumentation.mark(.diarizeEnd, utteranceId: utteranceId) }
         guard let diarizer else { return nil }
 
         let windowSamples = Int(windowDuration * Double(sampleRate))
