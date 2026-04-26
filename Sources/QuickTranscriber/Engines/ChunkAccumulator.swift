@@ -5,11 +5,21 @@ public struct ChunkResult: Sendable {
     public let samples: [Float]
     public let trailingSilenceDuration: TimeInterval
     public let precedingSilenceDuration: TimeInterval
+    /// Stable identifier for the utterance this chunk belongs to.
+    /// Generated at VAD onset inside `VADChunkAccumulator`. Used by
+    /// `LatencyInstrumentation` to tie per-stage timestamps to a single utterance.
+    public let utteranceId: String
 
-    public init(samples: [Float], trailingSilenceDuration: TimeInterval, precedingSilenceDuration: TimeInterval = 0) {
+    public init(
+        samples: [Float],
+        trailingSilenceDuration: TimeInterval,
+        precedingSilenceDuration: TimeInterval = 0,
+        utteranceId: String = UUID().uuidString
+    ) {
         self.samples = samples
         self.trailingSilenceDuration = trailingSilenceDuration
         self.precedingSilenceDuration = precedingSilenceDuration
+        self.utteranceId = utteranceId
     }
 }
 
@@ -57,6 +67,10 @@ public struct VADChunkAccumulator: Sendable {
     private var netSpeechDuration: TimeInterval = 0
     /// Preceding silence to assign to next emitted chunk (carryover from previous trailing).
     private var pendingPrecedingSilence: TimeInterval = 0
+    /// Identifier for the currently in-flight utterance, generated at VAD onset.
+    /// Empty when no utterance is in progress. Used to tag `ChunkResult`s and
+    /// latency marks for the same utterance.
+    private var currentUtteranceId: String = ""
 
     // MARK: - Init
 
@@ -129,6 +143,7 @@ public struct VADChunkAccumulator: Sendable {
         hangoverElapsed = 0
         netSpeechDuration = 0
         pendingPrecedingSilence = 0
+        currentUtteranceId = ""
     }
 
     /// Calculate RMS energy of a sample buffer.
@@ -144,6 +159,9 @@ public struct VADChunkAccumulator: Sendable {
         if energy >= speechOnsetThreshold {
             // Transition to speaking
             state = .speaking
+            // Generate a fresh utterance id at VAD onset and mark.
+            currentUtteranceId = UUID().uuidString
+            LatencyInstrumentation.mark(.vadOnset, utteranceId: currentUtteranceId)
             // Copy pre-roll into speech buffer
             speechBuffer = preRollRing.drain()
             speechBuffer.append(contentsOf: samples)
@@ -202,6 +220,7 @@ public struct VADChunkAccumulator: Sendable {
     private mutating func checkEmitConditions() -> ChunkResult? {
         // End of utterance: trailing silence exceeds threshold
         if trailingSilenceInSpeech >= endOfUtteranceSilence {
+            LatencyInstrumentation.mark(.vadConfirmSilence, utteranceId: currentUtteranceId)
             return emitOrDiscard()
         }
         // Also check max duration
@@ -232,6 +251,9 @@ public struct VADChunkAccumulator: Sendable {
         let chunk = speechBuffer
         let trailing = trailingSilenceInSpeech
         let preceding = pendingPrecedingSilence
+        // Use the id generated at VAD onset. If this is called from flush() without
+        // a preceding onset (defensive), fall back to a fresh UUID.
+        let utteranceId = currentUtteranceId.isEmpty ? UUID().uuidString : currentUtteranceId
 
         // Reset for next utterance
         speechBuffer.removeAll(keepingCapacity: true)
@@ -241,13 +263,15 @@ public struct VADChunkAccumulator: Sendable {
         trailingSilenceInSpeech = 0
         hangoverElapsed = 0
         netSpeechDuration = 0
+        currentUtteranceId = ""
         // Carry over trailing silence as pending preceding for next chunk
         pendingPrecedingSilence = trailing
 
         return ChunkResult(
             samples: chunk,
             trailingSilenceDuration: trailing,
-            precedingSilenceDuration: preceding
+            precedingSilenceDuration: preceding,
+            utteranceId: utteranceId
         )
     }
 
@@ -259,6 +283,7 @@ public struct VADChunkAccumulator: Sendable {
         hangoverElapsed = 0
         netSpeechDuration = 0
         silenceDurationInIdle = 0
+        currentUtteranceId = ""
     }
 }
 

@@ -380,9 +380,12 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         onStateChange: @escaping @Sendable (TranscriptionState) -> Void
     ) async {
         let chunk = chunkResult.samples
+        let utteranceId = chunkResult.utteranceId
         let chunkDuration = Double(chunk.count) / Constants.Audio.sampleRate
 
         NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, precedingSilence=\(String(format: "%.1f", chunkResult.precedingSilenceDuration))s")
+
+        LatencyInstrumentation.mark(.chunkDispatched, utteranceId: utteranceId)
 
         do {
             // Run transcription and diarization in parallel when diarizer is available
@@ -398,11 +401,13 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
                     language: currentLanguage,
-                    parameters: currentParameters
+                    parameters: currentParameters,
+                    utteranceId: utteranceId
                 )
                 async let speakerId = diarizer.identifySpeaker(
                     audioChunk: chunk,
-                    forceRun: significantSilence
+                    forceRun: significantSilence,
+                    utteranceId: utteranceId
                 )
                 segments = try await transcription
                 rawSpeakerResult = await speakerId
@@ -410,7 +415,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 segments = try await transcriber.transcribe(
                     audioArray: chunk,
                     language: currentLanguage,
-                    parameters: currentParameters
+                    parameters: currentParameters,
+                    utteranceId: utteranceId
                 )
                 rawSpeakerResult = nil
             }
@@ -475,6 +481,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 language: currentLanguage,
                 silenceThreshold: currentParameters.silenceLineBreakThreshold
             )
+            LatencyInstrumentation.mark(.emitToUI, utteranceId: utteranceId)
             onStateChange(TranscriptionState(
                 confirmedText: confirmedText,
                 unconfirmedText: "",

@@ -5,7 +5,16 @@ import WhisperKit
 /// Abstracts WhisperKit.transcribe(audioArray:) for testability.
 public protocol ChunkTranscriber: AnyObject {
     func setup(model: String) async throws
-    func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [TranscribedSegment]
+    func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters, utteranceId: String) async throws -> [TranscribedSegment]
+}
+
+extension ChunkTranscriber {
+    /// Back-compat convenience that generates a fresh utterance id. Intended for
+    /// tests / benchmarks that do not have an upstream id; production code paths
+    /// always supply a real id from `VADChunkAccumulator`.
+    public func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [TranscribedSegment] {
+        try await transcribe(audioArray: audioArray, language: language, parameters: parameters, utteranceId: UUID().uuidString)
+    }
 }
 
 /// Production implementation backed by WhisperKit.
@@ -18,7 +27,7 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
         self.whisperKit = try await WhisperKitModelLoader.createWhisperKit(model: model)
     }
 
-    public func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters) async throws -> [TranscribedSegment] {
+    public func transcribe(audioArray: [Float], language: String, parameters: TranscriptionParameters, utteranceId: String) async throws -> [TranscribedSegment] {
         guard let whisperKit else {
             throw TranscriptionEngineError.notInitialized
         }
@@ -47,7 +56,9 @@ public final class WhisperKitChunkTranscriber: ChunkTranscriber {
             concurrentWorkerCount: parameters.concurrentWorkerCount
         )
 
+        LatencyInstrumentation.mark(.inferenceStart, utteranceId: utteranceId)
         let results = try await whisperKit.transcribe(audioArray: audioArray, decodeOptions: options)
+        LatencyInstrumentation.mark(.inferenceEnd, utteranceId: utteranceId)
         return results.flatMap { result in
             result.segments.compactMap { segment -> TranscribedSegment? in
                 let cleanedText = TranscriptionUtils.cleanSegmentText(segment.text)

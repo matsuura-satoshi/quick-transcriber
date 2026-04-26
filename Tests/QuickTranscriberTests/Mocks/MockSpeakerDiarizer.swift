@@ -7,6 +7,7 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
     var speakerResults: [SpeakerIdentification?] = []
     var identifySpeakerCallCount = 0
     var forceRunValues: [Bool] = []
+    var utteranceIds: [String] = []
     var identifyDelay: TimeInterval = 0
     private var callIndex = 0
 
@@ -15,9 +16,14 @@ final class MockSpeakerDiarizer: SpeakerDiarizer, @unchecked Sendable {
         if let error = setupError { throw error }
     }
 
-    func identifySpeaker(audioChunk: [Float], forceRun: Bool) async -> SpeakerIdentification? {
+    func identifySpeaker(audioChunk: [Float], forceRun: Bool, utteranceId: String) async -> SpeakerIdentification? {
         identifySpeakerCallCount += 1
         forceRunValues.append(forceRun)
+        utteranceIds.append(utteranceId)
+        // Mirror FluidAudioSpeakerDiarizer's instrumentation so integration tests can
+        // exercise the full stage coverage via the mock pipeline.
+        LatencyInstrumentation.mark(.diarizeStart, utteranceId: utteranceId)
+        defer { LatencyInstrumentation.mark(.diarizeEnd, utteranceId: utteranceId) }
         if identifyDelay > 0 {
             try? await Task.sleep(nanoseconds: UInt64(identifyDelay * 1_000_000_000))
         }
