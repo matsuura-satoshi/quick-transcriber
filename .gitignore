@@ -9,3 +9,7 @@ DerivedData/
 .worktrees/
 /build
 tmp.log
+
+# Ablation study artefacts (privacy: contain real speaker names / embeddings)
+Tests/QuickTranscriberBenchmarks/Fixtures/
+docs/benchmarks/2026-04-27-ablation/raw/

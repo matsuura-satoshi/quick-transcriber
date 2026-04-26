@@ -114,9 +114,11 @@ Each component normalized to [0,1] across all configs in the same session, lower
 
 ## Profile Reproducibility
 
-Production `~/QuickTranscriber/speakers.json` (78 speakers, 256-d embeddings) is **copied** to `Tests/QuickTranscriberBenchmarks/Fixtures/ablation_speakers.json` at the start of the experiment. All ablation runs read from the fixture; no run writes back. This keeps daily QT operation untouched.
+Production `~/QuickTranscriber/speakers.json` (78 speakers, 256-d embeddings) contains real colleague names and voice embeddings. The repo is public, so the file **must not be committed**. The benchmark loader reads it live, in-memory only, with a hard read-only contract: no ablation run writes back to disk.
 
-For each session, the relevant 5–6 profiles (松浦, 森, 今村, 森谷, 上東, 佐々木, 神野) are filtered into the diarizer's initial state. Other profiles are ignored.
+The fixture path `Tests/QuickTranscriberBenchmarks/Fixtures/` is `.gitignore`d in case anyone later snapshots it for offline use.
+
+For each session, the relevant 5–7 profiles (松浦, 森, 今村, 森谷, 上東, 佐々木, 神野) are filtered into the diarizer's initial state by `displayName` whitelist. Other profiles are ignored.
 
 ## Implementation
 
