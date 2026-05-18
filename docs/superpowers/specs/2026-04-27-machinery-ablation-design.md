@@ -64,7 +64,11 @@ Mapping is one-way (Zoom → short). DER computation maps predicted speaker IDs 
 
 ## Ablation Configurations
 
-Six configs, applied in nested-removal order. Each removes one mechanism from the previous; together they trace the development history backwards.
+Six "remove-mechanism" configs (A-F) plus two "parameter sensitivity" configs (A+/A++) added 2026-05-18 after user-reported within-speaker label flips on v2.4.80.
+
+### Mechanism ablation (A-F)
+
+Each removes one mechanism from the previous; together they trace the development history backwards.
 
 | ID | Description | Remove vs prior |
 |---|---|---|
@@ -78,6 +82,23 @@ Six configs, applied in nested-removal order. Each removes one mechanism from th
 For this study **no user corrections are simulated**, so config differences in the correction-handling layers (B, D, F) only manifest if profile drift accumulates from identify() updates. C and E expose the largest behavioural deltas.
 
 The "remove" semantics are implemented via existing toggles where present (`suppressLearning`) or via a new `AblationFlags` injection point that the engine reads (see Implementation).
+
+### Stay-probability sensitivity (A+, A++) — added 2026-05-18
+
+User feedback on v2.4.80 (real meeting use, 2026-05-14): **2-3 false within-speaker label flips per few-minutes of continuous same-speaker speech**, suggesting the current `speakerTransitionPenalty = 0.8` (20 %/chunk transition prior) is too permissive for long-monologue Japanese meetings, even though it won on the AMI English benchmark in commit `6b099f4` (2026-02-19).
+
+Two additional configs sweep stay probability while keeping the full stack (config A) active:
+
+| ID | Description | Hypothesis |
+|---|---|---|
+| **A+** | A with `speakerTransitionPenalty = 0.9` | Restoring the pre-AMI-benchmark value resolves within-speaker flips without harming legitimate speaker transitions |
+| **A++** | A with `speakerTransitionPenalty = 0.95` | Higher penalty further reduces flips but risks suppressing real transitions (trade-off check) |
+
+These configs answer: **is the within-speaker stability problem solvable by parameter tuning alone, or does it require machinery (e.g., profile drift compensation)?** If A+ or A++ matches or beats A on flip rate without harming DER, the conclusion is "tune the value, leave the machinery alone".
+
+Note that v2.4.81 ships with `speakerTransitionPenalty = 0.9` as the default (corresponding to config A+); the ablation will simply confirm whether shipping was right, and whether 0.95 should be the next step.
+
+Total: 8 configs × 2 sessions = 16 runs (≈ 2 h compute).
 
 ## Metrics
 
