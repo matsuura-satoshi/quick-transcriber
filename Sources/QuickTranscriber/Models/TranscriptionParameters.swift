@@ -55,7 +55,7 @@ public struct TranscriptionParameters: Codable, Sendable, Equatable {
         silenceLineBreakThreshold: TimeInterval = 1.0,
         enableSpeakerDiarization: Bool = false,
         expectedSpeakerCount: Int? = nil,
-        speakerTransitionPenalty: Double = 0.8,
+        speakerTransitionPenalty: Double = 0.9,
         diarizationMode: DiarizationMode = .auto,
         compressionRatioThreshold: Float? = nil,
         logProbThreshold: Float? = nil,
