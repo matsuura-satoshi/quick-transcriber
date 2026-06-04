@@ -26,4 +26,19 @@ public enum SessionTimeAligner {
         }
         return Double(h * 3600 + mm * 60 + s)
     }
+
+    /// Parse a Zoom transcript and return its segments in audio-relative time.
+    /// `ZoomTranscriptParser` already converts time-of-day to session-relative
+    /// given a `sessionStart` (seconds-of-day) and a session duration.
+    public static func zoomSegmentsAudioRelative(
+        zoomRaw: String,
+        qtStartSecondsOfDay: Double,
+        audioDurationSeconds: Double
+    ) throws -> [ZoomSegment] {
+        try ZoomTranscriptParser.parse(
+            zoomRaw,
+            sessionStart: qtStartSecondsOfDay,
+            sessionDurationSeconds: audioDurationSeconds
+        )
+    }
 }
