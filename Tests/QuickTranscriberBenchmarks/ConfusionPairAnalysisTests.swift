@@ -209,4 +209,97 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         out.sort { $0.start < $1.start }
         return out
     }
+
+    // MARK: - Part B: Real-session confusion matrix
+
+    struct SessionConfusionArtifact: Codable {
+        let session: String
+        let registered: [String]
+        let matrix: ConfusionMatrixResult
+        let chunkCount: Int
+        let attributedCount: Int   // chunks with a Zoom GT speaker
+    }
+
+    func testRealSessionConfusion() async throws {
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: Self.productionProfilePath),
+            "production speakers.json not present"
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: Self.sessionsRoot.path),
+            "real-sessions directory not present"
+        )
+
+        var artifacts: [SessionConfusionArtifact] = []
+        for session in Self.sessions {
+            let dir = Self.sessionsRoot.appendingPathComponent(session.dirName)
+            let zoomURL = dir.appendingPathComponent("zoom_transcript.txt")
+            guard FileManager.default.fileExists(atPath: zoomURL.path) else {
+                NSLog("[ConfusionPair] SKIP \(session.dirName): no zoom_transcript.txt"); continue
+            }
+            let zoomRaw = try String(contentsOf: zoomURL, encoding: .utf8)
+            let gtSegments = try SessionTimeAligner.zoomSegmentsAudioRelative(
+                zoomRaw: zoomRaw,
+                qtStartSecondsOfDay: session.qtStartSecondsOfDay,
+                audioDurationSeconds: session.audioDurationSeconds
+            )
+
+            var idToName: [String: String] = [:]
+            let predicted = try await replay(session: session, idToName: &idToName)
+
+            // Attribute each predicted chunk to a Zoom GT speaker by max overlap.
+            var rows: [(gt: String, pred: String)] = []
+            for chunk in predicted {
+                guard let predName = idToName[chunk.predicted] else { continue }
+                guard let gtShort = groundTruthShortName(
+                    chunkStart: chunk.start, chunkEnd: chunk.end, segments: gtSegments
+                ) else { continue }
+                rows.append((gt: gtShort, pred: predName))
+            }
+
+            // Speaker axis: registered roster ∪ any GT speaker seen (e.g. 佐々木).
+            let gtSpeakers = Set(rows.map(\.gt))
+            let speakers = (session.registered + gtSpeakers.sorted()).reduced()
+            let matrix = ConfusionMatrixBuilder.build(
+                rows: rows, speakers: speakers, falseTarget: "神野", silentSpeakers: ["神野"]
+            )
+
+            artifacts.append(SessionConfusionArtifact(
+                session: session.dirName, registered: session.registered,
+                matrix: matrix, chunkCount: predicted.count, attributedCount: rows.count
+            ))
+
+            NSLog("[ConfusionPair] \(session.dirName): chunks=\(predicted.count) attributed=\(rows.count) false神野=\(matrix.totalFalseTarget)")
+            for (gt, n) in matrix.falseTargetByGroundTruth.sorted(by: { $0.value > $1.value }) {
+                NSLog("[ConfusionPair]   神野⟵\(gt): \(n)")
+            }
+        }
+
+        XCTAssertFalse(artifacts.isEmpty, "no sessions processed")
+        let outURL = URL(fileURLWithPath: "/tmp/confusion_sessions.json")
+        try JSONEncoder().encode(artifacts).write(to: outURL, options: .atomic)
+        NSLog("[ConfusionPair] session confusion written: \(outURL.path)")
+    }
+
+    /// Max-overlap Zoom GT speaker (short name) for a chunk time-range, nil if no overlap.
+    private func groundTruthShortName(
+        chunkStart: Double, chunkEnd: Double, segments: [ZoomSegment]
+    ) -> String? {
+        var overlapByShort: [String: Double] = [:]
+        for seg in segments {
+            let o = max(0, min(seg.endSeconds, chunkEnd) - max(seg.startSeconds, chunkStart))
+            guard o > 0 else { continue }
+            let short = Self.zoomToShort[seg.speaker] ?? seg.speaker
+            overlapByShort[short, default: 0] += o
+        }
+        return overlapByShort.max(by: { $0.value < $1.value })?.key
+    }
+}
+
+private extension Array where Element == String {
+    func reduced() -> [String] {
+        var seen = Set<String>(); var out: [String] = []
+        for e in self where !seen.contains(e) { seen.insert(e); out.append(e) }
+        return out
+    }
 }
