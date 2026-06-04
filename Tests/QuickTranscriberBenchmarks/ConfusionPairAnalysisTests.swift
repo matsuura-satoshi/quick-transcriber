@@ -87,7 +87,13 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                     audioDurationSeconds: 904),
     ]
 
-    /// Zoom handle → short name. Reverse of the plan's mapping table.
+    /// Zoom handle → short name (ground-truth side only).
+    /// 神野 is intentionally ABSENT: it is a silent registered participant with no
+    /// Zoom handle, so it never appears as ground truth. 神野 only ever appears as a
+    /// PREDICTED label (resolved via `idToName` from the loaded profile), which is the
+    /// whole point of the false-神野 analysis. 佐々木 appears here (it spoke in 2026-04-21)
+    /// but is NOT in any `registered` roster (no usable profile), so it shows up only as a
+    /// ground-truth row whose predictions land on other speakers.
     static let zoomToShort: [String: String] = [
         "松浦 知史 / Science Tokyo CERT / MATSUURA Satoshi": "松浦",
         "今村＠情報セキュリティ室": "今村",
@@ -102,6 +108,14 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
 
     /// Replay one WAV through the Manual-mode diarizer; return per-chunk
     /// (startSeconds, endSeconds, predictedUUID) for confirmed (non-pending) chunks.
+    ///
+    /// Fidelity assumptions (carry into the report's Limitations):
+    /// - The recorded WAV is already normalized (QT writes normalized samples), so we
+    ///   feed it raw — no re-normalization. An Int16→Float round-trip adds tiny quantization.
+    /// - VAD parameters use Constants.VAD.default*, matching a factory-default session; a
+    ///   session run with customized VAD settings would segment differently.
+    /// - Chunk timestamps include pre-roll (~0.3s) and hangover (~0.15s), so boundary
+    ///   attribution carries a ±sub-second window — acceptable for per-speaker aggregates.
     private func replay(
         session: RealSession,
         idToName: inout [String: String]
@@ -116,6 +130,8 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         let participants = loaded.map { (speakerId: $0.id, embedding: $0.embedding) }
         for p in loaded { idToName[p.id.uuidString] = p.displayName }
 
+        // windowDuration 15 / diarizationChunkDuration 7 match the production defaults
+        // (production builds FluidAudioSpeakerDiarizer() with no args; see TranscriptionViewModel).
         let diarizer = FluidAudioSpeakerDiarizer(
             similarityThreshold: Constants.Embedding.similarityThreshold,
             windowDuration: 15.0,
@@ -184,6 +200,11 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         // Any still-pending chunks inherit the last confirmed speaker.
         if let last = lastConfirmed {
             for pc in pendingChunks { out.append((pc.start, pc.end, last)) }
+        } else if !pendingChunks.isEmpty {
+            // Smoother never confirmed any speaker across the whole file — anomalous
+            // (the first non-nil identifySpeaker normally confirms immediately). Surface
+            // it loudly rather than returning a spuriously empty result.
+            NSLog("[ConfusionPair] WARNING \(session.dirName): smoother never confirmed; \(pendingChunks.count) pending chunks dropped")
         }
         out.sort { $0.start < $1.start }
         return out
