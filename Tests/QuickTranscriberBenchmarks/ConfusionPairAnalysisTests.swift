@@ -1,7 +1,7 @@
 import XCTest
 @testable import QuickTranscriberLib
 
-final class ConfusionPairAnalysisTests: XCTestCase {
+final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
     /// Standing roster of regulars present in the production store (see plan roster assumption).
     static let roster = ["松浦", "今村", "上東", "森", "森谷", "神野"]
     static let productionProfilePath = NSString(string: "~/QuickTranscriber/speakers.json").expandingTildeInPath
@@ -67,5 +67,125 @@ final class ConfusionPairAnalysisTests: XCTestCase {
         guard let i = ordered.firstIndex(where: { $0.displayName == a }),
               let j = ordered.firstIndex(where: { $0.displayName == b }) else { return 0 }
         return m[i][j]
+    }
+
+    struct RealSession {
+        let dirName: String
+        let registered: [String]   // Manual-mode participant roster (must exist in store)
+        let qtStartSecondsOfDay: Double
+        let audioDurationSeconds: Double
+    }
+
+    static let sessions: [RealSession] = [
+        RealSession(dirName: "2026-04-21_CERTインシデント情報共有",
+                    registered: ["松浦", "今村", "上東", "森", "森谷", "神野"],
+                    qtStartSecondsOfDay: 9*3600 + 44*60 + 23,
+                    audioDurationSeconds: 695),
+        RealSession(dirName: "2026-04-23_CERTインシデント情報共有",
+                    registered: ["松浦", "今村", "上東", "森", "森谷", "神野"],
+                    qtStartSecondsOfDay: 9*3600 + 44*60 + 48,
+                    audioDurationSeconds: 904),
+    ]
+
+    /// Zoom handle → short name. Reverse of the plan's mapping table.
+    static let zoomToShort: [String: String] = [
+        "松浦 知史 / Science Tokyo CERT / MATSUURA Satoshi": "松浦",
+        "今村＠情報セキュリティ室": "今村",
+        "Y.Uehigashi": "上東",
+        "佐々木@情報セキュリティ室": "佐々木",
+        "Kento Mori": "森",
+        "moriya": "森谷",
+    ]
+
+    static let sessionsRoot = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Documents/QuickTranscriber/real-sessions")
+
+    /// Replay one WAV through the Manual-mode diarizer; return per-chunk
+    /// (startSeconds, endSeconds, predictedUUID) for confirmed (non-pending) chunks.
+    private func replay(
+        session: RealSession,
+        idToName: inout [String: String]
+    ) async throws -> [(start: Double, end: Double, predicted: String)] {
+        let dir = Self.sessionsRoot.appendingPathComponent(session.dirName)
+        let wavURL = dir.appendingPathComponent("audio.wav")
+
+        let loaded = try SpeakerProfileLoader.load(
+            path: Self.productionProfilePath,
+            displayNames: session.registered
+        )
+        let participants = loaded.map { (speakerId: $0.id, embedding: $0.embedding) }
+        for p in loaded { idToName[p.id.uuidString] = p.displayName }
+
+        let diarizer = FluidAudioSpeakerDiarizer(
+            similarityThreshold: Constants.Embedding.similarityThreshold,
+            windowDuration: 15.0,
+            diarizationChunkDuration: 7.0,
+            expectedSpeakerCount: participants.count
+        )
+        try await diarizer.setup()
+        diarizer.loadSpeakerProfiles(participants)
+        diarizer.setSuppressLearning(true)
+
+        let smoother = ViterbiSpeakerSmoother(stayProbability: 0.9)
+
+        // VAD-chunk the audio (100ms increments), tracking absolute audio time.
+        let samples = try loadAudioSamples(from: wavURL.path)
+        var acc = VADChunkAccumulator(
+            maxChunkDuration: Constants.VAD.defaultMaxChunkDuration,
+            endOfUtteranceSilence: Constants.VAD.defaultEndOfUtteranceSilence,
+            silenceEnergyThreshold: Constants.VAD.defaultSilenceEnergyThreshold,
+            speechOnsetThreshold: Constants.VAD.defaultSpeechOnsetThreshold,
+            preRollDuration: Constants.VAD.defaultPreRollDuration,
+            hangoverDuration: Constants.VAD.defaultHangoverDuration
+        )
+        let sr = Constants.Audio.sampleRateInt
+        let inc = Int(0.1 * Double(sr))
+
+        struct PendingChunk { let start: Double; let end: Double }
+        var out: [(start: Double, end: Double, predicted: String)] = []
+        var pendingChunks: [PendingChunk] = []   // chunks awaiting Viterbi confirmation
+
+        var lastConfirmed: String? = nil
+        var offset = 0
+        var emittedEnd = 0
+
+        func handle(chunk: ChunkResult, endSample: Int) async {
+            let endT = Double(endSample) / Double(sr)
+            let startT = endT - Double(chunk.samples.count) / Double(sr)
+            let significantSilence = chunk.precedingSilenceDuration >= Constants.VAD.defaultEndOfUtteranceSilence
+            if significantSilence { smoother.resetForSpeakerChange() }
+            let raw = await diarizer.identifySpeaker(
+                audioChunk: chunk.samples, forceRun: significantSilence, utteranceId: chunk.utteranceId
+            )
+            let smoothed = smoother.process(raw)
+            if let s = smoothed {
+                let id = s.speakerId.uuidString
+                lastConfirmed = id
+                // Retroactively flush any pending chunks to this confirmed id.
+                for pc in pendingChunks { out.append((pc.start, pc.end, id)) }
+                pendingChunks.removeAll()
+                out.append((startT, endT, id))
+            } else {
+                pendingChunks.append(PendingChunk(start: startT, end: endT))
+            }
+        }
+
+        while offset < samples.count {
+            let end = min(offset + inc, samples.count)
+            emittedEnd = end
+            if let chunk = acc.appendBuffer(Array(samples[offset..<end])) {
+                await handle(chunk: chunk, endSample: emittedEnd)
+            }
+            offset = end
+        }
+        if let chunk = acc.flush() {
+            await handle(chunk: chunk, endSample: emittedEnd)
+        }
+        // Any still-pending chunks inherit the last confirmed speaker.
+        if let last = lastConfirmed {
+            for pc in pendingChunks { out.append((pc.start, pc.end, last)) }
+        }
+        out.sort { $0.start < $1.start }
+        return out
     }
 }
