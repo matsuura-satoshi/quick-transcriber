@@ -106,8 +106,21 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
     static let sessionsRoot = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Documents/QuickTranscriber/real-sessions")
 
-    /// Replay one WAV through the Manual-mode diarizer; return per-chunk
-    /// (startSeconds, endSeconds, predictedUUID) for confirmed (non-pending) chunks.
+    /// One simulated user correction applied during an oracle-corrections replay.
+    struct OracleCorrection: Codable {
+        let atEnd: Double            // audio time (s) of the corrected chunk's end
+        let from: String             // wrong label (display name)
+        let to: String               // ground-truth label (display name)
+        let usedCachedEmbedding: Bool  // segment carried a pacer-cached embedding
+        let embeddingWasNil: Bool      // segment had no embedding (syncViterbiConfirm path)
+    }
+
+    /// Replay one WAV through the Manual-mode diarizer, recording per-chunk
+    /// diagnostics (raw pre-Viterbi label, per-profile cosines, cache state,
+    /// smoothing path). When `oracleGT` is supplied, additionally simulates a
+    /// zero-latency user correction (production `reassignSegment` path) on every
+    /// own-confirmed chunk whose label contradicts ground truth — an UPPER BOUND
+    /// on correction efficacy (real users correct later and less often).
     ///
     /// Fidelity assumptions (carry into the report's Limitations):
     /// - The recorded WAV is already normalized (QT writes normalized samples), so we
@@ -116,10 +129,13 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
     ///   session run with customized VAD settings would segment differently.
     /// - Chunk timestamps include pre-roll (~0.3s) and hangover (~0.15s), so boundary
     ///   attribution carries a ±sub-second window — acceptable for per-speaker aggregates.
+    /// - Diagnostics record the system's own output; oracle corrections are listed
+    ///   separately and do NOT rewrite the corrected chunk's recorded label.
     private func replay(
         session: RealSession,
-        idToName: inout [String: String]
-    ) async throws -> [(start: Double, end: Double, predicted: String)] {
+        idToName: inout [String: String],
+        oracleGT: [ZoomSegment]? = nil
+    ) async throws -> (chunks: [ChunkDiagnostic], corrections: [OracleCorrection], finalCentroids: [String: [Float]]) {
         let dir = Self.sessionsRoot.appendingPathComponent(session.dirName)
         let wavURL = dir.appendingPathComponent("audio.wav")
 
@@ -129,6 +145,9 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         )
         let participants = loaded.map { (speakerId: $0.id, embedding: $0.embedding) }
         for p in loaded { idToName[p.id.uuidString] = p.displayName }
+        // Local copy: inout parameters cannot be captured by the nested functions below.
+        let nameById = idToName
+        let uuidByName = Dictionary(uniqueKeysWithValues: loaded.map { ($0.displayName, $0.id) })
 
         // windowDuration 15 / diarizationChunkDuration 7 match the production defaults
         // (production builds FluidAudioSpeakerDiarizer() with no args; see TranscriptionViewModel).
@@ -157,13 +176,22 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         let sr = Constants.Audio.sampleRateInt
         let inc = Int(0.1 * Double(sr))
 
-        struct PendingChunk { let start: Double; let end: Double }
-        var out: [(start: Double, end: Double, predicted: String)] = []
-        var pendingChunks: [PendingChunk] = []   // chunks awaiting Viterbi confirmation
+        var diagnostics: [ChunkDiagnostic] = []
+        var pendingIndices: [Int] = []   // diagnostics indices awaiting Viterbi confirmation
+        var corrections: [OracleCorrection] = []
 
-        var lastConfirmed: String? = nil
+        var lastConfirmedName: String? = nil
+        var prevRawEmbedding: [Float]? = nil
         var offset = 0
         var emittedEnd = 0
+
+        func currentCentroidsByName() -> [String: [Float]] {
+            var out: [String: [Float]] = [:]
+            for p in diarizer.exportSpeakerProfiles() {
+                if let name = nameById[p.speakerId.uuidString] { out[name] = p.embedding }
+            }
+            return out
+        }
 
         func handle(chunk: ChunkResult, endSample: Int) async {
             let endT = Double(endSample) / Double(sr)
@@ -173,16 +201,74 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
             let raw = await diarizer.identifySpeaker(
                 audioChunk: chunk.samples, forceRun: significantSilence, utteranceId: chunk.utteranceId
             )
+
+            // A repeated embedding means the pacer returned its cached result
+            // instead of diarizing this chunk's audio (fresh runs always produce
+            // a new segment embedding).
+            let cached = raw?.embedding != nil && raw?.embedding == prevRawEmbedding
+            if let e = raw?.embedding { prevRawEmbedding = e }
+
+            var cosines: [String: Float] = [:]
+            if let e = raw?.embedding {
+                for (name, centroid) in currentCentroidsByName() {
+                    cosines[name] = EmbeddingBasedSpeakerTracker.cosineSimilarity(e, centroid)
+                }
+            }
+            let rawName = raw.flatMap { nameById[$0.speakerId.uuidString] }
+
             let smoothed = smoother.process(raw)
             if let s = smoothed {
-                let id = s.speakerId.uuidString
-                lastConfirmed = id
-                // Retroactively flush any pending chunks to this confirmed id.
-                for pc in pendingChunks { out.append((pc.start, pc.end, id)) }
-                pendingChunks.removeAll()
-                out.append((startT, endT, id))
+                let name = nameById[s.speakerId.uuidString]
+                lastConfirmedName = name
+                // Retroactively flush any pending chunks to this confirmed label.
+                for i in pendingIndices {
+                    diagnostics[i] = diagnostics[i].withFinal(name, inherited: true)
+                }
+                pendingIndices.removeAll()
+                diagnostics.append(ChunkDiagnostic(
+                    start: startT, end: endT,
+                    rawName: rawName, rawConfidence: raw?.confidence,
+                    cached: cached, significantSilence: significantSilence,
+                    smoothedName: name, finalName: name, inherited: false,
+                    cosines: cosines
+                ))
+
+                // Oracle correction: zero-latency simulation of the production
+                // reassignSegment path (SpeakerStateCoordinator.reassignSegment →
+                // ChunkedWhisperEngine.correctSpeakerAssignment / syncViterbiConfirm).
+                if let gtSegments = oracleGT,
+                   let finalName = name,
+                   let gtName = groundTruthShortName(chunkStart: startT, chunkEnd: endT, segments: gtSegments),
+                   gtName != finalName,
+                   let gtId = uuidByName[gtName],
+                   let predId = uuidByName[finalName] {
+                    if let emb = raw?.embedding {
+                        // ConfirmedSegment.speakerEmbedding == rawSpeakerResult?.embedding
+                        diarizer.correctSpeakerAssignment(embedding: emb, from: predId, to: gtId)
+                        if smoother.confirmedSpeakerId == predId {
+                            smoother.confirmSpeaker(gtId)
+                        }
+                        corrections.append(OracleCorrection(
+                            atEnd: endT, from: finalName, to: gtName,
+                            usedCachedEmbedding: cached, embeddingWasNil: false
+                        ))
+                    } else {
+                        smoother.confirmSpeaker(gtId)
+                        corrections.append(OracleCorrection(
+                            atEnd: endT, from: finalName, to: gtName,
+                            usedCachedEmbedding: false, embeddingWasNil: true
+                        ))
+                    }
+                }
             } else {
-                pendingChunks.append(PendingChunk(start: startT, end: endT))
+                diagnostics.append(ChunkDiagnostic(
+                    start: startT, end: endT,
+                    rawName: rawName, rawConfidence: raw?.confidence,
+                    cached: cached, significantSilence: significantSilence,
+                    smoothedName: nil, finalName: nil, inherited: false,
+                    cosines: cosines
+                ))
+                pendingIndices.append(diagnostics.count - 1)
             }
         }
 
@@ -198,16 +284,18 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
             await handle(chunk: chunk, endSample: emittedEnd)
         }
         // Any still-pending chunks inherit the last confirmed speaker.
-        if let last = lastConfirmed {
-            for pc in pendingChunks { out.append((pc.start, pc.end, last)) }
-        } else if !pendingChunks.isEmpty {
+        if let last = lastConfirmedName {
+            for i in pendingIndices {
+                diagnostics[i] = diagnostics[i].withFinal(last, inherited: true)
+            }
+        } else if !pendingIndices.isEmpty {
             // Smoother never confirmed any speaker across the whole file — anomalous
             // (the first non-nil identifySpeaker normally confirms immediately). Surface
             // it loudly rather than returning a spuriously empty result.
-            NSLog("[ConfusionPair] WARNING \(session.dirName): smoother never confirmed; \(pendingChunks.count) pending chunks dropped")
+            NSLog("[ConfusionPair] WARNING \(session.dirName): smoother never confirmed; \(pendingIndices.count) pending chunks dropped")
         }
-        out.sort { $0.start < $1.start }
-        return out
+        diagnostics.sort { $0.start < $1.start }
+        return (diagnostics, corrections, currentCentroidsByName())
     }
 
     // MARK: - Part B: Real-session confusion matrix
@@ -245,12 +333,13 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
             )
 
             var idToName: [String: String] = [:]
-            let predicted = try await replay(session: session, idToName: &idToName)
+            let (chunks, _, _) = try await replay(session: session, idToName: &idToName)
+            let predicted = chunks.filter { $0.finalName != nil }
 
             // Attribute each predicted chunk to a Zoom GT speaker by max overlap.
             var rows: [(gt: String, pred: String)] = []
             for chunk in predicted {
-                guard let predName = idToName[chunk.predicted] else { continue }
+                guard let predName = chunk.finalName else { continue }
                 guard let gtShort = groundTruthShortName(
                     chunkStart: chunk.start, chunkEnd: chunk.end, segments: gtSegments
                 ) else { continue }
@@ -279,6 +368,232 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         let outURL = URL(fileURLWithPath: "/tmp/confusion_sessions.json")
         try JSONEncoder().encode(artifacts).write(to: outURL, options: .atomic)
         NSLog("[ConfusionPair] session confusion written: \(outURL.path)")
+    }
+
+    // MARK: - Priority 1: Stickiness diagnostic (window-swallow vs smoother-flip)
+
+    struct StickinessRow: Codable {
+        let start: Double
+        let end: Double
+        let gt: String
+        let raw: String?
+        let final: String
+        let cause: MisattributionCause?   // nil = correctly attributed
+        let cached: Bool
+        let significantSilence: Bool
+        let inherited: Bool
+        let cosGT: Float?                 // cos(query, GT centroid)
+        let cosPred: Float?               // cos(query, predicted centroid)
+        let margin: Float?                // cosPred - cosGT (>0: pred genuinely closer)
+        let cosines: [String: Float]      // cos(query, centroid) for every registered profile
+    }
+
+    struct StickinessArtifact: Codable {
+        let session: String
+        let totalAttributed: Int
+        let misattributed: Int
+        let splitByCause: [String: Int]
+        let splitByPair: [String: [String: Int]]   // "gt→pred" → cause → count
+        let rows: [StickinessRow]
+    }
+
+    /// Joins replay diagnostics with Zoom ground truth and classifies every
+    /// misattributed chunk. Returns rows + aggregates for one session.
+    private func diagnose(
+        session: RealSession,
+        chunks: [ChunkDiagnostic],
+        gtSegments: [ZoomSegment]
+    ) -> StickinessArtifact {
+        var rows: [StickinessRow] = []
+        var splitByCause: [MisattributionCause: Int] = [:]
+        var splitByPair: [String: [String: Int]] = [:]
+
+        for chunk in chunks {
+            guard let final = chunk.finalName else { continue }
+            guard let gt = groundTruthShortName(
+                chunkStart: chunk.start, chunkEnd: chunk.end, segments: gtSegments
+            ) else { continue }
+            let cause = StickinessClassifier.classify(chunk: chunk, groundTruth: gt)
+            let cosGT = chunk.cosines[gt]
+            let cosPred = chunk.cosines[final]
+            rows.append(StickinessRow(
+                start: chunk.start, end: chunk.end, gt: gt, raw: chunk.rawName,
+                final: final, cause: cause, cached: chunk.cached,
+                significantSilence: chunk.significantSilence, inherited: chunk.inherited,
+                cosGT: cosGT, cosPred: cosPred,
+                margin: (cosGT != nil && cosPred != nil) ? cosPred! - cosGT! : nil,
+                cosines: chunk.cosines
+            ))
+            if let cause {
+                splitByCause[cause, default: 0] += 1
+                splitByPair["\(gt)→\(final)", default: [:]][cause.rawValue, default: 0] += 1
+            }
+        }
+
+        return StickinessArtifact(
+            session: session.dirName,
+            totalAttributed: rows.count,
+            misattributed: rows.filter { $0.cause != nil }.count,
+            splitByCause: Dictionary(uniqueKeysWithValues: splitByCause.map { ($0.key.rawValue, $0.value) }),
+            splitByPair: splitByPair,
+            rows: rows
+        )
+    }
+
+    func testStickinessDiagnostic() async throws {
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: Self.productionProfilePath),
+            "production speakers.json not present"
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: Self.sessionsRoot.path),
+            "real-sessions directory not present"
+        )
+
+        var artifacts: [StickinessArtifact] = []
+        for session in Self.sessions {
+            let dir = Self.sessionsRoot.appendingPathComponent(session.dirName)
+            let zoomURL = dir.appendingPathComponent("zoom_transcript.txt")
+            guard FileManager.default.fileExists(atPath: zoomURL.path) else {
+                NSLog("[Stickiness] SKIP \(session.dirName): no zoom_transcript.txt"); continue
+            }
+            let zoomRaw = try String(contentsOf: zoomURL, encoding: .utf8)
+            let gtSegments = try SessionTimeAligner.zoomSegmentsAudioRelative(
+                zoomRaw: zoomRaw,
+                qtStartSecondsOfDay: session.qtStartSecondsOfDay,
+                audioDurationSeconds: session.audioDurationSeconds
+            )
+
+            var idToName: [String: String] = [:]
+            let (chunks, _, _) = try await replay(session: session, idToName: &idToName)
+            let artifact = diagnose(session: session, chunks: chunks, gtSegments: gtSegments)
+            artifacts.append(artifact)
+
+            NSLog("[Stickiness] \(session.dirName): attributed=\(artifact.totalAttributed) wrong=\(artifact.misattributed)")
+            for (cause, n) in artifact.splitByCause.sorted(by: { $0.value > $1.value }) {
+                NSLog("[Stickiness]   cause \(cause): \(n)")
+            }
+            for (pair, causes) in artifact.splitByPair.sorted(by: { $0.value.values.reduce(0, +) > $1.value.values.reduce(0, +) }) {
+                let total = causes.values.reduce(0, +)
+                let detail = causes.sorted { $0.value > $1.value }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+                NSLog("[Stickiness]   pair \(pair): \(total) (\(detail))")
+            }
+        }
+
+        XCTAssertFalse(artifacts.isEmpty, "no sessions processed")
+        let outURL = URL(fileURLWithPath: "/tmp/stickiness_baseline.json")
+        try JSONEncoder().encode(artifacts).write(to: outURL, options: .atomic)
+        NSLog("[Stickiness] baseline diagnostic written: \(outURL.path)")
+    }
+
+    // MARK: - Correction stickiness (does a manual correction hold?)
+
+    struct CorrectionStickinessArtifact: Codable {
+        let session: String
+        let baselineMisattributed: Int
+        let oracleMisattributed: Int          // with zero-latency oracle corrections
+        let correctionsApplied: Int
+        let correctionsUsingCachedEmbedding: Int
+        let reverts: Int                      // next same-GT chunk returned to the SAME wrong label
+        let revertWithinSeconds: [Double]     // time from correction to first revert
+        let centroidPairsBefore: [String: Float]   // "A↔B" cos at load time
+        let centroidPairsAfter: [String: Float]    // same pairs after oracle corrections
+        let corrections: [OracleCorrection]
+    }
+
+    func testCorrectionStickiness() async throws {
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: Self.productionProfilePath),
+            "production speakers.json not present"
+        )
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: Self.sessionsRoot.path),
+            "real-sessions directory not present"
+        )
+
+        var artifacts: [CorrectionStickinessArtifact] = []
+        for session in Self.sessions {
+            let dir = Self.sessionsRoot.appendingPathComponent(session.dirName)
+            let zoomURL = dir.appendingPathComponent("zoom_transcript.txt")
+            guard FileManager.default.fileExists(atPath: zoomURL.path) else {
+                NSLog("[CorrStick] SKIP \(session.dirName): no zoom_transcript.txt"); continue
+            }
+            let zoomRaw = try String(contentsOf: zoomURL, encoding: .utf8)
+            let gtSegments = try SessionTimeAligner.zoomSegmentsAudioRelative(
+                zoomRaw: zoomRaw,
+                qtStartSecondsOfDay: session.qtStartSecondsOfDay,
+                audioDurationSeconds: session.audioDurationSeconds
+            )
+
+            // Baseline (no corrections) and oracle-corrections replays.
+            var idToName: [String: String] = [:]
+            let (baseChunks, _, _) = try await replay(session: session, idToName: &idToName)
+            let baseline = diagnose(session: session, chunks: baseChunks, gtSegments: gtSegments)
+
+            var idToName2: [String: String] = [:]
+            let (oracleChunks, corrections, finalCentroids) = try await replay(
+                session: session, idToName: &idToName2, oracleGT: gtSegments
+            )
+            let oracle = diagnose(session: session, chunks: oracleChunks, gtSegments: gtSegments)
+
+            // Revert analysis: after correcting (from P → to G at t), find the next
+            // own-confirmed chunk whose GT is G; a revert means it was labeled P again.
+            var reverts = 0
+            var revertDelays: [Double] = []
+            for c in corrections {
+                if let next = oracle.rows.first(where: { row in
+                    row.start >= c.atEnd && row.gt == c.to && !row.inherited
+                }) {
+                    if next.final == c.from {
+                        reverts += 1
+                        revertDelays.append(next.end - c.atEnd)
+                    }
+                }
+            }
+
+            // Centroid drift on pairs involved in corrections (gt-side profile is the
+            // only one mutated in Manual mode).
+            let loaded = try SpeakerProfileLoader.load(
+                path: Self.productionProfilePath, displayNames: session.registered
+            )
+            let loadedByName = Dictionary(uniqueKeysWithValues: loaded.map { ($0.displayName, $0.embedding) })
+            var pairsBefore: [String: Float] = [:]
+            var pairsAfter: [String: Float] = [:]
+            let correctedPairs = Set(corrections.map { "\($0.to)↔\($0.from)" })
+            for pairKey in correctedPairs {
+                let parts = pairKey.components(separatedBy: "↔")
+                guard parts.count == 2,
+                      let beforeA = loadedByName[parts[0]], let beforeB = loadedByName[parts[1]],
+                      let afterA = finalCentroids[parts[0]], let afterB = finalCentroids[parts[1]] else { continue }
+                pairsBefore[pairKey] = EmbeddingBasedSpeakerTracker.cosineSimilarity(beforeA, beforeB)
+                pairsAfter[pairKey] = EmbeddingBasedSpeakerTracker.cosineSimilarity(afterA, afterB)
+            }
+
+            let artifact = CorrectionStickinessArtifact(
+                session: session.dirName,
+                baselineMisattributed: baseline.misattributed,
+                oracleMisattributed: oracle.misattributed,
+                correctionsApplied: corrections.count,
+                correctionsUsingCachedEmbedding: corrections.filter { $0.usedCachedEmbedding }.count,
+                reverts: reverts,
+                revertWithinSeconds: revertDelays,
+                centroidPairsBefore: pairsBefore,
+                centroidPairsAfter: pairsAfter,
+                corrections: corrections
+            )
+            artifacts.append(artifact)
+
+            NSLog("[CorrStick] \(session.dirName): baselineWrong=\(baseline.misattributed) oracleWrong=\(oracle.misattributed) corrections=\(corrections.count) reverts=\(reverts)")
+            for (pair, before) in pairsBefore.sorted(by: { $0.key < $1.key }) {
+                let after = pairsAfter[pair] ?? 0
+                NSLog("[CorrStick]   centroid \(pair): \(String(format: "%.3f", before)) → \(String(format: "%.3f", after))")
+            }
+        }
+
+        XCTAssertFalse(artifacts.isEmpty, "no sessions processed")
+        let outURL = URL(fileURLWithPath: "/tmp/stickiness_corrections.json")
+        try JSONEncoder().encode(artifacts).write(to: outURL, options: .atomic)
+        NSLog("[CorrStick] correction stickiness written: \(outURL.path)")
     }
 
     /// Max-overlap Zoom GT speaker (short name) for a chunk time-range, nil if no overlap.
