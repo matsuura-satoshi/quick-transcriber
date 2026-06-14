@@ -274,15 +274,21 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                     fromId: oldId,
                     toId: newId
                 ))
-                // Manual mode: 手動ラベルは信頼サンプル（= 現時点の正解）。
-                // target profile に confidence=1.0 で追加し、以降の identify() が
-                // 更新後の centroid を使うようにする。source profile は動かさない
+                // Manual mode: 手動ラベルは信頼サンプル（= 現時点の正解）だが、
+                // 信頼できるのは「ラベル」であって付随 embedding ではない（blended
+                // window / stale cache の可能性がある）。target との類似度が identify
+                // 閾値を下回るベクトルを confidence=1.0 で混ぜると confusable embedding
+                // が centroid 同士を融合させる（上東↔松浦 0.769→0.958, 2026-06-10 診断）
+                // ため、閾値以上のサンプルのみ学習する。source profile は動かさない
                 // （Manual mode では auto 判定の汚染を避けるため従来通り凍結）。
                 if let newIdx = profiles.firstIndex(where: { $0.id == newId }) {
-                    profiles[newIdx].embeddingHistory.append(
-                        WeightedEmbedding(embedding: embedding, confidence: 1.0)
-                    )
-                    recalculateEmbedding(at: newIdx)
+                    let sim = Self.cosineSimilarity(embedding, profiles[newIdx].embedding)
+                    if sim >= similarityThreshold {
+                        profiles[newIdx].embeddingHistory.append(
+                            WeightedEmbedding(embedding: embedding, confidence: 1.0)
+                        )
+                        recalculateEmbedding(at: newIdx)
+                    }
                 }
                 return
             }
@@ -344,9 +350,14 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     public func loadProfiles(_ loadedProfiles: [(speakerId: UUID, embedding: [Float])]) {
         lock.withLock {
+            // Seed the stored centroid with weight ≫ 1 so in-session samples
+            // (corrections, Auto-mode learning) nudge it instead of jumping:
+            // a confidence-1.0 seed let the FIRST correction move the centroid
+            // 50%, collapsing confusable profile pairs (2026-06-10 diagnostic).
             profiles = loadedProfiles.map {
                 SpeakerProfile(id: $0.speakerId, embedding: $0.embedding, hitCount: 1,
-                               embeddingHistory: [WeightedEmbedding(embedding: $0.embedding, confidence: 1.0)])
+                               embeddingHistory: [WeightedEmbedding(embedding: $0.embedding,
+                                                                    confidence: Constants.Embedding.profileSeedWeight)])
             }
             lastConfirmedId = nil
             userCorrections = []

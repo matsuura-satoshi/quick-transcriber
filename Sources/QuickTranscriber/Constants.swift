@@ -38,6 +38,11 @@ public enum Constants {
         public static let sessionLearningMinSamples: Int = 3
         /// identify() の tie-breaker で「ほぼ同値」とみなす similarity 差の閾値。
         public static let tieBreakerEpsilon: Float = 0.005
+        /// loadProfiles で保存済み centroid を履歴に seed するときの重み
+        /// （= 保存 centroid を何サンプル分と見なすか）。1.0 だと最初の手動修正が
+        /// centroid を 50% 動かし、confusable embedding によるセントロイド融合
+        /// （上東↔松浦 0.769→0.958, 2026-06-10 診断）を起こす。
+        public static let profileSeedWeight: Float = 10.0
     }
 
     public enum QualityFilter {
@@ -53,7 +58,7 @@ public enum Constants {
     public enum Version {
         public static let major = 2
         public static let minor = 4
-        public static let patch = 81
+        public static let patch = 86
         public static let string = "\(major).\(minor).\(patch)"
         public static let versionString = "v\(string)"
     }

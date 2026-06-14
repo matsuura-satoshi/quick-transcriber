@@ -1,5 +1,10 @@
 # Stickiness Diagnostic — why labels flip and why corrections don't stick (2026-06-10)
 
+> **FIX SHIPPED (2026-06-12, v2.4.86):** the correction-poisoning path identified below
+> was fixed by weighted profile seeding (`profileSeedWeight = 10`) + correction-sample
+> gating (`>= similarityThreshold` vs target). See §"Fix results (2026-06-12)" at the
+> end of this report for the post-fix benchmark.
+
 **Question (handoff Priority 1):** why do 上東/今村's chunks become 松浦 — is the raw
 diarizer already wrong (window-swallow), or does the smoothing layer flip a correct
 raw label (smoother-flip)? The split chooses the Priority-2 fix.
@@ -209,3 +214,51 @@ swift test --filter ConfusionPairAnalysisTests/testCorrectionStickiness   # ~75 
   max-overlap speaker.
 - The pacer-cache flag detects caching via repeated embeddings (bit-identical fresh
   embeddings are practically impossible).
+
+## Fix results (2026-06-12, v2.4.86)
+
+Implemented: `profileSeedWeight = 10` (loadProfiles seeds the stored centroid as
+10 samples → a correction nudges ~9 % instead of 50 %) + sample gating in Manual-mode
+`correctAssignment` (embedding appended only when cos ≥ `similarityThreshold` against
+the target; the `UserCorrection` label is recorded regardless).
+
+The oracle was also made realistic: corrections fire on the **2nd consecutive**
+same-pair error ("persistence-2" — users correct labels that stay wrong, not
+one-chunk boundary lag). The original every-error/zero-latency oracle is kept below
+as a stress case.
+
+| Metric (persistence-2 oracle) | 04-21 before fix* | 04-21 after | 04-23 before fix* | 04-23 after |
+|---|---|---|---|---|
+| system-wrong (baseline → with corrections) | 26 → 16 | 26 → **20** | 25 → **41** | 26 → **28** |
+| reverts | 1 | **0** | 10 | **0** |
+| centroid 上東↔松浦 | 0.769 → **0.958** | 0.769 → 0.880 | 0.769 → 0.865 | 0.769 → 0.817 |
+| centroid 松浦↔森谷 | — | — | 0.490 → **0.859** | 0.490 → **0.490** |
+
+\* "before fix" columns are the 2026-06-10 every-error oracle (the only pre-fix data);
+after-fix columns use persistence-2. Stress case after the fix (every-error oracle):
+04-21 26→18 / reverts 0, 04-23 26→32 / reverts 7 — i.e., even under unrealistically
+aggressive correction the collapse is gone (0.933 / 0.766 vs 0.958 / 0.865+) and
+reverts drop.
+
+Reading:
+- **The lived complaint is addressed**: zero reverts in both sessions (was the
+  A→B→correct→B cycle), and the attractor session (04-21) improves 26→20 in
+  system-wrong terms — plus the 6 corrected chunks themselves are user-fixed, so
+  lived wrong-label exposure is roughly halved.
+- **04-23 is net-neutral in lived terms** (28 system-wrong − 3 user-fixed ≈ baseline
+  26): the residual +2 decomposes into (a) boundary-shadow trades — correcting at a
+  speaker boundary moves the error onto the next chunk via the `confirmSpeaker`
+  hard reset (state −100 floor + `pendingCount ≥ 2` means the next speaker's first
+  chunk is hard-labeled with the corrected speaker), and (b) one genuine adaptation
+  trade-off — teaching 上東's (that-day 松浦-like) live voice slightly increases
+  reverse 松浦→上東 confusion late in the session. (a) is a smoother-dynamics
+  property worth a future look (pending-on-contradiction after confirmSpeaker);
+  (b) is the fundamental live-voice↔profile overlap → per-profile calibration
+  (next priority).
+- Centroid collapse is eliminated: pairs stay bounded (0.880 worst case, vs 0.958
+  pre-fix at 1/3 the corrections) and 04-23 pairs are unchanged or move apart.
+
+Spec changes encoded in unit tests (`EmbeddingBasedSpeakerTrackerTests`):
+seeded-centroid formula test, gating test (label recorded, vector dropped), gradual
+adaptation test (8 plausible corrections flip identify; immediate continuity after a
+single correction is the Viterbi `confirmSpeaker`'s job, not the tracker's).
