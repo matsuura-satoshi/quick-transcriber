@@ -421,9 +421,10 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
         let profiles = tracker.exportProfiles()
         XCTAssertEqual(profiles[0].hitCount, 2)
-        // Loaded profile has confidence 1.0, new match has actual confidence
-        let totalWeight = 1.0 + conf
-        let expectedWeighted = zip(emb, similar).map { (1.0 * $0 + conf * $1) / totalWeight }
+        // Loaded profile is seeded at profileSeedWeight; new match has actual confidence
+        let seed = Constants.Embedding.profileSeedWeight
+        let totalWeight = seed + conf
+        let expectedWeighted = zip(emb, similar).map { (seed * $0 + conf * $1) / totalWeight }
         for i in 0..<expectedWeighted.count {
             XCTAssertEqual(profiles[0].embedding[i], expectedWeighted[i], accuracy: 0.001)
         }
@@ -678,10 +679,14 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         ])
         tracker.suppressLearning = true
 
-        // Manual mode: a manual correction is a trusted ground-truth sample for the target speaker.
-        // correctAssignment should append the embedding to target history with full confidence (1.0)
-        // while leaving the source profile untouched. The UserCorrection is also recorded.
-        tracker.correctAssignment(embedding: embA, from: idA, to: idB)
+        // Manual mode: a manual correction is a trusted ground-truth LABEL for the
+        // target speaker. The embedding is appended with full confidence (1.0) when it
+        // plausibly belongs to the target (>= similarityThreshold; below that it is
+        // blended/stale audio and is gated — see the poisoning-fix tests). The source
+        // profile is untouched and the UserCorrection is recorded either way.
+        var bLikeSample = makeEmbedding(dominant: 1)
+        bLikeSample[2] = 0.4   // session-condition shift, still clearly B-like
+        tracker.correctAssignment(embedding: bLikeSample, from: idA, to: idB)
 
         let detailed = tracker.exportDetailedProfiles()
         let profileA = detailed.first { $0.speakerId == idA }!
@@ -693,7 +698,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // Target (B) gains the corrected embedding as a trusted sample
         XCTAssertEqual(profileB.embeddingHistory.count, 2, "target profile gains the corrected embedding")
         let appended = profileB.embeddingHistory.last!
-        XCTAssertEqual(appended.embedding, embA)
+        XCTAssertEqual(appended.embedding, bLikeSample)
         XCTAssertEqual(appended.confidence, 1.0, accuracy: 0.001,
             "manual labels are trusted ground truth, stored with confidence 1.0")
 
@@ -868,7 +873,9 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         let initialB = profilesBefore.first { $0.speakerId == rB.speakerId }!.embedding
 
         // 10 回の手動訂正で同じ embedding を target A に学習させる
-        let newSample = makeEmbedding(dominant: 2)
+        // （A に十分似たサンプル — 閾値未満はゲートされる仕様、別テスト参照）
+        var newSample = makeEmbedding(dominant: 0)
+        newSample[2] = 0.8   // A-like with a strong session-condition component
         for _ in 0..<10 {
             tracker.correctAssignment(embedding: newSample, from: rB.speakerId, to: rA.speakerId)
         }
@@ -894,8 +901,13 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // End-to-end scenario matching the user complaint:
         // A new speaker (B) joins a regular meeting where A is well-established.
         // B's voice happens to look A-like on the embedding axis, so the tracker
-        // initially mis-identifies B's utterances as A. After the user corrects
-        // the assignment, subsequent chunks must prefer B without further clicks.
+        // initially mis-identifies B's utterances as A. Repeated corrections must
+        // teach B's centroid so identify eventually prefers B.
+        //
+        // Since the 2026-06-12 poisoning fix this adaptation is GRADUAL
+        // (profileSeedWeight damping) and requires the sample to clear
+        // similarityThreshold against B — immediate continuity after a single
+        // correction is the Viterbi confirmSpeaker's job, not the tracker's.
         let tracker = EmbeddingBasedSpeakerTracker()
         let idA = UUID()
         let idB = UUID()
@@ -906,23 +918,23 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         tracker.suppressLearning = true
 
         var ambiguous = [Float](repeating: 0.01, count: 256)
-        ambiguous[0] = 0.7   // A-like component (why it gets misidentified)
-        ambiguous[3] = 0.3   // actual B component
+        ambiguous[0] = 0.75  // A-like component (why it gets misidentified)
+        ambiguous[3] = 0.55  // actual B component (clears the learning gate)
 
         // Before correction: tracker picks the well-established A
         let beforeCorrection = tracker.identify(embedding: ambiguous)
         XCTAssertEqual(beforeCorrection.speakerId, idA,
             "initial identification favors the well-established A due to embedding similarity")
 
-        // User manually corrects across the continuous utterance
-        for _ in 0..<3 {
+        // User manually corrects across a sustained stretch of B speaking
+        for _ in 0..<8 {
             tracker.correctAssignment(embedding: ambiguous, from: idA, to: idB)
         }
 
         // Next chunk of the same voice: must now prefer B thanks to the trusted learning
         let afterCorrection = tracker.identify(embedding: ambiguous)
         XCTAssertEqual(afterCorrection.speakerId, idB,
-            "after corrections, B's centroid has been taught; subsequent identify must return B")
+            "after sustained corrections, B's centroid has been taught; identify must return B")
     }
 
     func testCorrectAssignment_suppressLearning_recordsUserCorrection() {
@@ -937,6 +949,99 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         XCTAssertEqual(corrections.count, 1)
         XCTAssertEqual(corrections[0].fromId, rB.speakerId)
         XCTAssertEqual(corrections[0].toId, rA.speakerId)
+    }
+
+    // MARK: - correction-poisoning fix (weighted seeding + sample gating, 2026-06-12)
+    // Diagnostic evidence: docs/benchmarks/2026-06-10-stickiness-diagnostic/report.md
+    // (confidence-1.0 appends at ~50% weight collapsed centroid pairs, e.g. 上東↔松浦
+    // 0.769→0.958, and made oracle-corrected sessions WORSE, 25→41 wrong).
+
+    /// A loaded profile must be seeded with weight ≫ 1 so a single correction
+    /// nudges the centroid by 1/(seed+1) instead of jumping 50%.
+    func testLoadProfiles_seededCentroidResistsSingleCorrection() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let idA = UUID()
+        let idB = UUID()
+        let storedA = makeEmbedding(dominant: 0)
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: storedA),
+            (speakerId: idB, embedding: makeEmbedding(dominant: 1))
+        ])
+        tracker.suppressLearning = true
+
+        // Plausible sample: A-like with a session-condition shift (cos ≈ 0.72 to A).
+        var sample = [Float](repeating: 0.01, count: 256)
+        sample[0] = 0.7
+        sample[2] = 0.7
+
+        tracker.correctAssignment(embedding: sample, from: idB, to: idA)
+
+        let finalA = tracker.exportProfiles().first { $0.speakerId == idA }!.embedding
+        let w = Constants.Embedding.profileSeedWeight
+        for i in 0..<storedA.count {
+            let expected = (w * storedA[i] + 1.0 * sample[i]) / (w + 1.0)
+            XCTAssertEqual(finalA[i], expected, accuracy: 1e-5,
+                "centroid must move by the seeded weighted mean, not a 50% jump (dim \(i))")
+        }
+    }
+
+    /// A corrected segment whose embedding does not even meet the identify
+    /// threshold against the target is NOT a usable voice sample (blended window /
+    /// stale cache audio): trust the LABEL (record the UserCorrection) but do not
+    /// poison the target centroid with the vector.
+    func testCorrectAssignment_suppressLearning_implausibleSampleLeavesCentroidUntouched() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let idA = UUID()
+        let idB = UUID()
+        let storedA = makeEmbedding(dominant: 0)
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: storedA),
+            (speakerId: idB, embedding: makeEmbedding(dominant: 1))
+        ])
+        tracker.suppressLearning = true
+
+        // Orthogonal sample: cos ≈ 0.04 to A — far below similarityThreshold.
+        let implausible = makeEmbedding(dominant: 2)
+        tracker.correctAssignment(embedding: implausible, from: idB, to: idA)
+
+        let finalA = tracker.exportProfiles().first { $0.speakerId == idA }!.embedding
+        XCTAssertEqual(finalA, storedA,
+            "below-threshold sample must not mutate the target centroid")
+        let corrections = tracker.exportUserCorrections()
+        XCTAssertEqual(corrections.count, 1,
+            "the user's label is still trusted and recorded")
+        XCTAssertEqual(corrections[0].toId, idA)
+    }
+
+    /// Adaptation is preserved: repeated plausible corrections still move the
+    /// target toward the live voice (gradually), and never touch the source.
+    func testCorrectAssignment_suppressLearning_plausibleSampleAdaptsTowardVoice() {
+        let tracker = EmbeddingBasedSpeakerTracker()
+        let idA = UUID()
+        let idB = UUID()
+        let storedB = makeEmbedding(dominant: 1)
+        tracker.loadProfiles([
+            (speakerId: idA, embedding: makeEmbedding(dominant: 0)),
+            (speakerId: idB, embedding: storedB)
+        ])
+        tracker.suppressLearning = true
+
+        var sample = [Float](repeating: 0.01, count: 256)
+        sample[0] = 0.7
+        sample[2] = 0.7
+
+        var lastCos = EmbeddingBasedSpeakerTracker.cosineSimilarity(
+            tracker.exportProfiles().first { $0.speakerId == idA }!.embedding, sample)
+        for _ in 0..<5 {
+            tracker.correctAssignment(embedding: sample, from: idB, to: idA)
+            let cosNow = EmbeddingBasedSpeakerTracker.cosineSimilarity(
+                tracker.exportProfiles().first { $0.speakerId == idA }!.embedding, sample)
+            XCTAssertGreaterThan(cosNow, lastCos,
+                "each plausible correction must move the target toward the voice")
+            lastCos = cosNow
+        }
+        XCTAssertEqual(tracker.exportProfiles().first { $0.speakerId == idB }!.embedding, storedB,
+            "source profile stays frozen in Manual mode")
     }
 
     func testCorrectAssignment_nonSuppress_usesLowerConfidence() {

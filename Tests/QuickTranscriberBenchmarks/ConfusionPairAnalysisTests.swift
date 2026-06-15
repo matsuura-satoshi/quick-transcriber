@@ -179,6 +179,11 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         var diagnostics: [ChunkDiagnostic] = []
         var pendingIndices: [Int] = []   // diagnostics indices awaiting Viterbi confirmation
         var corrections: [OracleCorrection] = []
+        // Persistence rule: a real user corrects labels that STAY wrong, not one-chunk
+        // boundary lag (which self-heals on the next chunk and whose instant correction
+        // just shifts the error onto the next speaker via the Viterbi reset). Trigger a
+        // correction on the 2nd consecutive own-confirmed chunk with the same gt→pred error.
+        var consecutiveWrongPair: (gt: String, pred: String, count: Int)? = nil
 
         var lastConfirmedName: String? = nil
         var prevRawEmbedding: [Float]? = nil
@@ -233,15 +238,32 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                     cosines: cosines
                 ))
 
-                // Oracle correction: zero-latency simulation of the production
-                // reassignSegment path (SpeakerStateCoordinator.reassignSegment →
-                // ChunkedWhisperEngine.correctSpeakerAssignment / syncViterbiConfirm).
+                // Oracle correction: simulation of the production reassignSegment
+                // path (SpeakerStateCoordinator.reassignSegment →
+                // ChunkedWhisperEngine.correctSpeakerAssignment / syncViterbiConfirm),
+                // triggered when the same gt→pred error persists for 2 consecutive
+                // own-confirmed chunks (realistic user-noticing model).
                 if let gtSegments = oracleGT,
                    let finalName = name,
+                   let gtName = groundTruthShortName(chunkStart: startT, chunkEnd: endT, segments: gtSegments) {
+                    if gtName != finalName {
+                        if let prev = consecutiveWrongPair, prev.gt == gtName, prev.pred == finalName {
+                            consecutiveWrongPair = (gtName, finalName, prev.count + 1)
+                        } else {
+                            consecutiveWrongPair = (gtName, finalName, 1)
+                        }
+                    } else {
+                        consecutiveWrongPair = nil
+                    }
+                }
+                if let gtSegments = oracleGT,
+                   let finalName = name,
+                   let pair = consecutiveWrongPair, pair.count >= 2,
                    let gtName = groundTruthShortName(chunkStart: startT, chunkEnd: endT, segments: gtSegments),
                    gtName != finalName,
                    let gtId = uuidByName[gtName],
                    let predId = uuidByName[finalName] {
+                    consecutiveWrongPair = nil   // corrected; restart persistence tracking
                     if let emb = raw?.embedding {
                         // ConfirmedSegment.speakerEmbedding == rawSpeakerResult?.embedding
                         diarizer.correctSpeakerAssignment(embedding: emb, from: predId, to: gtId)
@@ -499,6 +521,8 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         let centroidPairsBefore: [String: Float]   // "A↔B" cos at load time
         let centroidPairsAfter: [String: Float]    // same pairs after oracle corrections
         let corrections: [OracleCorrection]
+        let baselineRows: [StickinessRow]          // per-chunk rows, no-correction replay
+        let oracleRows: [StickinessRow]            // per-chunk rows, oracle-correction replay
     }
 
     func testCorrectionStickiness() async throws {
@@ -579,7 +603,9 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                 revertWithinSeconds: revertDelays,
                 centroidPairsBefore: pairsBefore,
                 centroidPairsAfter: pairsAfter,
-                corrections: corrections
+                corrections: corrections,
+                baselineRows: baseline.rows,
+                oracleRows: oracle.rows
             )
             artifacts.append(artifact)
 
