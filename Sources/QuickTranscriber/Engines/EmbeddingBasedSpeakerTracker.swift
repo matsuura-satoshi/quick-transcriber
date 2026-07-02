@@ -63,7 +63,6 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     private var profiles: [SpeakerProfile] = []
     private var userCorrections: [UserCorrection] = []
     private let similarityThreshold: Float
-    private let updateAlpha: Float
     public var expectedSpeakerCount: Int?
     private let lock = NSLock()
     private var lastConfirmedId: UUID?
@@ -75,12 +74,10 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     /// - Parameters:
     ///   - similarityThreshold: Minimum cosine similarity to match a known speaker (default: 0.5)
-    ///   - updateAlpha: Unused, kept for backward compatibility (default: 0.3)
     ///   - expectedSpeakerCount: Maximum number of speakers to track (nil = unlimited)
-    public init(similarityThreshold: Float = Constants.Embedding.similarityThreshold, updateAlpha: Float = 0.3,
+    public init(similarityThreshold: Float = Constants.Embedding.similarityThreshold,
                 expectedSpeakerCount: Int? = nil) {
         self.similarityThreshold = similarityThreshold
-        self.updateAlpha = updateAlpha
         self.expectedSpeakerCount = expectedSpeakerCount
     }
 
