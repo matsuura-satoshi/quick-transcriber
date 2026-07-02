@@ -42,12 +42,7 @@ public final class EmbeddingHistoryStore {
         existing.append(contentsOf: entries)
         existing = pruneEntries(existing)
         do {
-            let dir = fileURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: dir.path) {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
-            let data = try JSONEncoder().encode(existing)
-            try data.write(to: fileURL, options: .atomic)
+            try JSONFileStorage.write(existing, to: fileURL)
         } catch {
             NSLog("[EmbeddingHistoryStore] Failed to save: \(error)")
         }
@@ -109,8 +104,7 @@ public final class EmbeddingHistoryStore {
             if existing.isEmpty {
                 try? FileManager.default.removeItem(at: fileURL)
             } else {
-                let data = try JSONEncoder().encode(existing)
-                try data.write(to: fileURL, options: .atomic)
+                try JSONFileStorage.write(existing, to: fileURL)
             }
         } catch {
             NSLog("[EmbeddingHistoryStore] Failed to remove entries: \(error)")

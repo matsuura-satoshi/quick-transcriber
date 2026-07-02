@@ -290,13 +290,7 @@ private struct SpeakersSettingsTab: View {
         if !selectedTags.isEmpty {
             result = result.filter { selectedTags.isSubset(of: $0.tags) }
         }
-        if !searchText.isEmpty {
-            result = result.filter {
-                $0.displayName.localizedCaseInsensitiveContains(searchText)
-                || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
-            }
-        }
-        return result.sorted { $0.lastUsed > $1.lastUsed }
+        return result.matching(searchText).sorted { $0.lastUsed > $1.lastUsed }
     }
 
     private var filteredProfileIds: Set<UUID> {
