@@ -194,6 +194,3 @@ public final class ViterbiSpeakerSmoother: @unchecked Sendable {
         immediateConfirmNext = false
     }
 }
-
-// Backward compatibility alias
-public typealias SpeakerLabelTracker = ViterbiSpeakerSmoother

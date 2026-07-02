@@ -367,12 +367,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
     }
 
-    public func cleanup() {
-        Task { [weak self] in
-            await self?.stopStreaming()
-        }
-    }
-
     // MARK: - Private
 
     private func processChunk(

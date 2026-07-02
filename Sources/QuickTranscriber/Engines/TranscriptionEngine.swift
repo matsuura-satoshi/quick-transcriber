@@ -32,7 +32,6 @@ public protocol TranscriptionEngine: AnyObject {
     func setup(model: String) async throws
     func startStreaming(language: String, parameters: TranscriptionParameters, participantProfiles: [(speakerId: UUID, embedding: [Float])]?, audioRecordingDirectory: URL?, audioRecordingDatePrefix: String?, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
     func stopStreaming(speakerDisplayNames: [String: String]) async
-    func cleanup()
     var isStreaming: Bool { get async }
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
     func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID)
