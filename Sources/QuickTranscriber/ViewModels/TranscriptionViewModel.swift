@@ -660,9 +660,7 @@ public final class TranscriptionViewModel: ObservableObject {
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
         // Generate shared date prefix for transcript and recording files
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmm"
-        let datePrefix = formatter.string(from: Date())
+        let datePrefix = TranscriptFileWriter.makeDatePrefix()
 
         if !fileSessionActive {
             fileWriter.startSession(language: currentLanguage, initialText: confirmedText, datePrefix: datePrefix)
@@ -881,9 +879,7 @@ public final class TranscriptionViewModel: ObservableObject {
         params.concurrentWorkerCount = 1
 
         // Start file writer
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmm"
-        let datePrefix = formatter.string(from: Date())
+        let datePrefix = TranscriptFileWriter.makeDatePrefix()
         if !fileSessionActive {
             fileWriter.startSession(language: currentLanguage, initialText: "", datePrefix: datePrefix)
             fileSessionActive = true
