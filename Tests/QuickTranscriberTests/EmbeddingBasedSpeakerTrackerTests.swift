@@ -224,7 +224,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
     func testDistinctEmbeddingsRegisterDistinctSpeakers() {
         let tracker = EmbeddingBasedSpeakerTracker()
-        // Default strategy should create distinct speakers
+        // Distinct embeddings should register as distinct speakers
         let ids = [
             tracker.identify(embedding: makeEmbedding(dominant: 0)).speakerId,
             tracker.identify(embedding: makeEmbedding(dominant: 1)).speakerId,

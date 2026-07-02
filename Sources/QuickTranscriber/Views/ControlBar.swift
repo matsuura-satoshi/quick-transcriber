@@ -1,5 +1,7 @@
 import SwiftUI
 
+private let controlBarButtonPadding = EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+
 struct ControlBar: View {
     @Binding var currentLanguage: Language
     @Binding var translationEnabled: Bool
@@ -7,8 +9,6 @@ struct ControlBar: View {
     let onCopyAll: () -> Void
     let onExport: () -> Void
     let onClear: () -> Void
-
-    private let buttonPadding = EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
 
     var body: some View {
         HStack(spacing: 8) {
@@ -33,7 +33,7 @@ struct ControlBar: View {
                     onSwitchLanguage(lang)
                 }
                 .buttonStyle(.plain)
-                .padding(buttonPadding)
+                .padding(controlBarButtonPadding)
                 .background(currentLanguage == lang ? Color.accentColor : Color.clear)
                 .foregroundStyle(currentLanguage == lang ? .white : .primary)
             }
@@ -73,7 +73,7 @@ private struct ControlBarButton: View {
                 Image(systemName: systemImage)
                 Text(title)
             }
-            .padding(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+            .padding(controlBarButtonPadding)
         }
         .buttonStyle(.plain)
         .background(Color.secondary.opacity(0.15))

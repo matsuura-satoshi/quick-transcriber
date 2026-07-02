@@ -28,6 +28,9 @@ enum TranscriptTextViewSupport {
     }
 
     /// canDiffAppend のとき末尾差分のみ append、それ以外は選択範囲を保って全置換する。
+    /// - Precondition: `canDiffAppend == true` の場合、`attributed.string` は現在の
+    ///   textStorage 内容の prefix 拡張であること（呼び出し側の canDiffAppend 判定が保証する）。
+    ///   これが破れると負の長さの NSRange でクラッシュする。
     static func applyDiffAppendOrReplace(
         _ attributed: NSAttributedString,
         to textView: NSTextView,

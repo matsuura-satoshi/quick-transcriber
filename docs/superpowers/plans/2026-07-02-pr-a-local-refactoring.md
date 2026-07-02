@@ -1273,6 +1273,7 @@ swift run QuickTranscriber
 2. ControlBar: Copy / Save / Clear / Translate の各ボタン動作、**Cmd+T** で翻訳トグル（Task 10 の注意点）
 3. Settings → Speakers タブ: 検索フィールドとタグフィルタ（Task 5）、スライダー操作（Task 10）
 4. 翻訳ペイン表示時のスクロール追従（Task 11）
+5. ファイル転写: 音声ファイルをドロップ → 転写完了まで正常動作。翻訳 ON の場合、遡及的な話者変更が翻訳ペインにも同期される（本 PR 唯一の意図的挙動変更の確認）
 
 - [ ] **Step 3: push と PR 作成**
 
