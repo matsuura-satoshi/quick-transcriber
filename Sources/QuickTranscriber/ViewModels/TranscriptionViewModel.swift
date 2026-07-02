@@ -371,13 +371,27 @@ public final class TranscriptionViewModel: ObservableObject {
 
         let selfId: UUID
         let selfLinkedProfileId: UUID?
+        let sourceDisplayName: String
         switch forEntity {
         case .active(let id):
             selfId = id
-            selfLinkedProfileId = coordinator.activeSpeakers.first(where: { $0.id == id })?.speakerProfileId
+            let speaker = coordinator.activeSpeakers.first(where: { $0.id == id })
+            selfLinkedProfileId = speaker?.speakerProfileId
+            sourceDisplayName = speaker?.displayName ?? ""
         case .registered(let id):
             selfId = id
             selfLinkedProfileId = nil
+            sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
+        }
+
+        func makeRequest(target: SpeakerEntity, targetDisplayName: String) -> SpeakerMergeRequest {
+            SpeakerMergeRequest(
+                sourceEntity: forEntity,
+                targetEntity: target,
+                duplicateName: trimmed,
+                sourceDisplayName: sourceDisplayName,
+                targetDisplayName: targetDisplayName
+            )
         }
 
         // Check active speakers
@@ -386,20 +400,7 @@ public final class TranscriptionViewModel: ObservableObject {
             // Skip if this active speaker is the linked profile of self
             if let linkedId = selfLinkedProfileId, speaker.id == linkedId { continue }
             if let name = speaker.displayName, name.caseInsensitiveCompare(trimmed) == .orderedSame {
-                let sourceDisplayName: String
-                switch forEntity {
-                case .active(let id):
-                    sourceDisplayName = coordinator.activeSpeakers.first(where: { $0.id == id })?.displayName ?? ""
-                case .registered(let id):
-                    sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
-                }
-                return SpeakerMergeRequest(
-                    sourceEntity: forEntity,
-                    targetEntity: .active(id: speaker.id),
-                    duplicateName: trimmed,
-                    sourceDisplayName: sourceDisplayName,
-                    targetDisplayName: speaker.displayName ?? ""
-                )
+                return makeRequest(target: .active(id: speaker.id), targetDisplayName: speaker.displayName ?? "")
             }
         }
 
@@ -411,20 +412,7 @@ public final class TranscriptionViewModel: ObservableObject {
             // Skip if this profile is already represented by an active speaker we checked above
             if coordinator.activeSpeakers.contains(where: { $0.speakerProfileId == profile.id || $0.id == profile.id }) { continue }
             if profile.displayName.caseInsensitiveCompare(trimmed) == .orderedSame {
-                let sourceDisplayName: String
-                switch forEntity {
-                case .active(let id):
-                    sourceDisplayName = coordinator.activeSpeakers.first(where: { $0.id == id })?.displayName ?? ""
-                case .registered(let id):
-                    sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
-                }
-                return SpeakerMergeRequest(
-                    sourceEntity: forEntity,
-                    targetEntity: .registered(id: profile.id),
-                    duplicateName: trimmed,
-                    sourceDisplayName: sourceDisplayName,
-                    targetDisplayName: profile.displayName
-                )
+                return makeRequest(target: .registered(id: profile.id), targetDisplayName: profile.displayName)
             }
         }
 
