@@ -345,7 +345,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
         let hasSpeakers = segments.contains { $0.speaker != nil }
         let sentenceEnders: Set<Character> = (language == "ja")
-            ? ["。", "！", "？"] : [".", "!", "?"]
+            ? Constants.Translation.sentenceEndersJA : Constants.Translation.sentenceEndersEN
         let separator = (language == "ja") ? "" : " "
         let normalAttrs = confirmedAttributes(fontSize: fontSize)
 

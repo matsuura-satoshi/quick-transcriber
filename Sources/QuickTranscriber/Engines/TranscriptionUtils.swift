@@ -154,7 +154,7 @@ public enum TranscriptionUtils {
         guard !segments.isEmpty else { return "" }
         let hasSpeakers = segments.contains { $0.speaker != nil }
         let sentenceEnders: Set<Character> = (language == "ja")
-            ? ["。", "！", "？"] : [".", "!", "?"]
+            ? Constants.Translation.sentenceEndersJA : Constants.Translation.sentenceEndersEN
         let separator = (language == "ja") ? "" : " "
 
         var result = ""
