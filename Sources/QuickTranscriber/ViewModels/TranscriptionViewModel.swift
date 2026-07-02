@@ -649,6 +649,54 @@ public final class TranscriptionViewModel: ObservableObject {
         }
     }
 
+    /// エンジンからの状態更新を confirmedSegments / 話者 / 翻訳 / ファイルに反映する。
+    /// live 録音と file 転写の両経路で共用。
+    private func applyIncomingState(_ state: TranscriptionState, sessionSegments: [ConfirmedSegment]) {
+        NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
+        unconfirmedText = state.unconfirmedText
+        // Derive segments from text if engine didn't provide them
+        var stateSegments = state.confirmedSegments
+        if stateSegments.isEmpty && !state.confirmedText.isEmpty {
+            stateSegments = [ConfirmedSegment(text: state.confirmedText)]
+        }
+        let newSegments: [ConfirmedSegment]
+        if sessionSegments.isEmpty {
+            newSegments = stateSegments
+        } else if stateSegments.isEmpty {
+            newSegments = sessionSegments
+        } else {
+            newSegments = sessionSegments + stateSegments
+        }
+        // Snapshot speakers before merge for change detection
+        let oldSpeakers = confirmedSegments.map { $0.speaker }
+
+        confirmedSegments = Self.mergePreservingUserCorrections(
+            existing: confirmedSegments,
+            incoming: newSegments
+        )
+
+        // Detect retroactive speaker changes and propagate to translation
+        let existingCount = min(oldSpeakers.count, confirmedSegments.count)
+        var speakerChanged = false
+        for i in 0..<existingCount where oldSpeakers[i] != confirmedSegments[i].speaker {
+            speakerChanged = true
+            break
+        }
+        if speakerChanged {
+            translationService.syncSpeakerMetadata(from: confirmedSegments)
+        }
+
+        // Auto-detect new speakers from segments
+        for segment in stateSegments {
+            if let speakerId = segment.speaker {
+                coordinator.addAutoDetectedSpeaker(speakerId: speakerId, embedding: segment.speakerEmbedding)
+            }
+        }
+
+        syncSpeakerState()
+        fileWriter.updateText(confirmedText)
+    }
+
     private func startRecording() {
         guard modelState == .ready else {
             NSLog("[QuickTranscriber] Cannot record: model state = \(modelState)")
@@ -700,53 +748,8 @@ public final class TranscriptionViewModel: ObservableObject {
                     audioRecordingDirectory: audioRecordingDirectory,
                     audioRecordingDatePrefix: audioRecordingDatePrefix
                 ) { [weak self] state in
-                    NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        self.unconfirmedText = state.unconfirmedText
-                        // Derive segments from text if engine didn't provide them
-                        var stateSegments = state.confirmedSegments
-                        if stateSegments.isEmpty && !state.confirmedText.isEmpty {
-                            stateSegments = [ConfirmedSegment(text: state.confirmedText)]
-                        }
-                        let newSegments: [ConfirmedSegment]
-                        if sessionSegments.isEmpty {
-                            newSegments = stateSegments
-                        } else if stateSegments.isEmpty {
-                            newSegments = sessionSegments
-                        } else {
-                            newSegments = sessionSegments + stateSegments
-                        }
-                        // Snapshot speakers before merge for change detection
-                        let oldSpeakers = self.confirmedSegments.map { $0.speaker }
-
-                        self.confirmedSegments = Self.mergePreservingUserCorrections(
-                            existing: self.confirmedSegments,
-                            incoming: newSegments
-                        )
-
-                        // Detect retroactive speaker changes and propagate to translation
-                        let existingCount = min(oldSpeakers.count, self.confirmedSegments.count)
-                        var speakerChanged = false
-                        for i in 0..<existingCount {
-                            if oldSpeakers[i] != self.confirmedSegments[i].speaker {
-                                speakerChanged = true
-                                break
-                            }
-                        }
-                        if speakerChanged {
-                            self.translationService.syncSpeakerMetadata(from: self.confirmedSegments)
-                        }
-
-                        // Auto-detect new speakers from segments
-                        for segment in stateSegments {
-                            if let speakerId = segment.speaker {
-                                self.coordinator.addAutoDetectedSpeaker(speakerId: speakerId, embedding: segment.speakerEmbedding)
-                            }
-                        }
-
-                        self.syncSpeakerState()
-                        self.fileWriter.updateText(self.confirmedText)
+                        self?.applyIncomingState(state, sessionSegments: sessionSegments)
                     }
                 }
             } catch {
@@ -897,25 +900,7 @@ public final class TranscriptionViewModel: ObservableObject {
             ) { [weak self] state in
                 Task { @MainActor [weak self] in
                     guard let self, self.isTranscribingFile else { return }
-                    self.unconfirmedText = state.unconfirmedText
-                    var stateSegments = state.confirmedSegments
-                    if stateSegments.isEmpty && !state.confirmedText.isEmpty {
-                        stateSegments = [ConfirmedSegment(text: state.confirmedText)]
-                    }
-                    self.confirmedSegments = Self.mergePreservingUserCorrections(
-                        existing: self.confirmedSegments,
-                        incoming: stateSegments
-                    )
-                    for segment in stateSegments {
-                        if let speakerId = segment.speaker {
-                            self.coordinator.addAutoDetectedSpeaker(
-                                speakerId: speakerId,
-                                embedding: segment.speakerEmbedding
-                            )
-                        }
-                    }
-                    self.syncSpeakerState()
-                    self.fileWriter.updateText(self.confirmedText)
+                    self.applyIncomingState(state, sessionSegments: [])
                 }
             }
         } catch {
