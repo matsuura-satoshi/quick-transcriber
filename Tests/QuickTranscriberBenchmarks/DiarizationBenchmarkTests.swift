@@ -106,7 +106,6 @@ class DiarizationBenchmarkTestBase: XCTestCase {
         windowDuration: TimeInterval = 30.0,
         diarizationChunkDuration: Double? = nil,
         expectedSpeakerCount: Int? = nil,
-        profileStrategy: ProfileStrategy = .none,
         stayProbability: Double? = nil,
         label: String = "default"
     ) async throws -> DiarizationBenchmarkResult {
@@ -141,8 +140,7 @@ class DiarizationBenchmarkTestBase: XCTestCase {
                 updateAlpha: updateAlpha,
                 windowDuration: windowDuration,
                 diarizationChunkDuration: effectiveDiarizationChunkDuration,
-                expectedSpeakerCount: effectiveExpectedCount,
-                profileStrategy: profileStrategy
+                expectedSpeakerCount: effectiveExpectedCount
             )
             try await diarizer.setup()
 

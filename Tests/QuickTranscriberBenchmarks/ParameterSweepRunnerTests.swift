@@ -101,7 +101,6 @@ final class ParameterSweepRunnerManifestTests: XCTestCase {
             "similarityThreshold": .double(0.6),
             "diarizationChunkDuration": .double(5.0),
             "windowDuration": .double(10.0),
-            "profileStrategy": .string("culling"),
         ]
 
         let residual = try ParameterSweepRunner.apply(overrides: overrides, to: &params)
@@ -110,7 +109,6 @@ final class ParameterSweepRunnerManifestTests: XCTestCase {
         XCTAssertEqual(residual["similarityThreshold"]?.doubleValue, 0.6)
         XCTAssertEqual(residual["diarizationChunkDuration"]?.doubleValue, 5.0)
         XCTAssertEqual(residual["windowDuration"]?.doubleValue, 10.0)
-        XCTAssertEqual(residual["profileStrategy"]?.stringValue, "culling")
         XCTAssertNil(residual["chunkDuration"])
     }
 

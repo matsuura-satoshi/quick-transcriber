@@ -233,8 +233,7 @@ public enum ParameterSweepRunner {
             // Stage-2 diarization component parameters — pass through to caller.
             case "similarityThreshold",
                  "diarizationChunkDuration",
-                 "windowDuration",
-                 "profileStrategy":
+                 "windowDuration":
                 residual[key] = value
 
             default:
