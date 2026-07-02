@@ -13,31 +13,10 @@ struct TranslationTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-
         let textView = NSTextView()
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isRichText = true
-        textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 12, height: 12)
-        textView.isAutomaticLinkDetectionEnabled = false
-        textView.isAutomaticDataDetectionEnabled = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(
-            width: scrollView.contentSize.width,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-
-        scrollView.documentView = textView
+        let scrollView = TranscriptTextViewSupport.makeScrollView(wrapping: textView)
         context.coordinator.textView = textView
         context.coordinator.scrollView = scrollView
-
         return scrollView
     }
 
@@ -66,18 +45,7 @@ struct TranslationTextView: NSViewRepresentable {
             && newText.hasPrefix(currentText)
             && newText.count > currentText.count
 
-        if canDiffAppend {
-            let deltaStart = (currentText as NSString).length
-            let deltaRange = NSRange(location: deltaStart, length: attributed.length - deltaStart)
-            textStorage.append(attributed.attributedSubstring(from: deltaRange))
-        } else {
-            let savedRange = textView.selectedRange()
-            let hadSelection = savedRange.length > 0
-            textStorage.setAttributedString(attributed)
-            if hadSelection && NSMaxRange(savedRange) <= textStorage.length {
-                textView.setSelectedRange(savedRange)
-            }
-        }
+        TranscriptTextViewSupport.applyDiffAppendOrReplace(attributed, to: textView, canDiffAppend: canDiffAppend)
 
         coordinator.lastFontSize = fontSize
 
@@ -94,14 +62,7 @@ struct TranslationTextView: NSViewRepresentable {
         var lastFontSize: CGFloat = 0
 
         func isScrolledToBottom() -> Bool {
-            guard let scrollView = scrollView,
-                  let documentView = scrollView.documentView else {
-                return true
-            }
-            let visibleRect = scrollView.contentView.bounds
-            let documentHeight = documentView.frame.height
-            let threshold: CGFloat = 50
-            return visibleRect.maxY >= documentHeight - threshold
+            TranscriptTextViewSupport.isScrolledToBottom(scrollView)
         }
     }
 }
