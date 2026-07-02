@@ -113,7 +113,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
 
     func testCosineSimilarityIdentical() {
         let v = makeEmbedding(dominant: 0)
-        let similarity = EmbeddingBasedSpeakerTracker.cosineSimilarity(v, v)
+        let similarity = EmbeddingMath.cosineSimilarity(v, v)
         XCTAssertEqual(similarity, 1.0, accuracy: 0.001)
     }
 
@@ -122,7 +122,7 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         a[0] = 1.0
         var b = [Float](repeating: 0, count: 256)
         b[1] = 1.0
-        let similarity = EmbeddingBasedSpeakerTracker.cosineSimilarity(a, b)
+        let similarity = EmbeddingMath.cosineSimilarity(a, b)
         XCTAssertEqual(similarity, 0.0, accuracy: 0.001)
     }
 
@@ -788,8 +788,8 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         // Target profile (A) moved significantly toward the newly learned sample
         XCTAssertNotEqual(finalA, initialA,
             "target profile centroid must shift toward corrected embedding")
-        let shiftTowardNew = EmbeddingBasedSpeakerTracker.cosineSimilarity(finalA, newSample)
-        let originalToNew = EmbeddingBasedSpeakerTracker.cosineSimilarity(initialA, newSample)
+        let shiftTowardNew = EmbeddingMath.cosineSimilarity(finalA, newSample)
+        let originalToNew = EmbeddingMath.cosineSimilarity(initialA, newSample)
         XCTAssertGreaterThan(shiftTowardNew, originalToNew,
             "target centroid should be closer to the learned sample after repeated corrections")
     }
@@ -927,11 +927,11 @@ final class EmbeddingBasedSpeakerTrackerTests: XCTestCase {
         sample[0] = 0.7
         sample[2] = 0.7
 
-        var lastCos = EmbeddingBasedSpeakerTracker.cosineSimilarity(
+        var lastCos = EmbeddingMath.cosineSimilarity(
             tracker.exportProfiles().first { $0.speakerId == idA }!.embedding, sample)
         for _ in 0..<5 {
             tracker.correctAssignment(embedding: sample, from: idB, to: idA)
-            let cosNow = EmbeddingBasedSpeakerTracker.cosineSimilarity(
+            let cosNow = EmbeddingMath.cosineSimilarity(
                 tracker.exportProfiles().first { $0.speakerId == idA }!.embedding, sample)
             XCTAssertGreaterThan(cosNow, lastCos,
                 "each plausible correction must move the target toward the voice")

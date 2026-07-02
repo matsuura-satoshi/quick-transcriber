@@ -90,7 +90,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             var bestSimilarity: Float = -1
 
             for (i, profile) in profiles.enumerated() {
-                let sim = Self.cosineSimilarity(embedding, profile.embedding)
+                let sim = EmbeddingMath.cosineSimilarity(embedding, profile.embedding)
                 if sim > bestSimilarity {
                     bestSimilarity = sim
                     bestIndex = i
@@ -101,7 +101,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             if bestIndex >= 0 && profiles.count > 1 {
                 var candidates: [(index: Int, profile: SpeakerProfile)] = []
                 for (i, profile) in profiles.enumerated() {
-                    let sim = Self.cosineSimilarity(embedding, profile.embedding)
+                    let sim = EmbeddingMath.cosineSimilarity(embedding, profile.embedding)
                     if abs(sim - bestSimilarity) <= Constants.Embedding.tieBreakerEpsilon {
                         candidates.append((i, profile))
                     }
@@ -153,18 +153,8 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     /// Recalculate the centroid embedding as confidence-weighted mean of all history entries.
     private func recalculateEmbedding(at index: Int) {
         let history = profiles[index].embeddingHistory
-        guard let first = history.first else { return }
-        let dims = first.embedding.count
-        var weightedSum = [Float](repeating: 0, count: dims)
-        var totalWeight: Float = 0
-        for entry in history {
-            totalWeight += entry.confidence
-            for i in 0..<dims {
-                weightedSum[i] += entry.confidence * entry.embedding[i]
-            }
-        }
-        guard totalWeight > 0 else { return }
-        profiles[index].embedding = weightedSum.map { $0 / totalWeight }
+        guard let mean = EmbeddingMath.weightedMean(history.map { (embedding: $0.embedding, weight: $0.confidence) }) else { return }
+        profiles[index].embedding = mean
         profiles[index].hitCount = history.count
     }
 
@@ -214,7 +204,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 // ため、閾値以上のサンプルのみ学習する。source profile は動かさない
                 // （Manual mode では auto 判定の汚染を避けるため従来通り凍結）。
                 if let newIdx = profiles.firstIndex(where: { $0.id == newId }) {
-                    let sim = Self.cosineSimilarity(embedding, profiles[newIdx].embedding)
+                    let sim = EmbeddingMath.cosineSimilarity(embedding, profiles[newIdx].embedding)
                     if sim >= similarityThreshold {
                         profiles[newIdx].embeddingHistory.append(
                             WeightedEmbedding(embedding: embedding, confidence: 1.0)
@@ -296,29 +286,13 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
     }
 
-    /// Cosine similarity between two vectors.
-    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else { return 0 }
-        var dot: Float = 0
-        var normA: Float = 0
-        var normB: Float = 0
-        for i in 0..<a.count {
-            dot += a[i] * b[i]
-            normA += a[i] * a[i]
-            normB += b[i] * b[i]
-        }
-        let denom = sqrt(normA) * sqrt(normB)
-        guard denom > 0 else { return 0 }
-        return dot / denom
-    }
-
     /// Remove the embedding history entry most similar to `target` (≥ 0.9999 cosine).
     /// Returns true if an entry was removed.
     private static func removeClosestMatch(in history: inout [WeightedEmbedding], target: [Float]) -> Bool {
         var bestIndex = -1
         var bestSim: Float = 0.9999  // threshold: 実質同一
         for (i, entry) in history.enumerated() {
-            let sim = cosineSimilarity(entry.embedding, target)
+            let sim = EmbeddingMath.cosineSimilarity(entry.embedding, target)
             if sim >= bestSim {
                 bestSim = sim
                 bestIndex = i

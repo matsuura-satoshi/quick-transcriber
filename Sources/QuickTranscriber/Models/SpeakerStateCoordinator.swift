@@ -421,12 +421,11 @@ public final class SpeakerStateCoordinator {
             let alpha: Float = totalSessions > 0
                 ? Float(absProfile.sessionCount) / Float(totalSessions)
                 : 0.5
-            profileStore.profiles[survIdx].embedding = zip(
+            profileStore.profiles[survIdx].embedding = EmbeddingMath.blend(
                 profileStore.profiles[survIdx].embedding,
-                absProfile.embedding
-            ).map { survEmb, absEmb in
-                (1 - alpha) * survEmb + alpha * absEmb
-            }
+                absProfile.embedding,
+                alpha: alpha
+            )
 
             profileStore.profiles[survIdx].sessionCount += absProfile.sessionCount
             profileStore.profiles[survIdx].lastUsed = max(

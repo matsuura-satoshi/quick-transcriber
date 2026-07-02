@@ -303,7 +303,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                   !existing.isLocked else { continue }
 
             let embeddings = samples.compactMap { $0.speakerEmbedding }
-            guard let centroid = Self.centroid(of: embeddings) else { continue }
+            guard let centroid = EmbeddingMath.weightedMean(embeddings.map { (embedding: $0, weight: 1.0) }) else { continue }
 
             let alpha = min(
                 Constants.Embedding.sessionLearningAlphaMax,
@@ -328,22 +328,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         applyManualModePostHocLearning(store: store, participantIds: participantIds, segments: segments)
     }
     #endif
-
-    private static func centroid(of embeddings: [[Float]]) -> [Float]? {
-        guard let first = embeddings.first else { return nil }
-        let dims = first.count
-        guard dims > 0 else { return nil }
-        var sum = [Float](repeating: 0, count: dims)
-        var included = 0
-        for e in embeddings {
-            guard e.count == dims else { continue }
-            for i in 0..<dims { sum[i] += e[i] }
-            included += 1
-        }
-        guard included > 0 else { return nil }
-        let count = Float(included)
-        return sum.map { $0 / count }
-    }
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)

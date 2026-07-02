@@ -125,10 +125,8 @@ public final class SpeakerProfileStore {
         for (speakerId, embedding, displayName) in sessionProfiles {
             // Priority 1: ID match
             if let idMatchIndex = profiles.firstIndex(where: { $0.id == speakerId }) {
-                let alpha = updateAlpha
-                profiles[idMatchIndex].embedding = zip(profiles[idMatchIndex].embedding, embedding).map { old, new in
-                    (1 - alpha) * old + alpha * new
-                }
+                profiles[idMatchIndex].embedding = EmbeddingMath.blend(
+                    profiles[idMatchIndex].embedding, embedding, alpha: updateAlpha)
                 profiles[idMatchIndex].lastUsed = Date()
                 profiles[idMatchIndex].sessionCount += 1
             } else {
@@ -148,11 +146,8 @@ public final class SpeakerProfileStore {
     ///   - alpha: Blend weight in [0, 1]. New = (1-α)*existing + α*sessionCentroid.
     public func applyPostHocLearning(speakerId: UUID, sessionCentroid: [Float], alpha: Float) {
         guard let idx = profiles.firstIndex(where: { $0.id == speakerId }) else { return }
-        let existing = profiles[idx].embedding
-        guard existing.count == sessionCentroid.count else { return }
-        profiles[idx].embedding = zip(existing, sessionCentroid).map { old, new in
-            (1 - alpha) * old + alpha * new
-        }
+        guard profiles[idx].embedding.count == sessionCentroid.count else { return }
+        profiles[idx].embedding = EmbeddingMath.blend(profiles[idx].embedding, sessionCentroid, alpha: alpha)
         profiles[idx].lastUsed = Date()
         profiles[idx].sessionCount += 1
     }
