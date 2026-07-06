@@ -17,7 +17,6 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     var stopStreamingCalled = false
     var stopStreamingCallCount: Int = 0
     var stopStreamingSpeakerDisplayNames: [String: String]?
-    var cleanupCalled = false
 
     private var _isStreaming = false
     var isStreaming: Bool {
@@ -56,12 +55,6 @@ final class MockTranscriptionEngine: TranscriptionEngine {
         stopStreamingCalled = true
         stopStreamingCallCount += 1
         stopStreamingSpeakerDisplayNames = speakerDisplayNames
-        _isStreaming = false
-        stateChangeCallback = nil
-    }
-
-    func cleanup() {
-        cleanupCalled = true
         _isStreaming = false
         stateChangeCallback = nil
     }

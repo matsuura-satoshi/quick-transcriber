@@ -102,11 +102,9 @@ class DiarizationBenchmarkTestBase: XCTestCase {
         maxConversations: Int = 50,
         chunkDuration: Double = 3.0,
         similarityThreshold: Float = 0.5,
-        updateAlpha: Float = 0.3,
         windowDuration: TimeInterval = 30.0,
         diarizationChunkDuration: Double? = nil,
         expectedSpeakerCount: Int? = nil,
-        profileStrategy: ProfileStrategy = .none,
         stayProbability: Double? = nil,
         label: String = "default"
     ) async throws -> DiarizationBenchmarkResult {
@@ -138,11 +136,9 @@ class DiarizationBenchmarkTestBase: XCTestCase {
             }
             let diarizer = FluidAudioSpeakerDiarizer(
                 similarityThreshold: similarityThreshold,
-                updateAlpha: updateAlpha,
                 windowDuration: windowDuration,
                 diarizationChunkDuration: effectiveDiarizationChunkDuration,
-                expectedSpeakerCount: effectiveExpectedCount,
-                profileStrategy: profileStrategy
+                expectedSpeakerCount: effectiveExpectedCount
             )
             try await diarizer.setup()
 

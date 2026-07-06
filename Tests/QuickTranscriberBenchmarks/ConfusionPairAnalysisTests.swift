@@ -30,7 +30,7 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         var pairs: [RosterSimilarityArtifact.Pair] = []
         for i in 0..<ordered.count {
             for j in 0..<ordered.count {
-                let sim = EmbeddingBasedSpeakerTracker.cosineSimilarity(ordered[i].embedding, ordered[j].embedding)
+                let sim = EmbeddingMath.cosineSimilarity(ordered[i].embedding, ordered[j].embedding)
                 matrix[i][j] = sim
                 if i < j {
                     pairs.append(.init(a: ordered[i].displayName, b: ordered[j].displayName, similarity: sim))
@@ -216,7 +216,7 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
             var cosines: [String: Float] = [:]
             if let e = raw?.embedding {
                 for (name, centroid) in currentCentroidsByName() {
-                    cosines[name] = EmbeddingBasedSpeakerTracker.cosineSimilarity(e, centroid)
+                    cosines[name] = EmbeddingMath.cosineSimilarity(e, centroid)
                 }
             }
             let rawName = raw.flatMap { nameById[$0.speakerId.uuidString] }
@@ -589,8 +589,8 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                 guard parts.count == 2,
                       let beforeA = loadedByName[parts[0]], let beforeB = loadedByName[parts[1]],
                       let afterA = finalCentroids[parts[0]], let afterB = finalCentroids[parts[1]] else { continue }
-                pairsBefore[pairKey] = EmbeddingBasedSpeakerTracker.cosineSimilarity(beforeA, beforeB)
-                pairsAfter[pairKey] = EmbeddingBasedSpeakerTracker.cosineSimilarity(afterA, afterB)
+                pairsBefore[pairKey] = EmbeddingMath.cosineSimilarity(beforeA, beforeB)
+                pairsAfter[pairKey] = EmbeddingMath.cosineSimilarity(afterA, afterB)
             }
 
             let artifact = CorrectionStickinessArtifact(

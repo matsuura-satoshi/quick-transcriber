@@ -1,5 +1,7 @@
 import SwiftUI
 
+private let controlBarButtonPadding = EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+
 struct ControlBar: View {
     @Binding var currentLanguage: Language
     @Binding var translationEnabled: Bool
@@ -7,8 +9,6 @@ struct ControlBar: View {
     let onCopyAll: () -> Void
     let onExport: () -> Void
     let onClear: () -> Void
-
-    private let buttonPadding = EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
 
     var body: some View {
         HStack(spacing: 8) {
@@ -33,7 +33,7 @@ struct ControlBar: View {
                     onSwitchLanguage(lang)
                 }
                 .buttonStyle(.plain)
-                .padding(buttonPadding)
+                .padding(controlBarButtonPadding)
                 .background(currentLanguage == lang ? Color.accentColor : Color.clear)
                 .foregroundStyle(currentLanguage == lang ? .white : .primary)
             }
@@ -43,52 +43,37 @@ struct ControlBar: View {
     }
 
     private var translateButton: some View {
-        Button { translationEnabled.toggle() } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "translate")
-                Text(translationEnabled ? "Hide" : "Translate")
-            }
-            .padding(buttonPadding)
+        ControlBarButton(systemImage: "translate", title: translationEnabled ? "Hide" : "Translate") {
+            translationEnabled.toggle()
         }
-        .buttonStyle(.plain)
-        .background(Color.secondary.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
         .keyboardShortcut("t", modifiers: .command)
     }
 
     private var copyAllButton: some View {
-        Button(action: onCopyAll) {
-            HStack(spacing: 6) {
-                Image(systemName: "doc.on.doc")
-                Text("Copy")
-            }
-            .padding(buttonPadding)
-        }
-        .buttonStyle(.plain)
-        .background(Color.secondary.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        ControlBarButton(systemImage: "doc.on.doc", title: "Copy", action: onCopyAll)
     }
 
     private var exportButton: some View {
-        Button(action: onExport) {
-            HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.down")
-                Text("Save")
-            }
-            .padding(buttonPadding)
-        }
-        .buttonStyle(.plain)
-        .background(Color.secondary.opacity(0.15))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        ControlBarButton(systemImage: "square.and.arrow.down", title: "Save", action: onExport)
     }
 
     private var clearButton: some View {
-        Button(action: onClear) {
+        ControlBarButton(systemImage: "trash", title: "Clear", action: onClear)
+    }
+}
+
+private struct ControlBarButton: View {
+    let systemImage: String
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: "trash")
-                Text("Clear")
+                Image(systemName: systemImage)
+                Text(title)
             }
-            .padding(buttonPadding)
+            .padding(controlBarButtonPadding)
         }
         .buttonStyle(.plain)
         .background(Color.secondary.opacity(0.15))

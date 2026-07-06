@@ -62,17 +62,6 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(engine.stopStreamingCalled)
     }
 
-    func testCleanup() async throws {
-        let engine = MockTranscriptionEngine()
-        let service = TranscriptionService(engine: engine)
-
-        try await service.prepare(model: "test-model")
-        service.cleanup()
-
-        XCTAssertTrue(engine.cleanupCalled)
-        XCTAssertFalse(service.isReady)
-    }
-
     // MARK: - エッジケース
 
     func testDoubleStartThrowsAlreadyStreaming() async throws {
@@ -99,21 +88,6 @@ final class TranscriptionServiceTests: XCTestCase {
         // stopTranscription on a non-started service should not crash
         await service.stopTranscription()
         XCTAssertTrue(engine.stopStreamingCalled)
-    }
-
-    func testCleanupThenStartThrows() async throws {
-        let engine = MockTranscriptionEngine()
-        let service = TranscriptionService(engine: engine)
-
-        try await service.prepare(model: "test-model")
-        service.cleanup()
-
-        do {
-            try await service.startTranscription(language: "en") { _ in }
-            XCTFail("Expected error after cleanup")
-        } catch let error as TranscriptionServiceError {
-            XCTAssertEqual(error, .engineNotReady)
-        }
     }
 
     func testCorrectSpeakerAssignmentForwardsToEngine() {

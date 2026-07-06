@@ -371,13 +371,27 @@ public final class TranscriptionViewModel: ObservableObject {
 
         let selfId: UUID
         let selfLinkedProfileId: UUID?
+        let sourceDisplayName: String
         switch forEntity {
         case .active(let id):
             selfId = id
-            selfLinkedProfileId = coordinator.activeSpeakers.first(where: { $0.id == id })?.speakerProfileId
+            let speaker = coordinator.activeSpeakers.first(where: { $0.id == id })
+            selfLinkedProfileId = speaker?.speakerProfileId
+            sourceDisplayName = speaker?.displayName ?? ""
         case .registered(let id):
             selfId = id
             selfLinkedProfileId = nil
+            sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
+        }
+
+        func makeRequest(target: SpeakerEntity, targetDisplayName: String) -> SpeakerMergeRequest {
+            SpeakerMergeRequest(
+                sourceEntity: forEntity,
+                targetEntity: target,
+                duplicateName: trimmed,
+                sourceDisplayName: sourceDisplayName,
+                targetDisplayName: targetDisplayName
+            )
         }
 
         // Check active speakers
@@ -386,20 +400,7 @@ public final class TranscriptionViewModel: ObservableObject {
             // Skip if this active speaker is the linked profile of self
             if let linkedId = selfLinkedProfileId, speaker.id == linkedId { continue }
             if let name = speaker.displayName, name.caseInsensitiveCompare(trimmed) == .orderedSame {
-                let sourceDisplayName: String
-                switch forEntity {
-                case .active(let id):
-                    sourceDisplayName = coordinator.activeSpeakers.first(where: { $0.id == id })?.displayName ?? ""
-                case .registered(let id):
-                    sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
-                }
-                return SpeakerMergeRequest(
-                    sourceEntity: forEntity,
-                    targetEntity: .active(id: speaker.id),
-                    duplicateName: trimmed,
-                    sourceDisplayName: sourceDisplayName,
-                    targetDisplayName: speaker.displayName ?? ""
-                )
+                return makeRequest(target: .active(id: speaker.id), targetDisplayName: speaker.displayName ?? "")
             }
         }
 
@@ -411,20 +412,7 @@ public final class TranscriptionViewModel: ObservableObject {
             // Skip if this profile is already represented by an active speaker we checked above
             if coordinator.activeSpeakers.contains(where: { $0.speakerProfileId == profile.id || $0.id == profile.id }) { continue }
             if profile.displayName.caseInsensitiveCompare(trimmed) == .orderedSame {
-                let sourceDisplayName: String
-                switch forEntity {
-                case .active(let id):
-                    sourceDisplayName = coordinator.activeSpeakers.first(where: { $0.id == id })?.displayName ?? ""
-                case .registered(let id):
-                    sourceDisplayName = speakerProfileStore.profiles.first(where: { $0.id == id })?.displayName ?? ""
-                }
-                return SpeakerMergeRequest(
-                    sourceEntity: forEntity,
-                    targetEntity: .registered(id: profile.id),
-                    duplicateName: trimmed,
-                    sourceDisplayName: sourceDisplayName,
-                    targetDisplayName: profile.displayName
-                )
+                return makeRequest(target: .registered(id: profile.id), targetDisplayName: profile.displayName)
             }
         }
 
@@ -649,6 +637,54 @@ public final class TranscriptionViewModel: ObservableObject {
         }
     }
 
+    /// エンジンからの状態更新を confirmedSegments / 話者 / 翻訳 / ファイルに反映する。
+    /// live 録音と file 転写の両経路で共用。
+    private func applyIncomingState(_ state: TranscriptionState, sessionSegments: [ConfirmedSegment]) {
+        NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
+        unconfirmedText = state.unconfirmedText
+        // Derive segments from text if engine didn't provide them
+        var stateSegments = state.confirmedSegments
+        if stateSegments.isEmpty && !state.confirmedText.isEmpty {
+            stateSegments = [ConfirmedSegment(text: state.confirmedText)]
+        }
+        let newSegments: [ConfirmedSegment]
+        if sessionSegments.isEmpty {
+            newSegments = stateSegments
+        } else if stateSegments.isEmpty {
+            newSegments = sessionSegments
+        } else {
+            newSegments = sessionSegments + stateSegments
+        }
+        // Snapshot speakers before merge for change detection
+        let oldSpeakers = confirmedSegments.map { $0.speaker }
+
+        confirmedSegments = Self.mergePreservingUserCorrections(
+            existing: confirmedSegments,
+            incoming: newSegments
+        )
+
+        // Detect retroactive speaker changes and propagate to translation
+        let existingCount = min(oldSpeakers.count, confirmedSegments.count)
+        var speakerChanged = false
+        for i in 0..<existingCount where oldSpeakers[i] != confirmedSegments[i].speaker {
+            speakerChanged = true
+            break
+        }
+        if speakerChanged {
+            translationService.syncSpeakerMetadata(from: confirmedSegments)
+        }
+
+        // Auto-detect new speakers from segments
+        for segment in stateSegments {
+            if let speakerId = segment.speaker {
+                coordinator.addAutoDetectedSpeaker(speakerId: speakerId, embedding: segment.speakerEmbedding)
+            }
+        }
+
+        syncSpeakerState()
+        fileWriter.updateText(confirmedText)
+    }
+
     private func startRecording() {
         guard modelState == .ready else {
             NSLog("[QuickTranscriber] Cannot record: model state = \(modelState)")
@@ -660,9 +696,7 @@ public final class TranscriptionViewModel: ObservableObject {
         NSLog("[QuickTranscriber] Starting recording, language: \(currentLanguage.rawValue), params: \(params)")
 
         // Generate shared date prefix for transcript and recording files
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmm"
-        let datePrefix = formatter.string(from: Date())
+        let datePrefix = TranscriptFileWriter.makeDatePrefix()
 
         if !fileSessionActive {
             fileWriter.startSession(language: currentLanguage, initialText: confirmedText, datePrefix: datePrefix)
@@ -702,53 +736,8 @@ public final class TranscriptionViewModel: ObservableObject {
                     audioRecordingDirectory: audioRecordingDirectory,
                     audioRecordingDatePrefix: audioRecordingDatePrefix
                 ) { [weak self] state in
-                    NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
                     Task { @MainActor [weak self] in
-                        guard let self else { return }
-                        self.unconfirmedText = state.unconfirmedText
-                        // Derive segments from text if engine didn't provide them
-                        var stateSegments = state.confirmedSegments
-                        if stateSegments.isEmpty && !state.confirmedText.isEmpty {
-                            stateSegments = [ConfirmedSegment(text: state.confirmedText)]
-                        }
-                        let newSegments: [ConfirmedSegment]
-                        if sessionSegments.isEmpty {
-                            newSegments = stateSegments
-                        } else if stateSegments.isEmpty {
-                            newSegments = sessionSegments
-                        } else {
-                            newSegments = sessionSegments + stateSegments
-                        }
-                        // Snapshot speakers before merge for change detection
-                        let oldSpeakers = self.confirmedSegments.map { $0.speaker }
-
-                        self.confirmedSegments = Self.mergePreservingUserCorrections(
-                            existing: self.confirmedSegments,
-                            incoming: newSegments
-                        )
-
-                        // Detect retroactive speaker changes and propagate to translation
-                        let existingCount = min(oldSpeakers.count, self.confirmedSegments.count)
-                        var speakerChanged = false
-                        for i in 0..<existingCount {
-                            if oldSpeakers[i] != self.confirmedSegments[i].speaker {
-                                speakerChanged = true
-                                break
-                            }
-                        }
-                        if speakerChanged {
-                            self.translationService.syncSpeakerMetadata(from: self.confirmedSegments)
-                        }
-
-                        // Auto-detect new speakers from segments
-                        for segment in stateSegments {
-                            if let speakerId = segment.speaker {
-                                self.coordinator.addAutoDetectedSpeaker(speakerId: speakerId, embedding: segment.speakerEmbedding)
-                            }
-                        }
-
-                        self.syncSpeakerState()
-                        self.fileWriter.updateText(self.confirmedText)
+                        self?.applyIncomingState(state, sessionSegments: sessionSegments)
                     }
                 }
             } catch {
@@ -881,9 +870,7 @@ public final class TranscriptionViewModel: ObservableObject {
         params.concurrentWorkerCount = 1
 
         // Start file writer
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HHmm"
-        let datePrefix = formatter.string(from: Date())
+        let datePrefix = TranscriptFileWriter.makeDatePrefix()
         if !fileSessionActive {
             fileWriter.startSession(language: currentLanguage, initialText: "", datePrefix: datePrefix)
             fileSessionActive = true
@@ -901,25 +888,7 @@ public final class TranscriptionViewModel: ObservableObject {
             ) { [weak self] state in
                 Task { @MainActor [weak self] in
                     guard let self, self.isTranscribingFile else { return }
-                    self.unconfirmedText = state.unconfirmedText
-                    var stateSegments = state.confirmedSegments
-                    if stateSegments.isEmpty && !state.confirmedText.isEmpty {
-                        stateSegments = [ConfirmedSegment(text: state.confirmedText)]
-                    }
-                    self.confirmedSegments = Self.mergePreservingUserCorrections(
-                        existing: self.confirmedSegments,
-                        incoming: stateSegments
-                    )
-                    for segment in stateSegments {
-                        if let speakerId = segment.speaker {
-                            self.coordinator.addAutoDetectedSpeaker(
-                                speakerId: speakerId,
-                                embedding: segment.speakerEmbedding
-                            )
-                        }
-                    }
-                    self.syncSpeakerState()
-                    self.fileWriter.updateText(self.confirmedText)
+                    self.applyIncomingState(state, sessionSegments: [])
                 }
             }
         } catch {

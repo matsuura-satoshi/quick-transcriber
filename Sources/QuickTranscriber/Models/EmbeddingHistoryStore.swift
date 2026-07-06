@@ -42,12 +42,7 @@ public final class EmbeddingHistoryStore {
         existing.append(contentsOf: entries)
         existing = pruneEntries(existing)
         do {
-            let dir = fileURL.deletingLastPathComponent()
-            if !FileManager.default.fileExists(atPath: dir.path) {
-                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
-            let data = try JSONEncoder().encode(existing)
-            try data.write(to: fileURL, options: .atomic)
+            try JSONFileStorage.write(existing, to: fileURL)
         } catch {
             NSLog("[EmbeddingHistoryStore] Failed to save: \(error)")
         }
@@ -109,8 +104,7 @@ public final class EmbeddingHistoryStore {
             if existing.isEmpty {
                 try? FileManager.default.removeItem(at: fileURL)
             } else {
-                let data = try JSONEncoder().encode(existing)
-                try data.write(to: fileURL, options: .atomic)
+                try JSONFileStorage.write(existing, to: fileURL)
             }
         } catch {
             NSLog("[EmbeddingHistoryStore] Failed to remove entries: \(error)")
@@ -127,19 +121,6 @@ public final class EmbeddingHistoryStore {
             .filter { $0.speakerProfileId == profileId }
             .flatMap { $0.embeddings }
             .filter { $0.confirmed }
-        guard !confirmedEntries.isEmpty else { return nil }
-
-        let dims = confirmedEntries[0].embedding.count
-        var weightedSum = [Float](repeating: 0, count: dims)
-        var totalWeight: Float = 0
-        for entry in confirmedEntries {
-            let weight = entry.confidence ?? 1.0
-            totalWeight += weight
-            for i in 0..<dims {
-                weightedSum[i] += weight * entry.embedding[i]
-            }
-        }
-        guard totalWeight > 0 else { return nil }
-        return weightedSum.map { $0 / totalWeight }
+        return EmbeddingMath.weightedMean(confirmedEntries.map { (embedding: $0.embedding, weight: $0.confidence ?? 1.0) })
     }
 }

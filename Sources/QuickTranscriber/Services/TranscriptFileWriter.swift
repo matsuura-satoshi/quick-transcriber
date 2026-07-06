@@ -6,6 +6,17 @@ public final class TranscriptFileWriter {
     private static let symlinkName = "qt_transcript.md"
     private static let fileSuffix = "_qt_transcript"
 
+    /// 文字起こし/録音ファイル名の共通プレフィックス（yyyy-MM-dd_HHmm）。
+    private static let datePrefixFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HHmm"
+        return formatter
+    }()
+
+    public static func makeDatePrefix(for date: Date = Date()) -> String {
+        datePrefixFormatter.string(from: date)
+    }
+
     private let explicitDirectory: URL?
     private var fileHandle: FileHandle?
     private var currentFileURL: URL?
@@ -45,14 +56,7 @@ public final class TranscriptFileWriter {
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
         // Generate filename: YYYY-MM-DD_HHmm_qt_transcript.md
-        let prefix: String
-        if let datePrefix {
-            prefix = datePrefix
-        } else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy-MM-dd_HHmm"
-            prefix = formatter.string(from: Date())
-        }
+        let prefix = datePrefix ?? Self.makeDatePrefix()
         let filename = prefix + Self.fileSuffix + ".md"
         let fileURL = dir.appendingPathComponent(filename)
 

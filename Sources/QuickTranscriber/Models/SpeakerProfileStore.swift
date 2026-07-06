@@ -26,12 +26,7 @@ public final class SpeakerProfileStore {
     }
 
     public func save() throws {
-        let dir = fileURL.deletingLastPathComponent()
-        if !FileManager.default.fileExists(atPath: dir.path) {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        let data = try JSONEncoder().encode(profiles)
-        try data.write(to: fileURL, options: .atomic)
+        try JSONFileStorage.write(profiles, to: fileURL)
     }
 
     public func deleteAll() {
@@ -44,10 +39,15 @@ public final class SpeakerProfileStore {
         }
     }
 
-    public func rename(id: UUID, to name: String) throws {
+    private func requireIndex(_ id: UUID) throws -> Int {
         guard let index = profiles.firstIndex(where: { $0.id == id }) else {
             throw SpeakerProfileStoreError.profileNotFound
         }
+        return index
+    }
+
+    public func rename(id: UUID, to name: String) throws {
+        let index = try requireIndex(id)
         if !name.isEmpty {
             profiles[index].displayName = name
         }
@@ -55,26 +55,20 @@ public final class SpeakerProfileStore {
     }
 
     public func setLocked(id: UUID, locked: Bool) throws {
-        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
-            throw SpeakerProfileStoreError.profileNotFound
-        }
+        let index = try requireIndex(id)
         profiles[index].isLocked = locked
         try save()
     }
 
     public func delete(id: UUID) throws {
-        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
-            throw SpeakerProfileStoreError.profileNotFound
-        }
+        let index = try requireIndex(id)
         guard !profiles[index].isLocked else { return }
         profiles.remove(at: index)
         try save()
     }
 
     public func forceDelete(id: UUID) throws {
-        guard let index = profiles.firstIndex(where: { $0.id == id }) else {
-            throw SpeakerProfileStoreError.profileNotFound
-        }
+        let index = try requireIndex(id)
         profiles.remove(at: index)
         try save()
     }
@@ -86,9 +80,7 @@ public final class SpeakerProfileStore {
     }
 
     public func addTag(_ tag: String, to profileId: UUID) throws {
-        guard let index = profiles.firstIndex(where: { $0.id == profileId }) else {
-            throw SpeakerProfileStoreError.profileNotFound
-        }
+        let index = try requireIndex(profileId)
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !profiles[index].tags.contains(trimmed) else { return }
         profiles[index].tags.append(trimmed)
@@ -96,9 +88,7 @@ public final class SpeakerProfileStore {
     }
 
     public func removeTag(_ tag: String, from profileId: UUID) throws {
-        guard let index = profiles.firstIndex(where: { $0.id == profileId }) else {
-            throw SpeakerProfileStoreError.profileNotFound
-        }
+        let index = try requireIndex(profileId)
         profiles[index].tags.removeAll { $0 == tag }
         try save()
     }
@@ -114,21 +104,15 @@ public final class SpeakerProfileStore {
     }
 
     public func profiles(matching search: String) -> [StoredSpeakerProfile] {
-        guard !search.isEmpty else { return profiles }
-        return profiles.filter {
-            $0.displayName.localizedCaseInsensitiveContains(search)
-            || $0.tags.contains { $0.localizedCaseInsensitiveContains(search) }
-        }
+        profiles.matching(search)
     }
 
     public func mergeSessionProfiles(_ sessionProfiles: [(speakerId: UUID, embedding: [Float], displayName: String)]) {
         for (speakerId, embedding, displayName) in sessionProfiles {
             // Priority 1: ID match
             if let idMatchIndex = profiles.firstIndex(where: { $0.id == speakerId }) {
-                let alpha = updateAlpha
-                profiles[idMatchIndex].embedding = zip(profiles[idMatchIndex].embedding, embedding).map { old, new in
-                    (1 - alpha) * old + alpha * new
-                }
+                profiles[idMatchIndex].embedding = EmbeddingMath.blend(
+                    profiles[idMatchIndex].embedding, embedding, alpha: updateAlpha)
                 profiles[idMatchIndex].lastUsed = Date()
                 profiles[idMatchIndex].sessionCount += 1
             } else {
@@ -148,11 +132,8 @@ public final class SpeakerProfileStore {
     ///   - alpha: Blend weight in [0, 1]. New = (1-α)*existing + α*sessionCentroid.
     public func applyPostHocLearning(speakerId: UUID, sessionCentroid: [Float], alpha: Float) {
         guard let idx = profiles.firstIndex(where: { $0.id == speakerId }) else { return }
-        let existing = profiles[idx].embedding
-        guard existing.count == sessionCentroid.count else { return }
-        profiles[idx].embedding = zip(existing, sessionCentroid).map { old, new in
-            (1 - alpha) * old + alpha * new
-        }
+        guard profiles[idx].embedding.count == sessionCentroid.count else { return }
+        profiles[idx].embedding = EmbeddingMath.blend(profiles[idx].embedding, sessionCentroid, alpha: alpha)
         profiles[idx].lastUsed = Date()
         profiles[idx].sessionCount += 1
     }

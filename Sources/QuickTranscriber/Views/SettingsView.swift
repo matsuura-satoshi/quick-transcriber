@@ -73,7 +73,7 @@ private struct TranscriptionSettingsTab: View {
 
     private var chunkSection: some View {
         Section("Chunk Settings") {
-            DoubleSliderRow(
+            SliderRow(
                 label: "Max Chunk Duration",
                 value: $store.parameters.chunkDuration,
                 range: 3.0...15.0,
@@ -81,7 +81,7 @@ private struct TranscriptionSettingsTab: View {
                 format: "%.1f s"
             )
 
-            DoubleSliderRow(
+            SliderRow(
                 label: "End-of-Utterance Silence",
                 value: $store.parameters.silenceCutoffDuration,
                 range: 0.2...2.0,
@@ -105,7 +105,7 @@ private struct TranscriptionSettingsTab: View {
                 format: "%.3f"
             )
 
-            DoubleSliderRow(
+            SliderRow(
                 label: "Pre-roll Duration",
                 value: $store.parameters.preRollDuration,
                 range: 0.1...0.5,
@@ -113,7 +113,7 @@ private struct TranscriptionSettingsTab: View {
                 format: "%.2f s"
             )
 
-            DoubleSliderRow(
+            SliderRow(
                 label: "Hangover Duration",
                 value: $store.parameters.hangoverDuration,
                 range: 0.05...0.5,
@@ -121,7 +121,7 @@ private struct TranscriptionSettingsTab: View {
                 format: "%.2f s"
             )
 
-            DoubleSliderRow(
+            SliderRow(
                 label: "Line Break Silence",
                 value: $store.parameters.silenceLineBreakThreshold,
                 range: 0.5...3.0,
@@ -290,13 +290,7 @@ private struct SpeakersSettingsTab: View {
         if !selectedTags.isEmpty {
             result = result.filter { selectedTags.isSubset(of: $0.tags) }
         }
-        if !searchText.isEmpty {
-            result = result.filter {
-                $0.displayName.localizedCaseInsensitiveContains(searchText)
-                || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
-            }
-        }
-        return result.sorted { $0.lastUsed > $1.lastUsed }
+        return result.matching(searchText).sorted { $0.lastUsed > $1.lastUsed }
     }
 
     private var filteredProfileIds: Set<UUID> {
@@ -825,11 +819,11 @@ struct FlowLayout: Layout {
 
 // MARK: - Reusable Controls
 
-private struct SliderRow: View {
+private struct SliderRow<V: BinaryFloatingPoint>: View {
     let label: String
-    @Binding var value: Float
-    let range: ClosedRange<Float>
-    let step: Float
+    @Binding var value: V
+    let range: ClosedRange<V>
+    let step: V
     let format: String
 
     var body: some View {
@@ -837,39 +831,18 @@ private struct SliderRow: View {
             HStack {
                 Text(label)
                 Spacer()
-                Text(String(format: format, value))
+                Text(String(format: format, Double(value)))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             Slider(
                 value: Binding(
                     get: { Double(value) },
-                    set: { value = Float($0) }
+                    set: { value = V($0) }
                 ),
                 in: Double(range.lowerBound)...Double(range.upperBound),
                 step: Double(step)
             )
-        }
-    }
-}
-
-private struct DoubleSliderRow: View {
-    let label: String
-    @Binding var value: TimeInterval
-    let range: ClosedRange<Double>
-    let step: Double
-    let format: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(label)
-                Spacer()
-                Text(String(format: format, value))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            Slider(value: $value, in: range, step: step)
         }
     }
 }

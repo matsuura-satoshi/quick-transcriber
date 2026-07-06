@@ -133,8 +133,8 @@ public struct VADChunkAccumulator: Sendable {
         }
     }
 
-    /// Reset the accumulator, discarding all buffered audio.
-    public mutating func reset() {
+    /// 発話単位の蓄積状態を初期化する（pendingPrecedingSilence は呼び出し側が管理）。
+    private mutating func resetUtteranceState() {
         state = .idle
         speechBuffer.removeAll(keepingCapacity: true)
         preRollRing = RingBuffer(capacity: Int(preRollDuration * sampleRate))
@@ -142,8 +142,13 @@ public struct VADChunkAccumulator: Sendable {
         trailingSilenceInSpeech = 0
         hangoverElapsed = 0
         netSpeechDuration = 0
-        pendingPrecedingSilence = 0
         currentUtteranceId = ""
+    }
+
+    /// Reset the accumulator, discarding all buffered audio.
+    public mutating func reset() {
+        resetUtteranceState()
+        pendingPrecedingSilence = 0
     }
 
     /// Calculate RMS energy of a sample buffer.
@@ -255,15 +260,7 @@ public struct VADChunkAccumulator: Sendable {
         // a preceding onset (defensive), fall back to a fresh UUID.
         let utteranceId = currentUtteranceId.isEmpty ? UUID().uuidString : currentUtteranceId
 
-        // Reset for next utterance
-        speechBuffer.removeAll(keepingCapacity: true)
-        state = .idle
-        preRollRing = RingBuffer(capacity: Int(preRollDuration * sampleRate))
-        silenceDurationInIdle = 0
-        trailingSilenceInSpeech = 0
-        hangoverElapsed = 0
-        netSpeechDuration = 0
-        currentUtteranceId = ""
+        resetUtteranceState()
         // Carry over trailing silence as pending preceding for next chunk
         pendingPrecedingSilence = trailing
 
@@ -276,14 +273,7 @@ public struct VADChunkAccumulator: Sendable {
     }
 
     private mutating func transitionToIdle() {
-        state = .idle
-        speechBuffer.removeAll(keepingCapacity: true)
-        preRollRing = RingBuffer(capacity: Int(preRollDuration * sampleRate))
-        trailingSilenceInSpeech = 0
-        hangoverElapsed = 0
-        netSpeechDuration = 0
-        silenceDurationInIdle = 0
-        currentUtteranceId = ""
+        resetUtteranceState()
     }
 }
 

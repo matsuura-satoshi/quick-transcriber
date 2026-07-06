@@ -34,3 +34,14 @@ public struct StoredSpeakerProfile: Codable, Equatable, Sendable {
         isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
     }
 }
+
+public extension Array where Element == StoredSpeakerProfile {
+    /// displayName / タグの部分一致検索。空文字はそのまま返す。
+    func matching(_ search: String) -> [StoredSpeakerProfile] {
+        guard !search.isEmpty else { return self }
+        return filter {
+            $0.displayName.localizedCaseInsensitiveContains(search)
+                || $0.tags.contains { $0.localizedCaseInsensitiveContains(search) }
+        }
+    }
+}

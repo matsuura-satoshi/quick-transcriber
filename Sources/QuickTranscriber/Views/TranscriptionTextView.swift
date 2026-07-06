@@ -181,31 +181,10 @@ struct TranscriptionTextView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-
         let textView = InteractiveTranscriptionTextView()
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isRichText = true
-        textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 12, height: 12)
-        textView.isAutomaticLinkDetectionEnabled = false
-        textView.isAutomaticDataDetectionEnabled = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.textContainer?.containerSize = NSSize(
-            width: scrollView.contentSize.width,
-            height: CGFloat.greatestFiniteMagnitude
-        )
-
-        scrollView.documentView = textView
+        let scrollView = TranscriptTextViewSupport.makeScrollView(wrapping: textView)
         context.coordinator.textView = textView
         context.coordinator.scrollView = scrollView
-
         return scrollView
     }
 
@@ -366,7 +345,7 @@ struct TranscriptionTextView: NSViewRepresentable {
 
         let hasSpeakers = segments.contains { $0.speaker != nil }
         let sentenceEnders: Set<Character> = (language == "ja")
-            ? ["。", "！", "？"] : [".", "!", "?"]
+            ? Constants.Translation.sentenceEndersJA : Constants.Translation.sentenceEndersEN
         let separator = (language == "ja") ? "" : " "
         let normalAttrs = confirmedAttributes(fontSize: fontSize)
 
@@ -524,7 +503,7 @@ struct TranscriptionTextView: NSViewRepresentable {
             oldUnconfirmed: String,
             speakerDisplayNames: [String: String] = [:]
         ) {
-            guard let textView, let textStorage = textView.textStorage else { return }
+            guard let textView, textView.textStorage != nil else { return }
 
             let (attributed, map) = TranscriptionTextView.buildAttributedStringFromSegments(
                 segments, language: language, silenceThreshold: silenceThreshold,
@@ -538,7 +517,7 @@ struct TranscriptionTextView: NSViewRepresentable {
             lastSpeakerFingerprint = TranscriptionTextView.speakerFingerprint(segments)
 
             let newText = attributed.string
-            let currentText = textStorage.string
+            let currentText = textView.textStorage?.string ?? ""
 
             let canDiffAppend = fontSize == oldFontSize
                 && unconfirmed.isEmpty
@@ -547,29 +526,11 @@ struct TranscriptionTextView: NSViewRepresentable {
                 && newText.hasPrefix(currentText)
                 && newText.count > currentText.count
 
-            if canDiffAppend {
-                let deltaStart = (currentText as NSString).length
-                let deltaRange = NSRange(location: deltaStart, length: attributed.length - deltaStart)
-                textStorage.append(attributed.attributedSubstring(from: deltaRange))
-            } else {
-                let savedRange = textView.selectedRange()
-                let hadSelection = savedRange.length > 0
-                textStorage.setAttributedString(attributed)
-                if hadSelection && NSMaxRange(savedRange) <= textStorage.length {
-                    textView.setSelectedRange(savedRange)
-                }
-            }
+            TranscriptTextViewSupport.applyDiffAppendOrReplace(attributed, to: textView, canDiffAppend: canDiffAppend)
         }
 
         func isScrolledToBottom() -> Bool {
-            guard let scrollView = scrollView,
-                  let documentView = scrollView.documentView else {
-                return true
-            }
-            let visibleRect = scrollView.contentView.bounds
-            let documentHeight = documentView.frame.height
-            let threshold: CGFloat = 50
-            return visibleRect.maxY >= documentHeight - threshold
+            TranscriptTextViewSupport.isScrolledToBottom(scrollView)
         }
     }
 }

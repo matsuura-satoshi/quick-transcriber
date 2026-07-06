@@ -43,13 +43,6 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         }
     }
 
-    func testCleanupResetsState() async {
-        let engine = ChunkedWhisperEngine(audioCaptureService: mockCapture)
-        engine.cleanup()
-        let streaming = await engine.isStreaming
-        XCTAssertFalse(streaming)
-    }
-
     func testMockAudioCaptureServiceLifecycle() async throws {
         XCTAssertFalse(mockCapture.isCapturing)
         try await mockCapture.startCapture { _ in }

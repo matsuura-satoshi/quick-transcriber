@@ -1,13 +1,5 @@
 import Foundation
 
-public enum ProfileStrategy: Sendable {
-    case none
-    case culling(interval: Int, minHits: Int)
-    case merging(interval: Int, threshold: Float)
-    case registrationGate(minSeparation: Float)
-    case combined(cullInterval: Int, minHits: Int, mergeThreshold: Float)
-}
-
 public struct SpeakerIdentification: Sendable, Equatable {
     public let speakerId: UUID
     public let confidence: Float
@@ -71,10 +63,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     private var profiles: [SpeakerProfile] = []
     private var userCorrections: [UserCorrection] = []
     private let similarityThreshold: Float
-    private let updateAlpha: Float
     public var expectedSpeakerCount: Int?
-    private let strategy: ProfileStrategy
-    private var identifyCount: Int = 0
     private let lock = NSLock()
     private var lastConfirmedId: UUID?
 
@@ -85,15 +74,11 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
 
     /// - Parameters:
     ///   - similarityThreshold: Minimum cosine similarity to match a known speaker (default: 0.5)
-    ///   - updateAlpha: Unused, kept for backward compatibility (default: 0.3)
     ///   - expectedSpeakerCount: Maximum number of speakers to track (nil = unlimited)
-    ///   - strategy: Profile maintenance strategy (default: .none)
-    public init(similarityThreshold: Float = Constants.Embedding.similarityThreshold, updateAlpha: Float = 0.3,
-                expectedSpeakerCount: Int? = nil, strategy: ProfileStrategy = .none) {
+    public init(similarityThreshold: Float = Constants.Embedding.similarityThreshold,
+                expectedSpeakerCount: Int? = nil) {
         self.similarityThreshold = similarityThreshold
-        self.updateAlpha = updateAlpha
         self.expectedSpeakerCount = expectedSpeakerCount
-        self.strategy = strategy
     }
 
     /// Identify a speaker from their embedding vector.
@@ -101,14 +86,11 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     /// - Returns: A `SpeakerIdentification` with the stable speaker label and confidence score
     public func identify(embedding: [Float]) -> SpeakerIdentification {
         lock.withLock {
-            identifyCount += 1
-            maintainProfiles()
-
             var bestIndex = -1
             var bestSimilarity: Float = -1
 
             for (i, profile) in profiles.enumerated() {
-                let sim = Self.cosineSimilarity(embedding, profile.embedding)
+                let sim = EmbeddingMath.cosineSimilarity(embedding, profile.embedding)
                 if sim > bestSimilarity {
                     bestSimilarity = sim
                     bestIndex = i
@@ -119,7 +101,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
             if bestIndex >= 0 && profiles.count > 1 {
                 var candidates: [(index: Int, profile: SpeakerProfile)] = []
                 for (i, profile) in profiles.enumerated() {
-                    let sim = Self.cosineSimilarity(embedding, profile.embedding)
+                    let sim = EmbeddingMath.cosineSimilarity(embedding, profile.embedding)
                     if abs(sim - bestSimilarity) <= Constants.Embedding.tieBreakerEpsilon {
                         candidates.append((i, profile))
                     }
@@ -160,18 +142,6 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 return SpeakerIdentification(speakerId: profiles[bestIndex].id, confidence: bestSimilarity, embedding: embedding)
             }
 
-            // Registration gate: only register if sufficiently different from all existing profiles
-            if case .registrationGate(let minSeparation) = strategy, bestIndex >= 0 {
-                if bestSimilarity >= minSeparation {
-                    if !suppressLearning {
-                        profiles[bestIndex].embeddingHistory.append(WeightedEmbedding(embedding: embedding, confidence: bestSimilarity))
-                        recalculateEmbedding(at: bestIndex)
-                    }
-                    lastConfirmedId = profiles[bestIndex].id
-                    return SpeakerIdentification(speakerId: profiles[bestIndex].id, confidence: bestSimilarity, embedding: embedding)
-                }
-            }
-
             // Register new speaker
             let newId = UUID()
             profiles.append(SpeakerProfile(id: newId, embedding: embedding, hitCount: 1, embeddingHistory: [WeightedEmbedding(embedding: embedding, confidence: 1.0)]))
@@ -183,57 +153,9 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
     /// Recalculate the centroid embedding as confidence-weighted mean of all history entries.
     private func recalculateEmbedding(at index: Int) {
         let history = profiles[index].embeddingHistory
-        guard let first = history.first else { return }
-        let dims = first.embedding.count
-        var weightedSum = [Float](repeating: 0, count: dims)
-        var totalWeight: Float = 0
-        for entry in history {
-            totalWeight += entry.confidence
-            for i in 0..<dims {
-                weightedSum[i] += entry.confidence * entry.embedding[i]
-            }
-        }
-        guard totalWeight > 0 else { return }
-        profiles[index].embedding = weightedSum.map { $0 / totalWeight }
+        guard let mean = EmbeddingMath.weightedMean(history.map { (embedding: $0.embedding, weight: $0.confidence) }) else { return }
+        profiles[index].embedding = mean
         profiles[index].hitCount = history.count
-    }
-
-    private func maintainProfiles() {
-        switch strategy {
-        case .none, .registrationGate:
-            break
-        case .culling(let interval, let minHits):
-            guard identifyCount % interval == 0 else { return }
-            profiles.removeAll { $0.hitCount < minHits }
-        case .merging(let interval, let threshold):
-            guard identifyCount % interval == 0 else { return }
-            mergeProfiles(threshold: threshold)
-        case .combined(let cullInterval, let minHits, let mergeThreshold):
-            guard identifyCount % cullInterval == 0 else { return }
-            profiles.removeAll { $0.hitCount < minHits }
-            mergeProfiles(threshold: mergeThreshold)
-        }
-    }
-
-    private func mergeProfiles(threshold: Float) {
-        var i = 0
-        while i < profiles.count {
-            var j = i + 1
-            while j < profiles.count {
-                let sim = Self.cosineSimilarity(profiles[i].embedding, profiles[j].embedding)
-                if sim >= threshold {
-                    // Keep the profile with more hits, absorb the other
-                    let (keep, remove) = profiles[i].hitCount >= profiles[j].hitCount ? (i, j) : (j, i)
-                    profiles[keep].embeddingHistory.append(contentsOf: profiles[remove].embeddingHistory)
-                    recalculateEmbedding(at: keep)
-                    profiles.remove(at: remove)
-                    if remove < keep { i = max(0, i - 1) }
-                } else {
-                    j += 1
-                }
-            }
-            i += 1
-        }
     }
 
     /// Merge one speaker profile into another, combining embedding histories.
@@ -282,7 +204,7 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
                 // ため、閾値以上のサンプルのみ学習する。source profile は動かさない
                 // （Manual mode では auto 判定の汚染を避けるため従来通り凍結）。
                 if let newIdx = profiles.firstIndex(where: { $0.id == newId }) {
-                    let sim = Self.cosineSimilarity(embedding, profiles[newIdx].embedding)
+                    let sim = EmbeddingMath.cosineSimilarity(embedding, profiles[newIdx].embedding)
                     if sim >= similarityThreshold {
                         profiles[newIdx].embeddingHistory.append(
                             WeightedEmbedding(embedding: embedding, confidence: 1.0)
@@ -364,29 +286,13 @@ public final class EmbeddingBasedSpeakerTracker: @unchecked Sendable {
         }
     }
 
-    /// Cosine similarity between two vectors.
-    public static func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
-        guard a.count == b.count, !a.isEmpty else { return 0 }
-        var dot: Float = 0
-        var normA: Float = 0
-        var normB: Float = 0
-        for i in 0..<a.count {
-            dot += a[i] * b[i]
-            normA += a[i] * a[i]
-            normB += b[i] * b[i]
-        }
-        let denom = sqrt(normA) * sqrt(normB)
-        guard denom > 0 else { return 0 }
-        return dot / denom
-    }
-
     /// Remove the embedding history entry most similar to `target` (≥ 0.9999 cosine).
     /// Returns true if an entry was removed.
     private static func removeClosestMatch(in history: inout [WeightedEmbedding], target: [Float]) -> Bool {
         var bestIndex = -1
         var bestSim: Float = 0.9999  // threshold: 実質同一
         for (i, entry) in history.enumerated() {
-            let sim = cosineSimilarity(entry.embedding, target)
+            let sim = EmbeddingMath.cosineSimilarity(entry.embedding, target)
             if sim >= bestSim {
                 bestSim = sim
                 bestIndex = i
