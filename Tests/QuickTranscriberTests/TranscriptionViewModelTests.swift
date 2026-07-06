@@ -951,7 +951,39 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(engine.correctedAssignments[0].newId, speakerIdC)
     }
 
-    // MARK: - confirmedText as computed property (A-3)
+    // MARK: - confirmedText recompute triggers (B1: stored @Published)
+
+    func testConfirmedTextUpdatesWhenSegmentsAssignedDirectly() {
+        let (vm, _) = makeViewModel()
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello")]
+        XCTAssertEqual(vm.confirmedText, "Hello")
+        vm.confirmedSegments = []
+        XCTAssertEqual(vm.confirmedText, "")
+    }
+
+    func testConfirmedTextReflectsDisplayNameChange() {
+        let (vm, _) = makeViewModel()
+        let id = UUID()
+        vm.confirmedSegments = [ConfirmedSegment(text: "Hello", speaker: id.uuidString)]
+        vm.speakerDisplayNames = [id.uuidString: "Alice"]
+        XCTAssertEqual(vm.confirmedText, "Alice: Hello")
+        vm.speakerDisplayNames = [id.uuidString: "Bob"]
+        XCTAssertEqual(vm.confirmedText, "Bob: Hello")
+    }
+
+    func testConfirmedTextReflowsOnLanguageSwitch() {
+        let (vm, _) = makeViewModel()
+        vm.confirmedSegments = [
+            ConfirmedSegment(text: "こんにちは。"),
+            ConfirmedSegment(text: "元気です"),
+        ]
+        vm.switchLanguage(.japanese)
+        // ja: 文末「。」で改行
+        XCTAssertEqual(vm.confirmedText, "こんにちは。\n元気です")
+        vm.switchLanguage(.english)
+        // en では「。」は文末文字ではないため inline (" ") 結合
+        XCTAssertEqual(vm.confirmedText, "こんにちは。 元気です")
+    }
 
     func testConfirmedTextDerivedFromSegments() {
         let (vm, _) = makeViewModel()

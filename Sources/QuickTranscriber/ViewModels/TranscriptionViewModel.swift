@@ -33,22 +33,22 @@ public final class TranscriptionViewModel: ObservableObject {
             return lang
         }
         return .english
-    }()
+    }() {
+        didSet { refreshConfirmedText() }
+    }
     @Published public var modelState: ModelState = .notLoaded
     @Published public var fontSize: CGFloat = 15.0
-    @Published public var confirmedSegments: [ConfirmedSegment] = []
-
-    public var confirmedText: String {
-        guard !confirmedSegments.isEmpty else { return "" }
-        return TranscriptionUtils.joinSegments(
-            confirmedSegments,
-            language: currentLanguage.rawValue,
-            silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
-            speakerDisplayNames: speakerDisplayNames
-        )
+    @Published public var confirmedSegments: [ConfirmedSegment] = [] {
+        didSet { refreshConfirmedText() }
     }
+
+    /// confirmedSegments から導出した表示テキスト。segments / 表示名 / 言語の didSet と
+    /// parametersStore 購読（沈黙閾値変更）で 1 回だけ再計算される stored キャッシュ。
+    @Published public private(set) var confirmedText: String = ""
     @Published public var speakerProfiles: [StoredSpeakerProfile] = []
-    @Published public var speakerDisplayNames: [String: String] = [:]
+    @Published public var speakerDisplayNames: [String: String] = [:] {
+        didSet { refreshConfirmedText() }
+    }
     @Published public var activeSpeakers: [ActiveSpeaker] = []
     @Published public var preExistingProfileIds: Set<UUID> = []
     @Published public var showPostMeetingTagging: Bool = false
@@ -178,7 +178,9 @@ public final class TranscriptionViewModel: ObservableObject {
             .removeDuplicates()
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in
-                guard let self, self.isRecording else { return }
+                guard let self else { return }
+                self.refreshConfirmedText()   // silenceLineBreakThreshold の変更を反映
+                guard self.isRecording else { return }
                 NSLog("[QuickTranscriber] Parameters changed, restarting recording")
                 self.restartRecording()
             }
@@ -211,6 +213,23 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     // MARK: - Sync Helpers
+
+    private func refreshConfirmedText() {
+        let newText: String
+        if confirmedSegments.isEmpty {
+            newText = ""
+        } else {
+            newText = TranscriptionUtils.joinSegments(
+                confirmedSegments,
+                language: currentLanguage.rawValue,
+                silenceThreshold: parametersStore.parameters.silenceLineBreakThreshold,
+                speakerDisplayNames: speakerDisplayNames
+            )
+        }
+        if newText != confirmedText {
+            confirmedText = newText
+        }
+    }
 
     private func syncSpeakerState() {
         self.activeSpeakers = coordinator.activeSpeakers
@@ -492,6 +511,7 @@ public final class TranscriptionViewModel: ObservableObject {
     }
 
     public func regenerateText() {
+        refreshConfirmedText()
         fileWriter.updateText(confirmedText)
     }
 
