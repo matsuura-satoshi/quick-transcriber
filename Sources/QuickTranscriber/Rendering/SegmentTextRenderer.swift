@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// セグメント列 → 表示テキスト変換の単一実装。
 ///
@@ -98,5 +98,103 @@ public enum SegmentTextRenderer {
             result += piece.text
         }
         return result
+    }
+
+    // MARK: - Attributed + CharacterMap
+
+    static let lowConfidenceThreshold: Float = Constants.Embedding.similarityThreshold
+
+    /// segments と unconfirmed から attributed テキストと characterMap を生成する。
+    /// テキスト内容は plainText(同引数) + （unconfirmed があれば "\n" + unconfirmed）と一致する。
+    public static func render(
+        _ segments: [ConfirmedSegment],
+        language: String,
+        silenceThreshold: TimeInterval,
+        fontSize: CGFloat,
+        unconfirmed: String,
+        speakerDisplayNames: [String: String] = [:]
+    ) -> (NSAttributedString, SegmentCharacterMap) {
+        let result = NSMutableAttributedString()
+        var map = SegmentCharacterMap()
+        let normalAttrs = confirmedAttributes(fontSize: fontSize)
+
+        for piece in layout(
+            segments, language: language,
+            silenceThreshold: silenceThreshold,
+            speakerDisplayNames: speakerDisplayNames
+        ) {
+            if !piece.separator.isEmpty {
+                result.append(NSAttributedString(string: piece.separator, attributes: normalAttrs))
+            }
+            var labelRange: NSRange? = nil
+            if let label = piece.label {
+                let labelStart = result.length
+                result.append(NSAttributedString(
+                    string: label,
+                    attributes: speakerLabelAttributes(fontSize: fontSize, confidence: piece.labelConfidence)
+                ))
+                labelRange = NSRange(location: labelStart, length: (label as NSString).length)
+            }
+            let textStart = result.length
+            result.append(NSAttributedString(string: piece.text, attributes: normalAttrs))
+            map.entries.append(SegmentCharacterMap.Entry(
+                segmentIndex: piece.segmentIndex,
+                characterRange: NSRange(location: textStart, length: (piece.text as NSString).length),
+                labelRange: labelRange
+            ))
+        }
+
+        if !unconfirmed.isEmpty {
+            if result.length > 0 {
+                result.append(NSAttributedString(string: "\n", attributes: normalAttrs))
+            }
+            result.append(unconfirmedAttributedString(unconfirmed, fontSize: fontSize))
+        }
+        return (result, map)
+    }
+
+    // MARK: - Attributes
+
+    static func makeParagraphStyle() -> NSMutableParagraphStyle {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = 2
+        paragraphStyle.paragraphSpacing = 4
+        return paragraphStyle
+    }
+
+    static func confirmedAttributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: fontSize),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: makeParagraphStyle()
+        ]
+    }
+
+    static func speakerLabelAttributes(fontSize: CGFloat, confidence: Float?) -> [NSAttributedString.Key: Any] {
+        let color: NSColor
+        if let conf = confidence, conf < lowConfidenceThreshold {
+            color = .secondaryLabelColor
+        } else {
+            color = .labelColor
+        }
+        return [
+            .font: NSFont.boldSystemFont(ofSize: fontSize),
+            .foregroundColor: color,
+            .paragraphStyle: makeParagraphStyle()
+        ]
+    }
+
+    static func unconfirmedAttributedString(_ text: String, fontSize: CGFloat) -> NSAttributedString {
+        let italicFont = NSFontManager.shared.convert(
+            NSFont.systemFont(ofSize: fontSize),
+            toHaveTrait: .italicFontMask
+        )
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: italicFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .backgroundColor: NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.3),
+            .paragraphStyle: makeParagraphStyle()
+        ]
+        return NSAttributedString(string: text, attributes: attrs)
     }
 }

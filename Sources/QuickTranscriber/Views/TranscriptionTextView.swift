@@ -1,52 +1,6 @@
 import SwiftUI
 import AppKit
 
-public struct SegmentCharacterMap {
-    public struct Entry {
-        public let segmentIndex: Int
-        public let characterRange: NSRange
-        public let labelRange: NSRange?
-    }
-    public var entries: [Entry] = []
-
-    public func segmentIndices(overlapping range: NSRange) -> [Int] {
-        entries.compactMap { entry in
-            let fullRange = NSUnionRange(
-                entry.labelRange ?? entry.characterRange,
-                entry.characterRange
-            )
-            if NSIntersectionRange(fullRange, range).length > 0 {
-                return entry.segmentIndex
-            }
-            return nil
-        }
-    }
-
-    public func consecutiveBlockIndices(from index: Int, segments: [ConfirmedSegment]) -> [Int] {
-        guard index < segments.count, let speaker = segments[index].speaker else {
-            return [index]
-        }
-        var result = [Int]()
-        // Expand backward
-        var i = index
-        while i >= 0 && segments[i].speaker == speaker { i -= 1 }
-        i += 1
-        // Expand forward
-        while i < segments.count && segments[i].speaker == speaker {
-            result.append(i)
-            i += 1
-        }
-        return result
-    }
-
-    public func labelEntry(at characterIndex: Int) -> Entry? {
-        entries.first { entry in
-            guard let labelRange = entry.labelRange else { return false }
-            return NSLocationInRange(characterIndex, labelRange)
-        }
-    }
-}
-
 private class BlockReassignInfo: NSObject {
     let segmentIndex: Int
     let speakerIdString: String
@@ -270,18 +224,11 @@ struct TranscriptionTextView: NSViewRepresentable {
     // MARK: - Attributed String Building
 
     static func makeParagraphStyle() -> NSMutableParagraphStyle {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = 2
-        paragraphStyle.paragraphSpacing = 4
-        return paragraphStyle
+        SegmentTextRenderer.makeParagraphStyle()
     }
 
     static func confirmedAttributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
-        [
-            .font: NSFont.systemFont(ofSize: fontSize),
-            .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: makeParagraphStyle()
-        ]
+        SegmentTextRenderer.confirmedAttributes(fontSize: fontSize)
     }
 
     private static func buildAttributedString(
@@ -300,7 +247,7 @@ struct TranscriptionTextView: NSViewRepresentable {
                 let newline = NSAttributedString(string: "\n")
                 result.append(newline)
             }
-            result.append(buildUnconfirmedAttributedString(unconfirmed, fontSize: fontSize))
+            result.append(SegmentTextRenderer.unconfirmedAttributedString(unconfirmed, fontSize: fontSize))
         }
 
         return result
@@ -321,11 +268,9 @@ struct TranscriptionTextView: NSViewRepresentable {
 
     // MARK: - Segment-Based Rendering
 
-    private static let lowConfidenceThreshold: Float = Constants.Embedding.similarityThreshold
-
     /// Build an NSAttributedString from segments, coloring speaker labels by confidence.
-    /// Mirrors the logic of TranscriptionUtils.joinSegments but produces attributed text.
     /// Returns a tuple of (attributed string, segment character map).
+    /// 実装は SegmentTextRenderer.render に委譲（joinSegments と同一の layout を消費する）。
     static func buildAttributedStringFromSegments(
         _ segments: [ConfirmedSegment],
         language: String,
@@ -334,155 +279,14 @@ struct TranscriptionTextView: NSViewRepresentable {
         unconfirmed: String,
         speakerDisplayNames: [String: String] = [:]
     ) -> (NSAttributedString, SegmentCharacterMap) {
-        let result = NSMutableAttributedString()
-        var map = SegmentCharacterMap()
-        guard !segments.isEmpty else {
-            if !unconfirmed.isEmpty {
-                return (buildUnconfirmedAttributedString(unconfirmed, fontSize: fontSize), map)
-            }
-            return (result, map)
-        }
-
-        let hasSpeakers = segments.contains { $0.speaker != nil }
-        let sentenceEnders: Set<Character> = (language == "ja")
-            ? Constants.Translation.sentenceEndersJA : Constants.Translation.sentenceEndersEN
-        let separator = (language == "ja") ? "" : " "
-        let normalAttrs = confirmedAttributes(fontSize: fontSize)
-
-        var currentSpeaker: String? = nil
-        var lastChar: Character? = nil
-        var segmentIndex = 0
-
-        for segment in segments {
-            guard !segment.text.isEmpty else {
-                segmentIndex += 1
-                continue
-            }
-
-            let isFirst = (result.length == 0)
-            var labelRange: NSRange? = nil
-
-            if isFirst {
-                if hasSpeakers, let speaker = segment.speaker {
-                    let displayName = speakerDisplayNames[speaker] ?? "Unknown"
-                    let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
-                    let labelStart = result.length
-                    let labelStr = "\(displayName): "
-                    result.append(NSAttributedString(string: labelStr, attributes: labelAttrs))
-                    labelRange = NSRange(location: labelStart, length: (labelStr as NSString).length)
-                    let textStart = result.length
-                    result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
-                    let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
-                    map.entries.append(SegmentCharacterMap.Entry(
-                        segmentIndex: segmentIndex, characterRange: textRange, labelRange: labelRange
-                    ))
-                    currentSpeaker = speaker
-                } else {
-                    let textStart = result.length
-                    result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
-                    let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
-                    map.entries.append(SegmentCharacterMap.Entry(
-                        segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
-                    ))
-                }
-                lastChar = segment.text.last
-                segmentIndex += 1
-                continue
-            }
-
-            // Priority 1: Speaker change
-            if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
-                let displayName = speakerDisplayNames[speaker] ?? "Unknown"
-                let labelAttrs = speakerLabelAttributes(fontSize: fontSize, confidence: segment.speakerConfidence)
-                result.append(NSAttributedString(string: "\n", attributes: normalAttrs))
-                let labelStart = result.length
-                let labelStr = "\(displayName): "
-                result.append(NSAttributedString(string: labelStr, attributes: labelAttrs))
-                labelRange = NSRange(location: labelStart, length: (labelStr as NSString).length)
-                let textStart = result.length
-                result.append(NSAttributedString(string: segment.text, attributes: normalAttrs))
-                let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
-                map.entries.append(SegmentCharacterMap.Entry(
-                    segmentIndex: segmentIndex, characterRange: textRange, labelRange: labelRange
-                ))
-                currentSpeaker = speaker
-                lastChar = segment.text.last
-                segmentIndex += 1
-                continue
-            }
-
-            // Priority 2: Silence threshold
-            if segment.precedingSilence >= silenceThreshold {
-                let textStart = result.length + 1 // +1 for newline
-                result.append(NSAttributedString(string: "\n" + segment.text, attributes: normalAttrs))
-                let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
-                map.entries.append(SegmentCharacterMap.Entry(
-                    segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
-                ))
-                lastChar = segment.text.last
-                segmentIndex += 1
-                continue
-            }
-
-            // Priority 3: Sentence end
-            if let last = lastChar, sentenceEnders.contains(last) {
-                let textStart = result.length + 1
-                result.append(NSAttributedString(string: "\n" + segment.text, attributes: normalAttrs))
-                let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
-                map.entries.append(SegmentCharacterMap.Entry(
-                    segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
-                ))
-                lastChar = segment.text.last
-                segmentIndex += 1
-                continue
-            }
-
-            // Priority 4: Inline
-            let prefixLen = (separator as NSString).length
-            let textStart = result.length + prefixLen
-            result.append(NSAttributedString(string: separator + segment.text, attributes: normalAttrs))
-            let textRange = NSRange(location: textStart, length: (segment.text as NSString).length)
-            map.entries.append(SegmentCharacterMap.Entry(
-                segmentIndex: segmentIndex, characterRange: textRange, labelRange: nil
-            ))
-            lastChar = segment.text.last
-            segmentIndex += 1
-        }
-
-        if !unconfirmed.isEmpty {
-            result.append(NSAttributedString(string: "\n", attributes: normalAttrs))
-            result.append(buildUnconfirmedAttributedString(unconfirmed, fontSize: fontSize))
-        }
-
-        return (result, map)
-    }
-
-    private static func speakerLabelAttributes(fontSize: CGFloat, confidence: Float?) -> [NSAttributedString.Key: Any] {
-        let color: NSColor
-        if let conf = confidence, conf < lowConfidenceThreshold {
-            color = .secondaryLabelColor
-        } else {
-            color = .labelColor
-        }
-        return [
-            .font: NSFont.boldSystemFont(ofSize: fontSize),
-            .foregroundColor: color,
-            .paragraphStyle: makeParagraphStyle()
-        ]
-    }
-
-    private static func buildUnconfirmedAttributedString(_ text: String, fontSize: CGFloat) -> NSAttributedString {
-        let italicFont = NSFontManager.shared.convert(
-            NSFont.systemFont(ofSize: fontSize),
-            toHaveTrait: .italicFontMask
+        SegmentTextRenderer.render(
+            segments,
+            language: language,
+            silenceThreshold: silenceThreshold,
+            fontSize: fontSize,
+            unconfirmed: unconfirmed,
+            speakerDisplayNames: speakerDisplayNames
         )
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: italicFont,
-            .foregroundColor: NSColor.secondaryLabelColor,
-            .backgroundColor: NSColor.unemphasizedSelectedContentBackgroundColor.withAlphaComponent(0.3),
-            .paragraphStyle: makeParagraphStyle()
-        ]
-        return NSAttributedString(string: text, attributes: attrs)
     }
 
     class Coordinator {

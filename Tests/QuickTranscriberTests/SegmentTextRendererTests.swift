@@ -156,4 +156,96 @@ final class SegmentTextRendererTests: XCTestCase {
         let result = SegmentTextRenderer.plainText(segments, language: "ja", silenceThreshold: 1.0)
         XCTAssertEqual(result, "今日はいい天気です。\n明日も晴れ")
     }
+
+    // MARK: - render: plain / attributed / characterMap のオフセット整合性
+
+    private func offsetFixture() -> ([ConfirmedSegment], [String: String]) {
+        let segments = [
+            ConfirmedSegment(text: "Hello", speaker: "A", speakerConfidence: 0.9),
+            ConfirmedSegment(text: "there", speaker: "A"),
+            ConfirmedSegment(text: "World!", speaker: "B", speakerConfidence: 0.3),
+            ConfirmedSegment(text: "Next", speaker: "B"),
+            ConfirmedSegment(text: "Far", precedingSilence: 2.0, speaker: "B"),
+        ]
+        return (segments, ["A": "Alice", "B": "Bob"])
+    }
+
+    func testRenderAttributedTextEqualsPlainText() {
+        let (segments, names) = offsetFixture()
+        let plain = SegmentTextRenderer.plainText(
+            segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
+        let (attributed, _) = SegmentTextRenderer.render(
+            segments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: names)
+        XCTAssertEqual(attributed.string, plain)
+    }
+
+    func testRenderCharacterMapRangesPointAtSegmentTexts() {
+        let (segments, names) = offsetFixture()
+        let plain = SegmentTextRenderer.plainText(
+            segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
+        let (attributed, map) = SegmentTextRenderer.render(
+            segments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: names)
+
+        XCTAssertEqual(map.entries.count, segments.count)
+        let attributedNS = attributed.string as NSString
+        let plainNS = plain as NSString
+        for entry in map.entries {
+            let expected = segments[entry.segmentIndex].text
+            // attributed / plain の両方で characterRange が同一の本文を指す
+            XCTAssertEqual(attributedNS.substring(with: entry.characterRange), expected)
+            XCTAssertEqual(plainNS.substring(with: entry.characterRange), expected)
+            if let labelRange = entry.labelRange {
+                let label = attributedNS.substring(with: labelRange)
+                XCTAssertEqual(plainNS.substring(with: labelRange), label)
+                XCTAssertTrue(label.hasSuffix(": "), "label は 'Name: ' 形式: \(label)")
+            }
+        }
+    }
+
+    func testRenderJAOffsets() {
+        let segments = [
+            ConfirmedSegment(text: "今日は", speaker: "A"),
+            ConfirmedSegment(text: "いい天気。", speaker: "A"),
+            ConfirmedSegment(text: "明日も", speaker: "B"),
+        ]
+        let names = ["A": "上東", "B": "松浦"]
+        let plain = SegmentTextRenderer.plainText(
+            segments, language: "ja", silenceThreshold: 1.0, speakerDisplayNames: names)
+        let (attributed, map) = SegmentTextRenderer.render(
+            segments, language: "ja", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "", speakerDisplayNames: names)
+        XCTAssertEqual(attributed.string, plain)
+        for entry in map.entries {
+            XCTAssertEqual(
+                (attributed.string as NSString).substring(with: entry.characterRange),
+                segments[entry.segmentIndex].text)
+        }
+    }
+
+    func testRenderAppendsUnconfirmedAfterNewline() {
+        let (segments, names) = offsetFixture()
+        let plain = SegmentTextRenderer.plainText(
+            segments, language: "en", silenceThreshold: 1.0, speakerDisplayNames: names)
+        let (attributed, _) = SegmentTextRenderer.render(
+            segments, language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "typing...", speakerDisplayNames: names)
+        XCTAssertEqual(attributed.string, plain + "\ntyping...")
+    }
+
+    func testRenderUnconfirmedOnlyHasNoLeadingNewline() {
+        let (attributed, map) = SegmentTextRenderer.render(
+            [], language: "en", silenceThreshold: 1.0,
+            fontSize: 15, unconfirmed: "typing...")
+        XCTAssertEqual(attributed.string, "typing...")
+        XCTAssertTrue(map.entries.isEmpty)
+    }
+
+    func testRenderEmptyEverything() {
+        let (attributed, map) = SegmentTextRenderer.render(
+            [], language: "en", silenceThreshold: 1.0, fontSize: 15, unconfirmed: "")
+        XCTAssertEqual(attributed.length, 0)
+        XCTAssertTrue(map.entries.isEmpty)
+    }
 }
