@@ -145,59 +145,19 @@ public enum TranscriptionUtils {
 
     /// Join confirmed segments with speaker labels, silence-based, and punctuation-based line breaks.
     /// Priority: 1) Speaker change → labeled newline  2) Silence threshold → newline  3) Sentence end → newline  4) Inline
+    /// 実装は SegmentTextRenderer.layout に委譲（改行判定の単一実装）。
     public static func joinSegments(
         _ segments: [ConfirmedSegment],
         language: String,
         silenceThreshold: TimeInterval = 1.0,
         speakerDisplayNames: [String: String] = [:]
     ) -> String {
-        guard !segments.isEmpty else { return "" }
-        let hasSpeakers = segments.contains { $0.speaker != nil }
-        let sentenceEnders: Set<Character> = (language == "ja")
-            ? Constants.Translation.sentenceEndersJA : Constants.Translation.sentenceEndersEN
-        let separator = (language == "ja") ? "" : " "
-
-        var result = ""
-        var currentSpeaker: String? = nil
-
-        for (index, segment) in segments.enumerated() {
-            guard !segment.text.isEmpty else { continue }
-
-            if index == 0 {
-                if hasSpeakers, let speaker = segment.speaker {
-                    let displayName = speakerDisplayNames[speaker] ?? "Unknown"
-                    result = "\(displayName): \(segment.text)"
-                    currentSpeaker = speaker
-                } else {
-                    result = segment.text
-                }
-                continue
-            }
-
-            // Priority 1: Speaker change
-            if hasSpeakers, let speaker = segment.speaker, speaker != currentSpeaker {
-                let displayName = speakerDisplayNames[speaker] ?? "Unknown"
-                result += "\n\(displayName): \(segment.text)"
-                currentSpeaker = speaker
-                continue
-            }
-
-            // Priority 2: Silence threshold
-            if segment.precedingSilence >= silenceThreshold {
-                result += "\n" + segment.text
-                continue
-            }
-
-            // Priority 3: Sentence end
-            if let last = result.last, sentenceEnders.contains(last) {
-                result += "\n" + segment.text
-                continue
-            }
-
-            // Priority 4: Inline
-            result += separator + segment.text
-        }
-        return result
+        SegmentTextRenderer.plainText(
+            segments,
+            language: language,
+            silenceThreshold: silenceThreshold,
+            speakerDisplayNames: speakerDisplayNames
+        )
     }
 
     /// Join string segments with language-aware separators (backward compatibility).
