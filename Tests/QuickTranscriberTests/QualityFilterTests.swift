@@ -196,8 +196,8 @@ final class QualityFilterTests: XCTestCase {
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        // "Yeah." should be filtered — confirmedText should be empty
-        XCTAssertEqual(lastState?.confirmedText ?? "", "")
+        // "Yeah." should be filtered — confirmedSegments should be empty
+        XCTAssertTrue(lastState?.confirmedSegments.isEmpty ?? true)
 
         await engine.stopStreaming()
     }
@@ -217,7 +217,7 @@ final class QualityFilterTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Japanese text passes")
         var lastState: TranscriptionState?
         try await engine.startStreaming(language: "ja") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 lastState = state
                 expectation.fulfill()
             }
@@ -229,7 +229,7 @@ final class QualityFilterTests: XCTestCase {
         mockCapture.simulateBuffer(silenceBuf2)
 
         await fulfillment(of: [expectation], timeout: 6.0)
-        XCTAssertEqual(lastState?.confirmedText, "今日はいい天気ですね")
+        XCTAssertEqual(lastState?.confirmedSegments.map(\.text), ["今日はいい天気ですね"])
 
         await engine.stopStreaming()
     }
@@ -274,7 +274,7 @@ final class QualityFilterTests: XCTestCase {
 
         let expectation = XCTestExpectation(description: "Non-silent chunk processed")
         try await engine.startStreaming(language: "en") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 expectation.fulfill()
             }
         }
@@ -316,7 +316,7 @@ final class QualityFilterTests: XCTestCase {
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        XCTAssertEqual(lastState?.confirmedText ?? "", "")
+        XCTAssertTrue(lastState?.confirmedSegments.isEmpty ?? true)
 
         await engine.stopStreaming()
     }
@@ -349,7 +349,7 @@ final class QualityFilterTests: XCTestCase {
 
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        XCTAssertEqual(lastState?.confirmedText ?? "", "")
+        XCTAssertTrue(lastState?.confirmedSegments.isEmpty ?? true)
 
         await engine.stopStreaming()
     }
@@ -370,7 +370,7 @@ final class QualityFilterTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Good segment passes")
         var lastState: TranscriptionState?
         try await engine.startStreaming(language: "en") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 lastState = state
                 expectation.fulfill()
             }
@@ -383,7 +383,7 @@ final class QualityFilterTests: XCTestCase {
         mockCapture.simulateBuffer(goodSil)
 
         await fulfillment(of: [expectation], timeout: 6.0)
-        XCTAssertEqual(lastState?.confirmedText, "Hello world")
+        XCTAssertEqual(lastState?.confirmedSegments.map(\.text), ["Hello world"])
 
         await engine.stopStreaming()
     }

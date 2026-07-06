@@ -640,13 +640,9 @@ public final class TranscriptionViewModel: ObservableObject {
     /// エンジンからの状態更新を confirmedSegments / 話者 / 翻訳 / ファイルに反映する。
     /// live 録音と file 転写の両経路で共用。
     private func applyIncomingState(_ state: TranscriptionState, sessionSegments: [ConfirmedSegment]) {
-        NSLog("[QuickTranscriber] State update - confirmed: \(state.confirmedText.count) chars, unconfirmed: \(state.unconfirmedText.count) chars")
+        NSLog("[QuickTranscriber] State update - confirmed segments: \(state.confirmedSegments.count), unconfirmed: \(state.unconfirmedText.count) chars")
         unconfirmedText = state.unconfirmedText
-        // Derive segments from text if engine didn't provide them
-        var stateSegments = state.confirmedSegments
-        if stateSegments.isEmpty && !state.confirmedText.isEmpty {
-            stateSegments = [ConfirmedSegment(text: state.confirmedText)]
-        }
+        let stateSegments = state.confirmedSegments
         let newSegments: [ConfirmedSegment]
         if sessionSegments.isEmpty {
             newSegments = stateSegments

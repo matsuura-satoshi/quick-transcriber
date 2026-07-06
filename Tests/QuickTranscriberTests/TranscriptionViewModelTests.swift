@@ -281,9 +281,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello",
             unconfirmedText: "world",
-            isRecording: true
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "Hello")]
         ))
 
         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -347,9 +347,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello world",
             unconfirmedText: "",
-            isRecording: true
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "Hello world")]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
@@ -365,9 +365,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Before stop",
             unconfirmedText: "",
-            isRecording: true
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "Before stop")]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
@@ -386,9 +386,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Old text",
             unconfirmedText: "",
-            isRecording: true
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "Old text")]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
@@ -410,9 +410,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "English text",
             unconfirmedText: "",
-            isRecording: true
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "English text")]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
@@ -441,7 +441,6 @@ final class TranscriptionViewModelTests: XCTestCase {
             ConfirmedSegment(text: "world", precedingSilence: 0.5, speaker: speakerIdB.uuidString, speakerConfidence: 0.6),
         ]
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello world",
             unconfirmedText: "partial",
             isRecording: true,
             confirmedSegments: segments
@@ -459,7 +458,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         // New engine session has no segments yet
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "new text",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [ConfirmedSegment(text: "new text", precedingSilence: 0)]
@@ -485,7 +483,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         let speakerId = UUID()
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Some text",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
@@ -512,7 +509,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "English text",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
@@ -620,7 +616,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         // Simulate segments with speaker UUID
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
@@ -634,7 +629,6 @@ final class TranscriptionViewModelTests: XCTestCase {
 
         // Next state change should write with resolved name
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello world",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
@@ -697,9 +691,9 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Text from dir1",
             unconfirmedText: "",
-            isRecording: true
+            isRecording: true,
+            confirmedSegments: [ConfirmedSegment(text: "Text from dir1")]
         ))
         try? await Task.sleep(nanoseconds: 100_000_000)
 
@@ -1004,26 +998,6 @@ final class TranscriptionViewModelTests: XCTestCase {
                       "Unconfirmed text should be promoted to a segment")
     }
 
-    func testStateCallbackFallbackCreatesSegment() async {
-        let (vm, engine) = makeViewModel()
-        await vm.loadModel()
-
-        vm.toggleRecording()
-        try? await Task.sleep(nanoseconds: 100_000_000)
-
-        // Send state with text but no segments (backward compat)
-        engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Fallback text",
-            unconfirmedText: "",
-            isRecording: true
-        ))
-        try? await Task.sleep(nanoseconds: 100_000_000)
-
-        XCTAssertEqual(vm.confirmedSegments.count, 1)
-        XCTAssertEqual(vm.confirmedSegments[0].text, "Fallback text")
-        XCTAssertEqual(vm.confirmedText, "Fallback text")
-    }
-
     // MARK: - Registered Speakers For Menu
 
     func testAddAndReassignBlockAddsActiveSpeakerAndReassigns() {
@@ -1242,7 +1216,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         var differentEmbedding = [Float](repeating: 0.0, count: 256)
         differentEmbedding[128] = 1.0
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Test",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
@@ -1283,7 +1256,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [
@@ -1328,7 +1300,6 @@ final class TranscriptionViewModelTests: XCTestCase {
         // So segments arrive with speaker == profileId.uuidString.
         // The dedup check $0.id.uuidString == speakerId should match.
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: [

@@ -36,7 +36,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
 
         let params = TranscriptionParameters(enableSpeakerDiarization: true)
         try await engine.startStreaming(language: "en", parameters: params) { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 states.append(state)
                 chunkCount += 1
                 if chunkCount == 1 { firstChunk.fulfill() }
@@ -104,7 +104,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
 
         let params = TranscriptionParameters(enableSpeakerDiarization: true)
         try await engine.startStreaming(language: "en", parameters: params) { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 chunkCount += 1
                 if chunkCount == 1 { firstChunk.fulfill() }
                 if chunkCount == 2 { secondChunk.fulfill() }

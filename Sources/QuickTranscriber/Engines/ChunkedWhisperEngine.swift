@@ -454,14 +454,8 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 pendingSegmentStartIndex = confirmedSegments.count - filtered.count
             }
 
-            let confirmedText = TranscriptionUtils.joinSegments(
-                confirmedSegments,
-                language: currentLanguage,
-                silenceThreshold: currentParameters.silenceLineBreakThreshold
-            )
             LatencyInstrumentation.mark(.emitToUI, utteranceId: utteranceId)
             onStateChange(TranscriptionState(
-                confirmedText: confirmedText,
                 unconfirmedText: "",
                 isRecording: true,
                 confirmedSegments: confirmedSegments

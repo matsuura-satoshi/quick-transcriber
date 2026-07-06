@@ -15,13 +15,11 @@ public struct TranscriptionSegmentData: Sendable {
 }
 
 public struct TranscriptionState: Sendable {
-    public var confirmedText: String
     public var unconfirmedText: String
     public var isRecording: Bool
     public var confirmedSegments: [ConfirmedSegment]
 
-    public init(confirmedText: String, unconfirmedText: String, isRecording: Bool, confirmedSegments: [ConfirmedSegment] = []) {
-        self.confirmedText = confirmedText
+    public init(unconfirmedText: String, isRecording: Bool, confirmedSegments: [ConfirmedSegment] = []) {
         self.unconfirmedText = unconfirmedText
         self.isRecording = isRecording
         self.confirmedSegments = confirmedSegments
