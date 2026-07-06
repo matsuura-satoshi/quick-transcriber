@@ -236,7 +236,6 @@ final class SpeakerReassignmentTests: XCTestCase {
             ConfirmedSegment(text: "World", speaker: speakerIdB, speakerConfidence: 0.7),
         ]
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello World",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: segments
@@ -257,7 +256,6 @@ final class SpeakerReassignmentTests: XCTestCase {
             ConfirmedSegment(text: "New text", speaker: speakerIdA, speakerConfidence: 0.9),
         ]
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "Hello World New text",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: engineSegments
@@ -297,7 +295,7 @@ final class SpeakerReassignmentTests: XCTestCase {
 
         let params = TranscriptionParameters(enableSpeakerDiarization: true)
         try await engine.startStreaming(language: "en", parameters: params) { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 lastState = state
                 firstChunkExpectation.fulfill()
             }

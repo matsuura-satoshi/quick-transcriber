@@ -86,7 +86,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         var lastState: TranscriptionState?
 
         try await engine.startStreaming(language: "en") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 lastState = state
                 expectation.fulfill()
             }
@@ -97,7 +97,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 6.0)
 
-        XCTAssertEqual(lastState?.confirmedText, "Hello world")
+        XCTAssertEqual(lastState?.confirmedSegments.map(\.text), ["Hello world"])
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 1)
         XCTAssertEqual(mockTranscriber.lastLanguage, "en")
 
@@ -142,7 +142,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         let expectation = XCTestExpectation(description: "Japanese transcription")
         try await engine.startStreaming(language: "ja") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 expectation.fulfill()
             }
         }
@@ -192,7 +192,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         var states: [TranscriptionState] = []
         try await engine.startStreaming(language: "en") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 states.append(state)
             }
         }
@@ -208,7 +208,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 2)
 
         let lastState = states.last
-        XCTAssertEqual(lastState?.confirmedText, "segment segment")
+        XCTAssertEqual(lastState?.confirmedSegments.map(\.text), ["segment", "segment"])
 
         await engine.stopStreaming()
     }
@@ -460,7 +460,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let expectation = XCTestExpectation(description: "Two transcriptions received")
         expectation.expectedFulfillmentCount = 2
         try await engine.startStreaming(language: "en", parameters: params) { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 expectation.fulfill()
             }
         }

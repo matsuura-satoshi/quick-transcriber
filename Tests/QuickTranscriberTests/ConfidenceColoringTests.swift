@@ -7,7 +7,6 @@ final class ConfidenceColoringTests: XCTestCase {
 
     func testTranscriptionStateDefaultSegmentsEmpty() {
         let state = TranscriptionState(
-            confirmedText: "Hello",
             unconfirmedText: "",
             isRecording: true
         )
@@ -20,7 +19,6 @@ final class ConfidenceColoringTests: XCTestCase {
             ConfirmedSegment(text: "World", speaker: "B", speakerConfidence: 0.3),
         ]
         let state = TranscriptionState(
-            confirmedText: "A: Hello\nB: World",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: segments
@@ -263,7 +261,6 @@ final class ConfidenceColoringTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 100_000_000)
 
         engine.simulateStateChange(TranscriptionState(
-            confirmedText: "A: Hello",
             unconfirmedText: "",
             isRecording: true,
             confirmedSegments: segments
@@ -363,7 +360,7 @@ final class ConfidenceColoringTests: XCTestCase {
         var lastState: TranscriptionState?
 
         try await engine.startStreaming(language: "en") { state in
-            if !state.confirmedText.isEmpty {
+            if !state.confirmedSegments.isEmpty {
                 lastState = state
                 expectation.fulfill()
             }

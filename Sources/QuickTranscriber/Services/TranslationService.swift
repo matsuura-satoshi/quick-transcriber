@@ -245,7 +245,7 @@ public final class TranslationService: ObservableObject {
             // First segment gets the retranslated text, preserving metadata from translatedSegments
             display[group.startIndex].text = retranslation
 
-            // Remaining segments in group get empty text (skipped by buildAttributedString)
+            // Remaining segments in group get empty text (skipped by SegmentTextRenderer)
             let end = min(group.endIndex, display.count - 1)
             for i in (group.startIndex + 1)...end {
                 display[i].text = ""
