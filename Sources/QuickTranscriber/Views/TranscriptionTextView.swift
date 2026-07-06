@@ -171,86 +171,27 @@ struct TranscriptionTextView: NSViewRepresentable {
         coordinator.lastUnconfirmedText = newUnconfirmed
         coordinator.lastFontSize = fontSize
 
-        guard let textView = coordinator.textView,
-              let textStorage = textView.textStorage else { return }
+        guard let textView = coordinator.textView else { return }
 
         let isAtBottom = coordinator.isScrolledToBottom()
 
-        if !confirmedSegments.isEmpty {
-            coordinator.applySegmentUpdate(
-                segments: confirmedSegments,
-                language: language,
-                silenceThreshold: silenceThreshold,
-                fontSize: fontSize,
-                unconfirmed: newUnconfirmed,
-                oldFontSize: oldFontSize,
-                oldUnconfirmed: oldUnconfirmed,
-                speakerDisplayNames: speakerDisplayNames
-            )
-        } else {
-            // No confidence data: use efficient diff-append path
-            let canDiffAppend = fontSize == oldFontSize
-                && newUnconfirmed.isEmpty
-                && oldUnconfirmed.isEmpty
-                && newConfirmed.hasPrefix(oldConfirmed)
-                && newConfirmed != oldConfirmed
-
-            if canDiffAppend {
-                let delta = String(newConfirmed.dropFirst(oldConfirmed.count))
-                let attrs = Self.confirmedAttributes(fontSize: fontSize)
-                textStorage.append(NSAttributedString(string: delta, attributes: attrs))
-            } else {
-                let savedRange = textView.selectedRange()
-                let hadSelection = savedRange.length > 0
-                let attributed = Self.buildAttributedString(
-                    confirmed: newConfirmed,
-                    unconfirmed: newUnconfirmed,
-                    fontSize: fontSize
-                )
-                textStorage.setAttributedString(attributed)
-                if hadSelection && NSMaxRange(savedRange) <= textStorage.length {
-                    textView.setSelectedRange(savedRange)
-                }
-            }
-        }
+        // segments が空の場合（clear 直後・unconfirmed のみ）も renderer が正しく描画する
+        coordinator.applySegmentUpdate(
+            segments: confirmedSegments,
+            language: language,
+            silenceThreshold: silenceThreshold,
+            fontSize: fontSize,
+            unconfirmed: newUnconfirmed,
+            oldFontSize: oldFontSize,
+            oldUnconfirmed: oldUnconfirmed,
+            speakerDisplayNames: speakerDisplayNames
+        )
 
         if isAtBottom {
             DispatchQueue.main.async {
                 textView.scrollToEndOfDocument(nil)
             }
         }
-    }
-
-    // MARK: - Attributed String Building
-
-    static func makeParagraphStyle() -> NSMutableParagraphStyle {
-        SegmentTextRenderer.makeParagraphStyle()
-    }
-
-    static func confirmedAttributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
-        SegmentTextRenderer.confirmedAttributes(fontSize: fontSize)
-    }
-
-    private static func buildAttributedString(
-        confirmed: String,
-        unconfirmed: String,
-        fontSize: CGFloat
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-
-        if !confirmed.isEmpty {
-            result.append(NSAttributedString(string: confirmed, attributes: confirmedAttributes(fontSize: fontSize)))
-        }
-
-        if !unconfirmed.isEmpty {
-            if !confirmed.isEmpty {
-                let newline = NSAttributedString(string: "\n")
-                result.append(newline)
-            }
-            result.append(SegmentTextRenderer.unconfirmedAttributedString(unconfirmed, fontSize: fontSize))
-        }
-
-        return result
     }
 
     // MARK: - Speaker Fingerprint
