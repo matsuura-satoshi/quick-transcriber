@@ -147,7 +147,8 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         XCTAssertEqual(mockTranscriber.transcribeCallCount, 1,
             "queued buffers must be drained and transcribed on stop")
-        XCTAssertEqual(engine.currentConfirmedSegments.map(\.text), ["queued"])
+        let segments = await engine.currentConfirmedSegments
+        XCTAssertEqual(segments.map(\.text), ["queued"])
     }
 
     func testJapaneseLanguagePassedToTranscriber() async throws {
@@ -280,11 +281,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let embedding: [Float] = [1.0, 2.0, 3.0]
         let oldId = UUID()
         let newId = UUID()
-        // NOTE: must dispatch via the protocol existential, not the concrete type directly.
-        // In an async context, Swift's overload resolution prefers the protocol extension's
-        // async default (no-op) over ChunkedWhisperEngine's own synchronous override when the
-        // call target's static type is the concrete class — silently invoking the wrong method.
-        await (engine as TranscriptionEngine).correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
+        await engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
 
         XCTAssertEqual(mockDiarizer.correctedAssignments.count, 1)
         XCTAssertEqual(mockDiarizer.correctedAssignments[0].oldId, oldId)
@@ -292,13 +289,13 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(mockDiarizer.correctedAssignments[0].embedding, embedding)
     }
 
-    func testCorrectSpeakerAssignmentWithoutDiarizerIsNoOp() {
+    func testCorrectSpeakerAssignmentWithoutDiarizerIsNoOp() async {
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
             transcriber: MockChunkTranscriber()
         )
         // Should not crash when no diarizer
-        engine.correctSpeakerAssignment(embedding: [1.0], from: UUID(), to: UUID())
+        await engine.correctSpeakerAssignment(embedding: [1.0], from: UUID(), to: UUID())
     }
 
     func testProcessChunkStoresEmbeddingInSegments() async throws {
@@ -593,21 +590,19 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         // Establish currentSpeaker in smoother
         simulateSpeechAndSilence(speechDuration: 2.0)
         await fulfillment(of: [firstChunk], timeout: 6.0)
-        XCTAssertEqual(engine.currentConfirmedSegments[0].speaker, currentSpeaker.uuidString)
+        let firstSegments = await engine.currentConfirmedSegments
+        XCTAssertEqual(firstSegments[0].speaker, currentSpeaker.uuidString)
 
         // Correct past segment: pastSpeaker → correctedSpeaker
         // confirmedSpeakerId (currentSpeaker) != pastSpeaker → should skip confirmSpeaker
-        // NOTE: dispatch via protocol existential — see comment in
-        // testCorrectSpeakerAssignmentForwardsToDiarizer for why the concrete-type call
-        // would silently no-op in this async context.
-        await (engine as TranscriptionEngine).correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
+        await engine.correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
 
         // Feed second chunk: diarizer returns currentSpeaker again
         // Since smoother was NOT reset, currentSpeaker matches confirmed → segment shows currentSpeaker
         simulateSpeechAndSilence(speechDuration: 2.0)
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        let segments = engine.currentConfirmedSegments
+        let segments = await engine.currentConfirmedSegments
         XCTAssertGreaterThanOrEqual(segments.count, 2)
         XCTAssertEqual(segments.last?.speaker, currentSpeaker.uuidString,
             "Past segment correction should not reset Viterbi state; current speaker should persist")
@@ -650,17 +645,14 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         // Correct current speaker: currentSpeaker → correctedSpeaker
         // confirmedSpeakerId (currentSpeaker) == oldId → should call confirmSpeaker
-        // NOTE: dispatch via protocol existential — see comment in
-        // testCorrectSpeakerAssignmentForwardsToDiarizer for why the concrete-type call
-        // would silently no-op in this async context.
-        await (engine as TranscriptionEngine).correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
+        await engine.correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
 
         // Feed second chunk: diarizer returns correctedSpeaker
         // Since smoother WAS reset to correctedSpeaker, it confirms correctedSpeaker
         simulateSpeechAndSilence(speechDuration: 2.0)
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        let segments = engine.currentConfirmedSegments
+        let segments = await engine.currentConfirmedSegments
         XCTAssertGreaterThanOrEqual(segments.count, 2)
         XCTAssertEqual(segments.last?.speaker, correctedSpeaker.uuidString,
             "Current speaker correction should reset Viterbi state to corrected speaker")

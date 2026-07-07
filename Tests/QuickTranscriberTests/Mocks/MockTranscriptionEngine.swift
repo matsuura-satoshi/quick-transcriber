@@ -1,7 +1,7 @@
 import Foundation
 @testable import QuickTranscriberLib
 
-final class MockTranscriptionEngine: TranscriptionEngine {
+final class MockTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     var setupCalled = false
     var setupModel: String?
     var setupError: Error?

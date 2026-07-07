@@ -1,6 +1,6 @@
 import Foundation
 
-public final class ChunkedWhisperEngine: TranscriptionEngine {
+public actor ChunkedWhisperEngine: TranscriptionEngine {
     private let audioCaptureService: AudioCaptureService
     private let transcriber: ChunkTranscriber
     private let diarizer: SpeakerDiarizer?
@@ -12,7 +12,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var streamingTask: Task<Void, Never>?
     private var confirmedSegments: [ConfirmedSegment] = []
     private var speakerSmoother = ViterbiSpeakerSmoother()
-    private let smootherLock = NSLock()
     private var pendingSegmentStartIndex: Int?
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
@@ -37,9 +36,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         self.accumulator = VADChunkAccumulator()
     }
 
-    public var isStreaming: Bool {
-        get async { _isStreaming }
-    }
+    public var isStreaming: Bool { _isStreaming }
 
     public func setup(model: String) async throws {
         // Initialize WhisperKit and FluidAudio in parallel
@@ -130,20 +127,9 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
 
         streamingTask = Task { [weak self] in
-            var bufferCount = 0
             for await samples in bufferStream {
-                guard let self, self._isStreaming else { break }
-
-                let normalizedSamples = self.normalizer.normalize(samples)
-                self.audioRecorder?.appendSamples(normalizedSamples)
-                bufferCount += 1
-                if bufferCount % 100 == 0 {
-                    NSLog("[AudioLevelNormalizer] gain=%.2f runningPeak=%.4f", self.normalizer.currentGain, self.normalizer.runningPeak)
-                }
-
-                if let chunkResult = self.accumulator.appendBuffer(normalizedSamples) {
-                    await self.processChunk(chunkResult, onStateChange: onStateChange)
-                }
+                guard let self else { break }
+                guard await self.ingest(samples, onStateChange: onStateChange) else { break }
             }
         }
 
@@ -183,7 +169,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             NSLog("[ChunkedWhisperEngine] Audio recording saved")
         }
 
-        // Now safe to access accumulator — streaming task is fully stopped
         if let remainingResult = accumulator.flush() {
             await processChunk(remainingResult, onStateChange: { _ in })
         }
@@ -222,27 +207,37 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
 
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
-        smootherLock.withLock {
-            if speakerSmoother.confirmedSpeakerId == oldId {
-                speakerSmoother.confirmSpeaker(newId)
-            }
-        }
-    }
-
-    public func syncViterbiConfirm(to newId: UUID) {
-        smootherLock.withLock {
+        if speakerSmoother.confirmedSpeakerId == oldId {
             speakerSmoother.confirmSpeaker(newId)
         }
     }
 
+    public func syncViterbiConfirm(to newId: UUID) {
+        speakerSmoother.confirmSpeaker(newId)
+    }
+
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         diarizer?.mergeSpeakerProfiles(from: sourceId, into: targetId)
-        smootherLock.withLock {
-            speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
-        }
+        speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
     }
 
     // MARK: - Private
+
+    /// Streaming task から呼ばれる 1 バッファ分の取り込み。actor 隔離により
+    /// normalizer / accumulator / confirmedSegments へのアクセスが直列化される。
+    /// - Returns: false なら停止済みで、呼び出し側はループを抜ける。
+    private func ingest(
+        _ samples: [Float],
+        onStateChange: @escaping @Sendable (TranscriptionState) -> Void
+    ) async -> Bool {
+        guard _isStreaming else { return false }
+        let normalizedSamples = normalizer.normalize(samples)
+        audioRecorder?.appendSamples(normalizedSamples)
+        if let chunkResult = accumulator.appendBuffer(normalizedSamples) {
+            await processChunk(chunkResult, onStateChange: onStateChange)
+        }
+        return true
+    }
 
     private func processChunk(
         _ chunkResult: ChunkResult,
@@ -263,9 +258,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             if let diarizer, diarizationActive {
                 let significantSilence = chunkResult.precedingSilenceDuration >= currentParameters.silenceCutoffDuration
                 if significantSilence {
-                    smootherLock.withLock {
-                        speakerSmoother.resetForSpeakerChange()
-                    }
+                    speakerSmoother.resetForSpeakerChange()
                 }
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
@@ -304,9 +297,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedResult: SpeakerIdentification?
             if diarizationActive {
-                smoothedResult = smootherLock.withLock {
-                    speakerSmoother.process(rawSpeakerResult)
-                }
+                smoothedResult = speakerSmoother.process(rawSpeakerResult)
 
                 // Retroactively update pending segments with confidence (skip user-corrected)
                 if let result = smoothedResult, let startIdx = pendingSegmentStartIndex {
