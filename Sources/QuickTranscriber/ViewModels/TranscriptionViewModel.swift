@@ -922,6 +922,8 @@ public final class TranscriptionViewModel: ObservableObject {
 
     private func finishFileTranscription() async {
         guard let engine = fileTranscriptionEngine else { return }
+        // 発行済みの speaker 系操作が diarizer に届いてから stop する（live 経路の stopTranscription と同じ順序保証）
+        await engineSyncTask?.value
         await engine.stopStreaming(speakerDisplayNames: speakerDisplayNames, drainRemaining: true)
         fileTranscriptionEngine = nil
         isTranscribingFile = false
