@@ -62,17 +62,22 @@ final class MockTranscriptionEngine: TranscriptionEngine {
     var correctedAssignments: [(embedding: [Float], oldId: UUID, newId: UUID)] = []
     var mergedProfiles: [(sourceId: UUID, targetId: UUID)] = []
     var syncViterbiConfirmCalls: [UUID] = []
+    /// 3 メソッド横断の到達順（直列チェーンの FIFO 検証用）
+    var speakerOpOrder: [String] = []
 
     func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         correctedAssignments.append((embedding: embedding, oldId: oldId, newId: newId))
+        speakerOpOrder.append("correct")
     }
 
     func syncViterbiConfirm(to newId: UUID) {
         syncViterbiConfirmCalls.append(newId)
+        speakerOpOrder.append("sync")
     }
 
     func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         mergedProfiles.append((sourceId: sourceId, targetId: targetId))
+        speakerOpOrder.append("merge")
     }
 
     // Helper to simulate state changes from the engine

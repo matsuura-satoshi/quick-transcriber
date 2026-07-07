@@ -280,7 +280,11 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let embedding: [Float] = [1.0, 2.0, 3.0]
         let oldId = UUID()
         let newId = UUID()
-        engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
+        // NOTE: must dispatch via the protocol existential, not the concrete type directly.
+        // In an async context, Swift's overload resolution prefers the protocol extension's
+        // async default (no-op) over ChunkedWhisperEngine's own synchronous override when the
+        // call target's static type is the concrete class — silently invoking the wrong method.
+        await (engine as TranscriptionEngine).correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
 
         XCTAssertEqual(mockDiarizer.correctedAssignments.count, 1)
         XCTAssertEqual(mockDiarizer.correctedAssignments[0].oldId, oldId)
@@ -593,7 +597,10 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         // Correct past segment: pastSpeaker → correctedSpeaker
         // confirmedSpeakerId (currentSpeaker) != pastSpeaker → should skip confirmSpeaker
-        engine.correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
+        // NOTE: dispatch via protocol existential — see comment in
+        // testCorrectSpeakerAssignmentForwardsToDiarizer for why the concrete-type call
+        // would silently no-op in this async context.
+        await (engine as TranscriptionEngine).correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
 
         // Feed second chunk: diarizer returns currentSpeaker again
         // Since smoother was NOT reset, currentSpeaker matches confirmed → segment shows currentSpeaker
@@ -643,7 +650,10 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         // Correct current speaker: currentSpeaker → correctedSpeaker
         // confirmedSpeakerId (currentSpeaker) == oldId → should call confirmSpeaker
-        engine.correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
+        // NOTE: dispatch via protocol existential — see comment in
+        // testCorrectSpeakerAssignmentForwardsToDiarizer for why the concrete-type call
+        // would silently no-op in this async context.
+        await (engine as TranscriptionEngine).correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
 
         // Feed second chunk: diarizer returns correctedSpeaker
         // Since smoother WAS reset to correctedSpeaker, it confirms correctedSpeaker

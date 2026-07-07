@@ -31,9 +31,9 @@ public protocol TranscriptionEngine: AnyObject {
     func startStreaming(language: String, parameters: TranscriptionParameters, participantProfiles: [(speakerId: UUID, embedding: [Float])]?, audioRecordingDirectory: URL?, audioRecordingDatePrefix: String?, onStateChange: @escaping @Sendable (TranscriptionState) -> Void) async throws
     func stopStreaming(speakerDisplayNames: [String: String]) async
     var isStreaming: Bool { get async }
-    func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID)
-    func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID)
-    func syncViterbiConfirm(to newId: UUID)
+    func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) async
+    func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) async
+    func syncViterbiConfirm(to newId: UUID) async
 }
 
 extension TranscriptionEngine {
@@ -49,15 +49,15 @@ extension TranscriptionEngine {
         await stopStreaming(speakerDisplayNames: [:])
     }
 
-    public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
+    public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) async {
         // Default no-op for engines without diarization
     }
 
-    public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
+    public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) async {
         // Default no-op for engines without diarization
     }
 
-    public func syncViterbiConfirm(to newId: UUID) {
+    public func syncViterbiConfirm(to newId: UUID) async {
         // Default no-op for engines without diarization
     }
 }

@@ -79,6 +79,10 @@ public final class TranscriptionViewModel: ObservableObject {
     public let coordinator: SpeakerStateCoordinator
 
     private var service: TranscriptionService
+
+    /// テスト用 join point: coordinator→service の speaker 系転送チェーンの末尾
+    var engineSyncTask: Task<Void, Never>? { service.engineSyncTask }
+
     private let modelName: String
     internal let parametersStore: ParametersStore
     internal let speakerProfileStore: SpeakerProfileStore

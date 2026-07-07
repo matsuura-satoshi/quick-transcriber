@@ -864,7 +864,7 @@ final class TranscriptionViewModelTests: XCTestCase {
 
     // MARK: - Speaker Correction Wiring
 
-    func testReassignSpeakerForBlockCallsCorrectSpeakerAssignment() {
+    func testReassignSpeakerForBlockCallsCorrectSpeakerAssignment() async {
         let emb: [Float] = Array(repeating: 0.1, count: 256)
         let engine = MockTranscriptionEngine()
         let dir = FileManager.default.temporaryDirectory
@@ -885,6 +885,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         ]
 
         vm.reassignSpeakerForBlock(segmentIndex: 0, newSpeaker: newSpeakerId.uuidString)
+        await vm.engineSyncTask?.value
 
         // Both segments should be reassigned
         XCTAssertEqual(vm.confirmedSegments[0].speaker, newSpeakerId.uuidString)
@@ -899,7 +900,7 @@ final class TranscriptionViewModelTests: XCTestCase {
         XCTAssertEqual(engine.correctedAssignments[0].embedding, emb)
     }
 
-    func testReassignSpeakerForSelectionCallsCorrectSpeakerAssignment() {
+    func testReassignSpeakerForSelectionCallsCorrectSpeakerAssignment() async {
         let emb: [Float] = Array(repeating: 0.2, count: 256)
         let engine = MockTranscriptionEngine()
         let dir = FileManager.default.temporaryDirectory
@@ -938,6 +939,7 @@ final class TranscriptionViewModelTests: XCTestCase {
             newSpeaker: speakerIdC.uuidString,
             segmentMap: segmentMap
         )
+        await vm.engineSyncTask?.value
 
         // First segment should be reassigned
         XCTAssertEqual(vm.confirmedSegments[0].speaker, speakerIdC.uuidString)
