@@ -691,4 +691,52 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         await engine.stopStreaming()
     }
+
+    // MARK: - Actor serialization smoke test
+
+    func testConcurrentSpeakerOpsDuringStreamingAreSerialized() async throws {
+        // streaming 中に correction / merge / sync を多重並行発行しても、
+        // actor 直列化により mock diarizer への到達が欠落なく完了することを確認する。
+        // （actor 化以前は smootherLock 外の状態が data race になり得た経路）
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let mockDiarizer = MockSpeakerDiarizer()
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+        let params = TranscriptionParameters(enableSpeakerDiarization: true)
+        try await engine.startStreaming(language: "en", parameters: params) { _ in }
+
+        let idA = UUID()
+        let idB = UUID()
+        let capture = mockCapture!
+        let speech = [Float](repeating: 0.1, count: 16000)
+        let silence = [Float](repeating: 0.0, count: 11200)
+
+        await withTaskGroup(of: Void.self) { group in
+            for i in 0..<50 {
+                group.addTask { await engine.correctSpeakerAssignment(embedding: [Float(i)], from: idA, to: idB) }
+                group.addTask { await engine.mergeSpeakerProfiles(from: idA, into: idB) }
+                group.addTask { await engine.syncViterbiConfirm(to: idB) }
+                if i % 10 == 0 {
+                    group.addTask {
+                        capture.simulateBuffer(speech)
+                        capture.simulateBuffer(silence)
+                    }
+                }
+            }
+        }
+
+        XCTAssertEqual(mockDiarizer.correctedAssignments.count, 50,
+            "all concurrent corrections must reach the diarizer exactly once (serialized, no drops)")
+        let streaming = await engine.isStreaming
+        XCTAssertTrue(streaming, "engine must survive concurrent speaker ops")
+
+        await engine.stopStreaming()
+    }
 }
