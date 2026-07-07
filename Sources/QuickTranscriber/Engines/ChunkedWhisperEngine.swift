@@ -247,8 +247,6 @@ public actor ChunkedWhisperEngine: TranscriptionEngine {
         let utteranceId = chunkResult.utteranceId
         let chunkDuration = Double(chunk.count) / Constants.Audio.sampleRate
 
-        NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, precedingSilence=\(String(format: "%.1f", chunkResult.precedingSilenceDuration))s")
-
         LatencyInstrumentation.mark(.chunkDispatched, utteranceId: utteranceId)
 
         do {
@@ -283,14 +281,8 @@ public actor ChunkedWhisperEngine: TranscriptionEngine {
                 rawSpeakerResult = nil
             }
             let filtered = segments.filter { segment in
-                if TranscriptionUtils.shouldFilterByMetadata(segment) {
-                    NSLog("[ChunkedWhisperEngine] Filtered (metadata): \(segment.text) [noSpeech=\(String(format: "%.2f", segment.noSpeechProb)), logprob=\(String(format: "%.2f", segment.avgLogprob))]")
-                    return false
-                }
-                if TranscriptionUtils.shouldFilterSegment(segment.text, language: currentLanguage) {
-                    NSLog("[ChunkedWhisperEngine] Filtered (text): \(segment.text)")
-                    return false
-                }
+                if TranscriptionUtils.shouldFilterByMetadata(segment) { return false }
+                if TranscriptionUtils.shouldFilterSegment(segment.text, language: currentLanguage) { return false }
                 return true
             }
 
@@ -327,7 +319,6 @@ public actor ChunkedWhisperEngine: TranscriptionEngine {
                     speakerConfidence: smoothedResult?.confidence,
                     speakerEmbedding: rawSpeakerResult?.embedding
                 ))
-                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.speakerId.uuidString ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }
 
             // Track where pending segments start
@@ -337,6 +328,12 @@ public actor ChunkedWhisperEngine: TranscriptionEngine {
             }
 
             LatencyInstrumentation.mark(.emitToUI, utteranceId: utteranceId)
+            NSLog("[ChunkedWhisperEngine] Chunk %.1fs: +%d segments (%d filtered), speaker=%@, precedingSilence=%.1fs",
+                  chunkDuration,
+                  filtered.count,
+                  segments.count - filtered.count,
+                  smoothedResult?.speakerId.uuidString ?? "pending",
+                  chunkResult.precedingSilenceDuration)
             onStateChange(TranscriptionState(
                 unconfirmedText: "",
                 isRecording: true,
