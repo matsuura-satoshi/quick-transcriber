@@ -918,8 +918,7 @@ public final class TranscriptionViewModel: ObservableObject {
 
     private func finishFileTranscription() async {
         guard let engine = fileTranscriptionEngine else { return }
-        engine.drainOnStop = true
-        await engine.stopStreaming(speakerDisplayNames: speakerDisplayNames)
+        await engine.stopStreaming(speakerDisplayNames: speakerDisplayNames, drainRemaining: true)
         fileTranscriptionEngine = nil
         isTranscribingFile = false
         fileTranscriptionProgress = 1.0

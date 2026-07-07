@@ -21,9 +21,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     /// Whether diarization is active for this streaming session.
     private var diarizationActive = false
     private var audioRecorder: AudioRecordingService?
-    /// When true, stopStreaming drains all buffered samples before stopping.
-    /// Used for file transcription where all buffers are queued upfront.
-    public var drainOnStop = false
 
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
@@ -154,18 +151,23 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     }
 
     public func stopStreaming(speakerDisplayNames: [String: String]) async {
+        await stopStreaming(speakerDisplayNames: speakerDisplayNames, drainRemaining: false)
+    }
+
+    /// - Parameter drainRemaining: true ならバッファ済み全サンプルを処理してから停止する
+    ///   （file 転写の完了時）。false なら即時停止（live 録音、file 転写のキャンセル）。
+    public func stopStreaming(speakerDisplayNames: [String: String], drainRemaining: Bool) async {
         audioCaptureService.stopCapture()
 
-        if drainOnStop {
-            // File mode: finish the stream and let the loop drain all buffered samples
+        if drainRemaining {
+            // Finish the stream and let the loop drain all buffered samples
             streamContinuation?.finish()
             streamContinuation = nil
             await streamingTask?.value
             streamingTask = nil
             _isStreaming = false
-            drainOnStop = false
         } else {
-            // Live mode: stop immediately
+            // Stop immediately
             _isStreaming = false
             streamContinuation?.finish()
             streamContinuation = nil

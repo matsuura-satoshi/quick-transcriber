@@ -129,6 +129,27 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
     }
 
+    func testStopWithDrainRemainingProcessesQueuedBuffers() async throws {
+        // File モード相当: バッファを積んでから drain 付き stop → 残りが全て処理される
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "queued", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber
+        )
+        try await engine.setup(model: "test-model")
+        try await engine.startStreaming(language: "en") { _ in }
+
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        await engine.stopStreaming(speakerDisplayNames: [:], drainRemaining: true)
+
+        XCTAssertEqual(mockTranscriber.transcribeCallCount, 1,
+            "queued buffers must be drained and transcribed on stop")
+        XCTAssertEqual(engine.currentConfirmedSegments.map(\.text), ["queued"])
+    }
+
     func testJapaneseLanguagePassedToTranscriber() async throws {
         let mockTranscriber = MockChunkTranscriber()
         mockTranscriber.transcribeResults = [
