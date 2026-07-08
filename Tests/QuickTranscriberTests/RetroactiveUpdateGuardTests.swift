@@ -119,7 +119,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         await fulfillment(of: [firstChunk], timeout: 6.0)
 
         // Mark first segment as user-corrected (simulating ViewModel action)
-        engine.markSegmentAsUserCorrected(at: 0, speaker: "B")
+        await engine.markSegmentAsUserCorrected(at: 0, speaker: "B")
 
         // Send second chunk to trigger retroactive update
         mockTranscriber.transcribeResults = [
@@ -130,7 +130,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         await fulfillment(of: [secondChunk], timeout: 6.0)
 
         // First segment should still be "B" (user-corrected), not overwritten to "A"
-        let segments = engine.currentConfirmedSegments
+        let segments = await engine.currentConfirmedSegments
         XCTAssertEqual(segments[0].speaker, "B", "User-corrected segment should not be overwritten by retroactive update")
         XCTAssertTrue(segments[0].isUserCorrected)
 
@@ -180,7 +180,7 @@ final class RetroactiveUpdateGuardTests: XCTestCase {
         try await Task.sleep(nanoseconds: 500_000_000)
 
         // Mark segment as user-corrected (was originally profileIdA, user changed to some other speaker)
-        engine.markSegmentAsUserCorrected(at: 0, speaker: UUID().uuidString, originalSpeaker: profileIdA.uuidString)
+        await engine.markSegmentAsUserCorrected(at: 0, speaker: UUID().uuidString, originalSpeaker: profileIdA.uuidString)
 
         // Provide display names for both profiles (ghost filter requires mapping)
         await engine.stopStreaming(speakerDisplayNames: [

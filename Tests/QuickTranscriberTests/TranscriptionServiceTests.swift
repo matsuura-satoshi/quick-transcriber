@@ -90,7 +90,7 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertTrue(engine.stopStreamingCalled)
     }
 
-    func testCorrectSpeakerAssignmentForwardsToEngine() {
+    func testCorrectSpeakerAssignmentForwardsToEngine() async {
         let engine = MockTranscriptionEngine()
         let service = TranscriptionService(engine: engine)
 
@@ -98,6 +98,7 @@ final class TranscriptionServiceTests: XCTestCase {
         let oldId = UUID()
         let newId = UUID()
         service.correctSpeakerAssignment(embedding: embedding, from: oldId.uuidString, to: newId.uuidString)
+        await service.engineSyncTask?.value
 
         XCTAssertEqual(engine.correctedAssignments.count, 1)
         XCTAssertEqual(engine.correctedAssignments[0].oldId, oldId)
@@ -105,14 +106,30 @@ final class TranscriptionServiceTests: XCTestCase {
         XCTAssertEqual(engine.correctedAssignments[0].embedding, embedding)
     }
 
-    func testCorrectSpeakerAssignmentWithInvalidUUIDIsNoOp() {
+    func testCorrectSpeakerAssignmentWithInvalidUUIDIsNoOp() async {
         let engine = MockTranscriptionEngine()
         let service = TranscriptionService(engine: engine)
 
         let embedding: [Float] = [1.0, 2.0, 3.0]
         service.correctSpeakerAssignment(embedding: embedding, from: "not-a-uuid", to: "also-not-a-uuid")
+        await service.engineSyncTask?.value
 
         XCTAssertEqual(engine.correctedAssignments.count, 0, "Invalid UUID strings should result in no-op")
+    }
+
+    func testSpeakerOpsForwardToEngineInIssueOrder() async {
+        let engine = MockTranscriptionEngine()
+        let service = TranscriptionService(engine: engine)
+        let a = UUID()
+        let b = UUID()
+
+        service.correctSpeakerAssignment(embedding: [1.0], from: a.uuidString, to: b.uuidString)
+        service.mergeSpeakerProfiles(from: a, into: b)
+        service.syncViterbiConfirm(to: b.uuidString)
+        await service.engineSyncTask?.value
+
+        XCTAssertEqual(engine.speakerOpOrder, ["correct", "merge", "sync"],
+            "speaker ops must reach the engine in issue order (serialized chain)")
     }
 
     func testServiceErrorDescriptions() {

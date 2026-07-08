@@ -129,6 +129,28 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         await engine.stopStreaming()
     }
 
+    func testStopWithDrainRemainingProcessesQueuedBuffers() async throws {
+        // File モード相当: バッファを積んでから drain 付き stop → 残りが全て処理される
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "queued", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber
+        )
+        try await engine.setup(model: "test-model")
+        try await engine.startStreaming(language: "en") { _ in }
+
+        simulateSpeechAndSilence(speechDuration: 2.0)
+        await engine.stopStreaming(speakerDisplayNames: [:], drainRemaining: true)
+
+        XCTAssertEqual(mockTranscriber.transcribeCallCount, 1,
+            "queued buffers must be drained and transcribed on stop")
+        let segments = await engine.currentConfirmedSegments
+        XCTAssertEqual(segments.map(\.text), ["queued"])
+    }
+
     func testJapaneseLanguagePassedToTranscriber() async throws {
         let mockTranscriber = MockChunkTranscriber()
         mockTranscriber.transcribeResults = [
@@ -259,7 +281,7 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         let embedding: [Float] = [1.0, 2.0, 3.0]
         let oldId = UUID()
         let newId = UUID()
-        engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
+        await engine.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
 
         XCTAssertEqual(mockDiarizer.correctedAssignments.count, 1)
         XCTAssertEqual(mockDiarizer.correctedAssignments[0].oldId, oldId)
@@ -267,13 +289,13 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(mockDiarizer.correctedAssignments[0].embedding, embedding)
     }
 
-    func testCorrectSpeakerAssignmentWithoutDiarizerIsNoOp() {
+    func testCorrectSpeakerAssignmentWithoutDiarizerIsNoOp() async {
         let engine = ChunkedWhisperEngine(
             audioCaptureService: mockCapture,
             transcriber: MockChunkTranscriber()
         )
         // Should not crash when no diarizer
-        engine.correctSpeakerAssignment(embedding: [1.0], from: UUID(), to: UUID())
+        await engine.correctSpeakerAssignment(embedding: [1.0], from: UUID(), to: UUID())
     }
 
     func testProcessChunkStoresEmbeddingInSegments() async throws {
@@ -568,18 +590,19 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         // Establish currentSpeaker in smoother
         simulateSpeechAndSilence(speechDuration: 2.0)
         await fulfillment(of: [firstChunk], timeout: 6.0)
-        XCTAssertEqual(engine.currentConfirmedSegments[0].speaker, currentSpeaker.uuidString)
+        let firstSegments = await engine.currentConfirmedSegments
+        XCTAssertEqual(firstSegments[0].speaker, currentSpeaker.uuidString)
 
         // Correct past segment: pastSpeaker → correctedSpeaker
         // confirmedSpeakerId (currentSpeaker) != pastSpeaker → should skip confirmSpeaker
-        engine.correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
+        await engine.correctSpeakerAssignment(embedding: [1.0], from: pastSpeaker, to: correctedSpeaker)
 
         // Feed second chunk: diarizer returns currentSpeaker again
         // Since smoother was NOT reset, currentSpeaker matches confirmed → segment shows currentSpeaker
         simulateSpeechAndSilence(speechDuration: 2.0)
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        let segments = engine.currentConfirmedSegments
+        let segments = await engine.currentConfirmedSegments
         XCTAssertGreaterThanOrEqual(segments.count, 2)
         XCTAssertEqual(segments.last?.speaker, currentSpeaker.uuidString,
             "Past segment correction should not reset Viterbi state; current speaker should persist")
@@ -622,14 +645,14 @@ final class ChunkedWhisperEngineTests: XCTestCase {
 
         // Correct current speaker: currentSpeaker → correctedSpeaker
         // confirmedSpeakerId (currentSpeaker) == oldId → should call confirmSpeaker
-        engine.correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
+        await engine.correctSpeakerAssignment(embedding: [1.0], from: currentSpeaker, to: correctedSpeaker)
 
         // Feed second chunk: diarizer returns correctedSpeaker
         // Since smoother WAS reset to correctedSpeaker, it confirms correctedSpeaker
         simulateSpeechAndSilence(speechDuration: 2.0)
         try await Task.sleep(nanoseconds: 500_000_000)
 
-        let segments = engine.currentConfirmedSegments
+        let segments = await engine.currentConfirmedSegments
         XCTAssertGreaterThanOrEqual(segments.count, 2)
         XCTAssertEqual(segments.last?.speaker, correctedSpeaker.uuidString,
             "Current speaker correction should reset Viterbi state to corrected speaker")
@@ -665,6 +688,54 @@ final class ChunkedWhisperEngineTests: XCTestCase {
         XCTAssertEqual(mockDiarizer.loadedProfiles?.count, 1)
         // The engine maps StoredSpeakerProfile.id to speakerId
         XCTAssertEqual(mockDiarizer.loadedProfiles?.first?.speakerId, store2.profiles.first?.id)
+
+        await engine.stopStreaming()
+    }
+
+    // MARK: - Actor serialization smoke test
+
+    func testConcurrentSpeakerOpsDuringStreamingAreSerialized() async throws {
+        // streaming 中に correction / merge / sync を多重並行発行しても、
+        // actor 直列化により mock diarizer への到達が欠落なく完了することを確認する。
+        // （actor 化以前は smootherLock 外の状態が data race になり得た経路）
+        let mockTranscriber = MockChunkTranscriber()
+        mockTranscriber.transcribeResults = [
+            TranscribedSegment(text: "hello", avgLogprob: -0.5, compressionRatio: 1.0, noSpeechProb: 0.1)
+        ]
+        let mockDiarizer = MockSpeakerDiarizer()
+        let engine = ChunkedWhisperEngine(
+            audioCaptureService: mockCapture,
+            transcriber: mockTranscriber,
+            diarizer: mockDiarizer
+        )
+        try await engine.setup(model: "test-model")
+        let params = TranscriptionParameters(enableSpeakerDiarization: true)
+        try await engine.startStreaming(language: "en", parameters: params) { _ in }
+
+        let idA = UUID()
+        let idB = UUID()
+        let capture = mockCapture!
+        let speech = [Float](repeating: 0.1, count: 16000)
+        let silence = [Float](repeating: 0.0, count: 11200)
+
+        await withTaskGroup(of: Void.self) { group in
+            for i in 0..<50 {
+                group.addTask { await engine.correctSpeakerAssignment(embedding: [Float(i)], from: idA, to: idB) }
+                group.addTask { await engine.mergeSpeakerProfiles(from: idA, into: idB) }
+                group.addTask { await engine.syncViterbiConfirm(to: idB) }
+                if i % 10 == 0 {
+                    group.addTask {
+                        capture.simulateBuffer(speech)
+                        capture.simulateBuffer(silence)
+                    }
+                }
+            }
+        }
+
+        XCTAssertEqual(mockDiarizer.correctedAssignments.count, 50,
+            "all concurrent corrections must reach the diarizer exactly once (serialized, no drops)")
+        let streaming = await engine.isStreaming
+        XCTAssertTrue(streaming, "engine must survive concurrent speaker ops")
 
         await engine.stopStreaming()
     }

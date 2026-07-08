@@ -483,7 +483,7 @@ final class SpeakerStateCoordinatorTests: XCTestCase {
 
     // MARK: - reassignSegment nil embedding path
 
-    func testReassignSegment_withNilEmbedding_callsViterbiSync() {
+    func testReassignSegment_withNilEmbedding_callsViterbiSync() async {
         let (coord, _) = makeCoordinator()
         let mockEngine = MockTranscriptionEngine()
         let service = TranscriptionService(engine: mockEngine)
@@ -496,6 +496,7 @@ final class SpeakerStateCoordinatorTests: XCTestCase {
         ]
 
         coord.reassignSegment(at: 0, to: newId.uuidString, segments: &segments)
+        await service.engineSyncTask?.value
 
         XCTAssertTrue(mockEngine.correctedAssignments.isEmpty,
             "should not call correctSpeakerAssignment when embedding is nil")
@@ -505,7 +506,7 @@ final class SpeakerStateCoordinatorTests: XCTestCase {
         XCTAssertTrue(segments[0].isUserCorrected)
     }
 
-    func testReassignSegment_withEmbedding_callsCorrectAssignment() {
+    func testReassignSegment_withEmbedding_callsCorrectAssignment() async {
         let (coord, _) = makeCoordinator()
         let mockEngine = MockTranscriptionEngine()
         let service = TranscriptionService(engine: mockEngine)
@@ -519,6 +520,7 @@ final class SpeakerStateCoordinatorTests: XCTestCase {
         ]
 
         coord.reassignSegment(at: 0, to: newId.uuidString, segments: &segments)
+        await service.engineSyncTask?.value
 
         XCTAssertEqual(mockEngine.correctedAssignments.count, 1)
         XCTAssertEqual(mockEngine.correctedAssignments[0].oldId, oldId)

@@ -1,6 +1,6 @@
 import Foundation
 
-public final class ChunkedWhisperEngine: TranscriptionEngine {
+public actor ChunkedWhisperEngine: TranscriptionEngine {
     private let audioCaptureService: AudioCaptureService
     private let transcriber: ChunkTranscriber
     private let diarizer: SpeakerDiarizer?
@@ -12,7 +12,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     private var streamingTask: Task<Void, Never>?
     private var confirmedSegments: [ConfirmedSegment] = []
     private var speakerSmoother = ViterbiSpeakerSmoother()
-    private let smootherLock = NSLock()
     private var pendingSegmentStartIndex: Int?
     private var streamContinuation: AsyncStream<[Float]>.Continuation?
     private var currentLanguage: String = "en"
@@ -21,9 +20,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     /// Whether diarization is active for this streaming session.
     private var diarizationActive = false
     private var audioRecorder: AudioRecordingService?
-    /// When true, stopStreaming drains all buffered samples before stopping.
-    /// Used for file transcription where all buffers are queued upfront.
-    public var drainOnStop = false
 
     public init(
         audioCaptureService: AudioCaptureService = AVAudioCaptureService(),
@@ -40,9 +36,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         self.accumulator = VADChunkAccumulator()
     }
 
-    public var isStreaming: Bool {
-        get async { _isStreaming }
-    }
+    public var isStreaming: Bool { _isStreaming }
 
     public func setup(model: String) async throws {
         // Initialize WhisperKit and FluidAudio in parallel
@@ -133,20 +127,9 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         }
 
         streamingTask = Task { [weak self] in
-            var bufferCount = 0
             for await samples in bufferStream {
-                guard let self, self._isStreaming else { break }
-
-                let normalizedSamples = self.normalizer.normalize(samples)
-                self.audioRecorder?.appendSamples(normalizedSamples)
-                bufferCount += 1
-                if bufferCount % 100 == 0 {
-                    NSLog("[AudioLevelNormalizer] gain=%.2f runningPeak=%.4f", self.normalizer.currentGain, self.normalizer.runningPeak)
-                }
-
-                if let chunkResult = self.accumulator.appendBuffer(normalizedSamples) {
-                    await self.processChunk(chunkResult, onStateChange: onStateChange)
-                }
+                guard let self else { break }
+                guard await self.ingest(samples, onStateChange: onStateChange) else { break }
             }
         }
 
@@ -154,18 +137,23 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
     }
 
     public func stopStreaming(speakerDisplayNames: [String: String]) async {
+        await stopStreaming(speakerDisplayNames: speakerDisplayNames, drainRemaining: false)
+    }
+
+    /// - Parameter drainRemaining: true ならバッファ済み全サンプルを処理してから停止する
+    ///   （file 転写の完了時）。false なら即時停止（live 録音、file 転写のキャンセル）。
+    public func stopStreaming(speakerDisplayNames: [String: String], drainRemaining: Bool) async {
         audioCaptureService.stopCapture()
 
-        if drainOnStop {
-            // File mode: finish the stream and let the loop drain all buffered samples
+        if drainRemaining {
+            // Finish the stream and let the loop drain all buffered samples
             streamContinuation?.finish()
             streamContinuation = nil
             await streamingTask?.value
             streamingTask = nil
             _isStreaming = false
-            drainOnStop = false
         } else {
-            // Live mode: stop immediately
+            // Stop immediately
             _isStreaming = false
             streamContinuation?.finish()
             streamContinuation = nil
@@ -181,84 +169,24 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             NSLog("[ChunkedWhisperEngine] Audio recording saved")
         }
 
-        // Now safe to access accumulator — streaming task is fully stopped
         if let remainingResult = accumulator.flush() {
             await processChunk(remainingResult, onStateChange: { _ in })
         }
 
         accumulator.reset()
-        if let diarizer, diarizationActive, let store = speakerProfileStore {
-            if currentParameters.diarizationMode == .manual && !currentParticipantIds.isEmpty {
-                // Manual mode: confirmedSegments の非修正サンプルから weighted merge
-                applyManualModePostHocLearning(
-                    store: store,
-                    participantIds: currentParticipantIds,
-                    segments: confirmedSegments
-                )
-                do {
-                    try store.save()
-                } catch {
-                    NSLog("[ChunkedWhisperEngine] Failed to save after post-hoc learning: \(error)")
-                }
-            } else {
-                // Auto mode: 従来どおり tracker profile を merge
-                let sessionProfiles = diarizer.exportSpeakerProfiles()
-                if !sessionProfiles.isEmpty {
-                    let correctedOriginalSpeakers = Set(
-                        confirmedSegments
-                            .filter { $0.isUserCorrected }
-                            .compactMap { $0.originalSpeaker }
-                    )
-                    let filteredProfiles: [(speakerId: UUID, embedding: [Float])]
-                    if correctedOriginalSpeakers.isEmpty {
-                        filteredProfiles = sessionProfiles
-                    } else {
-                        filteredProfiles = sessionProfiles.filter { !correctedOriginalSpeakers.contains($0.speakerId.uuidString) }
-                        NSLog("[ChunkedWhisperEngine] Skipping merge for corrected speakers: \(correctedOriginalSpeakers)")
-                    }
-                    if !filteredProfiles.isEmpty {
-                        let mergeProfiles = filteredProfiles.compactMap { profile
-                            -> (speakerId: UUID, embedding: [Float], displayName: String)? in
-                            guard let name = speakerDisplayNames[profile.speakerId.uuidString] else {
-                                NSLog("[ChunkedWhisperEngine] Skipping unmapped profile \(profile.speakerId)")
-                                return nil
-                            }
-                            return (speakerId: profile.speakerId, embedding: profile.embedding, displayName: name)
-                        }
-                        if !mergeProfiles.isEmpty {
-                            store.mergeSessionProfiles(mergeProfiles)
-                            do {
-                                try store.save()
-                            } catch {
-                                NSLog("[ChunkedWhisperEngine] Failed to save speaker profiles: \(error)")
-                            }
-                            NSLog("[ChunkedWhisperEngine] Saved \(mergeProfiles.count) speaker profiles to store (filtered \(sessionProfiles.count - mergeProfiles.count))")
-                        }
-                    }
-                }
-            }
-        }
-        // Save embedding history for future profile reconstruction
-        if let historyStore = embeddingHistoryStore, let diarizer, diarizationActive {
-            let detailed = diarizer.exportDetailedSpeakerProfiles()
-            let entries = detailed.compactMap { profile -> EmbeddingHistoryEntry? in
-                guard !profile.embeddingHistory.isEmpty else { return nil }
-                // Match with stored profile to get UUID
-                let storedProfile = speakerProfileStore?.profiles.first { $0.id == profile.speakerId }
-                let profileId = storedProfile?.id ?? profile.speakerId
-                return EmbeddingHistoryEntry(
-                    speakerProfileId: profileId,
-                    label: profile.speakerId.uuidString,
-                    sessionDate: Date(),
-                    embeddings: profile.embeddingHistory.map { entry in
-                        HistoricalEmbedding(embedding: entry.embedding, confirmed: true, confidence: entry.confidence)
-                    }
-                )
-            }
-            if !entries.isEmpty {
-                historyStore.appendSession(entries: entries)
-                NSLog("[ChunkedWhisperEngine] Saved \(entries.count) speaker histories")
-            }
+        if let diarizer, diarizationActive {
+            let finalizer = SessionLearningFinalizer(
+                profileStore: speakerProfileStore,
+                embeddingHistoryStore: embeddingHistoryStore
+            )
+            finalizer.finalize(
+                mode: currentParameters.diarizationMode,
+                participantIds: currentParticipantIds,
+                segments: confirmedSegments,
+                speakerDisplayNames: speakerDisplayNames,
+                sessionProfiles: diarizer.exportSpeakerProfiles(),
+                detailedProfiles: diarizer.exportDetailedSpeakerProfiles()
+            )
         }
         currentParticipantIds = []
         NSLog("[ChunkedWhisperEngine] Streaming stopped. Total segments: \(confirmedSegments.count)")
@@ -277,81 +205,39 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         confirmedSegments[index].isUserCorrected = true
     }
 
-    /// Manual mode の post-hoc 学習を実行する。
-    /// Tracker 側は session 中、auto 判定の混入を避けるため centroid を控えめに扱い、
-    /// 手動訂正は信頼サンプルとして扱う。session 終了時にはその両方を集めて
-    /// store 側 profile centroid を緩やかに更新する。
-    ///
-    /// 前提: user がラベルを付け替えた segment は「現時点の正解」。ラベルを
-    /// 付け替えていない segment は auto 推定の結果にすぎず、ground truth とは
-    /// 見なさない（user が監視役ではないため）。高 confidence フィルタだけに
-    /// 頼り、修正 / 非修正で区別はしない。
-    internal func applyManualModePostHocLearning(
-        store: SpeakerProfileStore,
-        participantIds: Set<UUID>,
-        segments: [ConfirmedSegment]
-    ) {
-        for participantId in participantIds {
-            let samples = segments.filter { seg in
-                seg.speaker == participantId.uuidString
-                    && (seg.speakerConfidence ?? 0) >= Constants.Embedding.similarityThreshold
-                    && seg.speakerEmbedding != nil
-            }
-
-            guard samples.count >= Constants.Embedding.sessionLearningMinSamples else { continue }
-            guard let existing = store.profiles.first(where: { $0.id == participantId }),
-                  !existing.isLocked else { continue }
-
-            let embeddings = samples.compactMap { $0.speakerEmbedding }
-            guard let centroid = EmbeddingMath.weightedMean(embeddings.map { (embedding: $0, weight: 1.0) }) else { continue }
-
-            let alpha = min(
-                Constants.Embedding.sessionLearningAlphaMax,
-                Float(samples.count) / Float(Constants.Embedding.sessionLearningSamplesForMaxAlpha)
-            )
-            store.applyPostHocLearning(
-                speakerId: participantId,
-                sessionCentroid: centroid,
-                alpha: alpha
-            )
-            NSLog("[ChunkedWhisperEngine] Post-hoc learning for \(participantId): \(samples.count) samples, alpha=\(alpha)")
-        }
-    }
-
-    #if DEBUG
-    /// Test-only hook exposing applyManualModePostHocLearning without requiring the audio pipeline.
-    public func applyManualModePostHocLearningForTesting(
-        store: SpeakerProfileStore,
-        participantIds: Set<UUID>,
-        segments: [ConfirmedSegment]
-    ) {
-        applyManualModePostHocLearning(store: store, participantIds: participantIds, segments: segments)
-    }
-    #endif
-
     public func correctSpeakerAssignment(embedding: [Float], from oldId: UUID, to newId: UUID) {
         diarizer?.correctSpeakerAssignment(embedding: embedding, from: oldId, to: newId)
-        smootherLock.withLock {
-            if speakerSmoother.confirmedSpeakerId == oldId {
-                speakerSmoother.confirmSpeaker(newId)
-            }
-        }
-    }
-
-    public func syncViterbiConfirm(to newId: UUID) {
-        smootherLock.withLock {
+        if speakerSmoother.confirmedSpeakerId == oldId {
             speakerSmoother.confirmSpeaker(newId)
         }
     }
 
+    public func syncViterbiConfirm(to newId: UUID) {
+        speakerSmoother.confirmSpeaker(newId)
+    }
+
     public func mergeSpeakerProfiles(from sourceId: UUID, into targetId: UUID) {
         diarizer?.mergeSpeakerProfiles(from: sourceId, into: targetId)
-        smootherLock.withLock {
-            speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
-        }
+        speakerSmoother.remapSpeaker(from: sourceId, to: targetId)
     }
 
     // MARK: - Private
+
+    /// Streaming task から呼ばれる 1 バッファ分の取り込み。actor 隔離により
+    /// normalizer / accumulator / confirmedSegments へのアクセスが直列化される。
+    /// - Returns: false なら停止済みで、呼び出し側はループを抜ける。
+    private func ingest(
+        _ samples: [Float],
+        onStateChange: @escaping @Sendable (TranscriptionState) -> Void
+    ) async -> Bool {
+        guard _isStreaming else { return false }
+        let normalizedSamples = normalizer.normalize(samples)
+        audioRecorder?.appendSamples(normalizedSamples)
+        if let chunkResult = accumulator.appendBuffer(normalizedSamples) {
+            await processChunk(chunkResult, onStateChange: onStateChange)
+        }
+        return true
+    }
 
     private func processChunk(
         _ chunkResult: ChunkResult,
@@ -360,8 +246,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
         let chunk = chunkResult.samples
         let utteranceId = chunkResult.utteranceId
         let chunkDuration = Double(chunk.count) / Constants.Audio.sampleRate
-
-        NSLog("[ChunkedWhisperEngine] Processing chunk: \(String(format: "%.1f", chunkDuration))s, \(chunk.count) samples, precedingSilence=\(String(format: "%.1f", chunkResult.precedingSilenceDuration))s")
 
         LatencyInstrumentation.mark(.chunkDispatched, utteranceId: utteranceId)
 
@@ -372,9 +256,7 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             if let diarizer, diarizationActive {
                 let significantSilence = chunkResult.precedingSilenceDuration >= currentParameters.silenceCutoffDuration
                 if significantSilence {
-                    smootherLock.withLock {
-                        speakerSmoother.resetForSpeakerChange()
-                    }
+                    speakerSmoother.resetForSpeakerChange()
                 }
                 async let transcription = transcriber.transcribe(
                     audioArray: chunk,
@@ -399,23 +281,15 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                 rawSpeakerResult = nil
             }
             let filtered = segments.filter { segment in
-                if TranscriptionUtils.shouldFilterByMetadata(segment) {
-                    NSLog("[ChunkedWhisperEngine] Filtered (metadata): \(segment.text) [noSpeech=\(String(format: "%.2f", segment.noSpeechProb)), logprob=\(String(format: "%.2f", segment.avgLogprob))]")
-                    return false
-                }
-                if TranscriptionUtils.shouldFilterSegment(segment.text, language: currentLanguage) {
-                    NSLog("[ChunkedWhisperEngine] Filtered (text): \(segment.text)")
-                    return false
-                }
+                if TranscriptionUtils.shouldFilterByMetadata(segment) { return false }
+                if TranscriptionUtils.shouldFilterSegment(segment.text, language: currentLanguage) { return false }
                 return true
             }
 
             // Speaker label smoothing: require consecutive confirmation before accepting change
             let smoothedResult: SpeakerIdentification?
             if diarizationActive {
-                smoothedResult = smootherLock.withLock {
-                    speakerSmoother.process(rawSpeakerResult)
-                }
+                smoothedResult = speakerSmoother.process(rawSpeakerResult)
 
                 // Retroactively update pending segments with confidence (skip user-corrected)
                 if let result = smoothedResult, let startIdx = pendingSegmentStartIndex {
@@ -445,7 +319,6 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
                     speakerConfidence: smoothedResult?.confidence,
                     speakerEmbedding: rawSpeakerResult?.embedding
                 ))
-                NSLog("[ChunkedWhisperEngine] Confirmed: \(segment.text) (precedingSilence=\(String(format: "%.1f", precedingSilence))s, speaker=\(smoothedResult?.speakerId.uuidString ?? "pending"), conf=\(smoothedResult.map { String(format: "%.3f", $0.confidence) } ?? "n/a"))")
             }
 
             // Track where pending segments start
@@ -455,6 +328,12 @@ public final class ChunkedWhisperEngine: TranscriptionEngine {
             }
 
             LatencyInstrumentation.mark(.emitToUI, utteranceId: utteranceId)
+            NSLog("[ChunkedWhisperEngine] Chunk %.1fs: +%d segments (%d filtered), speaker=%@, precedingSilence=%.1fs",
+                  chunkDuration,
+                  filtered.count,
+                  segments.count - filtered.count,
+                  smoothedResult?.speakerId.uuidString ?? "pending",
+                  chunkResult.precedingSilenceDuration)
             onStateChange(TranscriptionState(
                 unconfirmedText: "",
                 isRecording: true,
