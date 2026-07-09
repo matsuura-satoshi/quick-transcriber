@@ -1,5 +1,10 @@
 # Resume Point — 2026-06-10 (post stickiness-diagnostic)
 
+> **SUPERSEDED (2026-07-09)** by `2026-07-09-calibration-dead-end.md`:
+> Priority 1 (per-profile calibration) and Priority 2's accuracy rationale
+> were both measured dead. See
+> `docs/benchmarks/2026-07-09-calibration-ceiling/report.md`.
+
 > Self-contained restart prompt for a fresh session. Supersedes
 > `2026-06-10-resume.md`. Full evidence:
 > `docs/benchmarks/2026-06-10-stickiness-diagnostic/report.md`.

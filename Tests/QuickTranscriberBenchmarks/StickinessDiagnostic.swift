@@ -24,6 +24,31 @@ struct ChunkDiagnostic: Codable {
     let inherited: Bool
     /// Cosine similarity of the raw query embedding to each registered centroid.
     let cosines: [String: Float]
+    /// The raw query embedding itself (nil when the diarizer returned none).
+    /// Recorded so offline analyses can simulate alternative matching schemes
+    /// (e.g. session-overlay) without replaying audio.
+    let embedding: [Float]?
+
+    init(
+        start: Double, end: Double,
+        rawName: String?, rawConfidence: Float?,
+        cached: Bool, significantSilence: Bool,
+        smoothedName: String?, finalName: String?, inherited: Bool,
+        cosines: [String: Float],
+        embedding: [Float]? = nil
+    ) {
+        self.start = start
+        self.end = end
+        self.rawName = rawName
+        self.rawConfidence = rawConfidence
+        self.cached = cached
+        self.significantSilence = significantSilence
+        self.smoothedName = smoothedName
+        self.finalName = finalName
+        self.inherited = inherited
+        self.cosines = cosines
+        self.embedding = embedding
+    }
 
     /// Copy with the final label resolved (used when a pending chunk is
     /// flushed to a later confirmation or inherits the trailing speaker).
@@ -33,7 +58,8 @@ struct ChunkDiagnostic: Codable {
             rawName: rawName, rawConfidence: rawConfidence,
             cached: cached, significantSilence: significantSilence,
             smoothedName: smoothedName, finalName: name, inherited: inherited,
-            cosines: cosines
+            cosines: cosines,
+            embedding: embedding
         )
     }
 }
