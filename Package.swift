@@ -38,6 +38,7 @@ let package = Package(
             dependencies: [
                 "QuickTranscriberLib",
                 .product(name: "WhisperKit", package: "WhisperKit"),
+                .product(name: "FluidAudio", package: "FluidAudio"),
             ],
             path: "Tests/QuickTranscriberBenchmarks",
             resources: [
