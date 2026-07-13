@@ -4,6 +4,11 @@
 > was fixed by weighted profile seeding (`profileSeedWeight = 10`) + correction-sample
 > gating (`>= similarityThreshold` vs target). See §"Fix results (2026-06-12)" at the
 > end of this report for the post-fix benchmark.
+>
+> **FOLLOW-UP (2026-07-09):** the "per-profile score calibration" direction recommended
+> below (§Recommended Priority-2 direction, item 2) was measured and is a dead end —
+> as is re-enrollment for accuracy purposes. See
+> `docs/benchmarks/2026-07-09-calibration-ceiling/report.md`.
 
 **Question (handoff Priority 1):** why do 上東/今村's chunks become 松浦 — is the raw
 diarizer already wrong (window-swallow), or does the smoothing layer flip a correct

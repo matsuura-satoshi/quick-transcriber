@@ -12,7 +12,15 @@ final class ManualModeStabilityTests: XCTestCase {
         return v
     }
 
-    func testCorrection_trustedLearningReducesFutureMisidentification() {
+    /// v2.4.86 correction-poisoning fix (PR #86): a manual correction whose
+    /// embedding is IMPLAUSIBLE for the target (cos < similarityThreshold) is
+    /// recorded as a UserCorrection but NOT learned into the target centroid.
+    /// The immediate label flip for such chunks is the Viterbi confirmSpeaker's
+    /// job; the tracker's job is to stay uncorrupted. (The pre-#86 expectation
+    /// — "enough corrections make ambiguous utterances identify as A" — is
+    /// exactly the centroid-fusion path the fix closes: 上東↔松浦 0.769→0.958,
+    /// 2026-06-10 diagnostic.)
+    func testCorrection_ambiguousSampleIsGatedWithoutCentroidPollution() {
         let tracker = EmbeddingBasedSpeakerTracker()
         let idA = UUID()
         let idB = UUID()
@@ -23,10 +31,17 @@ final class ManualModeStabilityTests: XCTestCase {
         tracker.suppressLearning = true
 
         let typicalA = makeEmbedding(dominant: 0)
-        // Utterance by speaker A that is acoustically ambiguous and initially
-        // gets misidentified as B. (dim 1 dominant, but with dim 0 component.)
+        // Utterance by speaker A that is acoustically ambiguous and gets
+        // misidentified as B. (dim 1 dominant, but with dim 0 component.)
         var ambiguousA = makeEmbedding(dominant: 1)
         ambiguousA[0] = 0.5
+
+        // Precondition for the gate: the ambiguous embedding is implausible
+        // for A (below the identify threshold), so corrections must not learn it.
+        XCTAssertLessThan(
+            EmbeddingMath.cosineSimilarity(ambiguousA, profileA),
+            Constants.Embedding.similarityThreshold,
+            "test premise: ambiguousA must be below-threshold vs A's centroid")
 
         var misidentifications = 0
         for i in 0..<10 {
@@ -41,20 +56,25 @@ final class ManualModeStabilityTests: XCTestCase {
         // Setup must actually exercise the correction path; otherwise the test is vacuous.
         XCTAssertGreaterThan(misidentifications, 0,
             "ambiguous embedding must trigger at least one misidentification for this test to be meaningful")
+        // The label is always trusted: every correction is recorded for export.
         XCTAssertEqual(tracker.exportUserCorrections().count, misidentifications)
 
-        // After trusted-learning from corrections, typical A embeddings still identify as A:
-        // the centroid shift is bounded and does not corrupt the core identity.
+        // The vector is not: all corrected samples were below threshold, so A's
+        // centroid must be exactly its seeded profile — no pollution.
+        let centroidA = tracker.exportProfiles().first { $0.speakerId == idA }!.embedding
+        XCTAssertEqual(centroidA, profileA,
+            "gated corrections must leave the target centroid untouched")
+
+        // Typical A remains correctly identified.
         for _ in 0..<10 {
             XCTAssertEqual(tracker.identify(embedding: typicalA).speakerId, idA,
-                "typical A must remain correctly identified even after centroid updates from manual corrections")
+                "typical A must remain correctly identified after gated corrections")
         }
 
-        // And the "learning" property: a later ambiguous utterance from A is now less likely
-        // to be misidentified — the centroid has moved toward the ambiguous sample.
-        let finalAmbiguousResult = tracker.identify(embedding: ambiguousA).speakerId
-        XCTAssertEqual(finalAmbiguousResult, idA,
-            "after enough trusted corrections, ambiguous A utterances should also identify as A")
+        // And the ambiguous utterance still identifies as B — the tracker does
+        // not absorb implausible samples no matter how often they are corrected.
+        XCTAssertEqual(tracker.identify(embedding: ambiguousA).speakerId, idB,
+            "an implausible sample stays gated: no amount of corrections may fuse the centroids")
     }
 
     func testAutoMode_correctionCentroidShiftIsLimited() {

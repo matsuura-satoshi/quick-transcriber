@@ -235,7 +235,8 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                     rawName: rawName, rawConfidence: raw?.confidence,
                     cached: cached, significantSilence: significantSilence,
                     smoothedName: name, finalName: name, inherited: false,
-                    cosines: cosines
+                    cosines: cosines,
+                    embedding: raw?.embedding
                 ))
 
                 // Oracle correction: simulation of the production reassignSegment
@@ -288,7 +289,8 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                     rawName: rawName, rawConfidence: raw?.confidence,
                     cached: cached, significantSilence: significantSilence,
                     smoothedName: nil, finalName: nil, inherited: false,
-                    cosines: cosines
+                    cosines: cosines,
+                    embedding: raw?.embedding
                 ))
                 pendingIndices.append(diagnostics.count - 1)
             }
@@ -408,6 +410,7 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
         let cosPred: Float?               // cos(query, predicted centroid)
         let margin: Float?                // cosPred - cosGT (>0: pred genuinely closer)
         let cosines: [String: Float]      // cos(query, centroid) for every registered profile
+        let embedding: [Float]?           // raw query embedding (offline what-if simulations)
     }
 
     struct StickinessArtifact: Codable {
@@ -444,7 +447,8 @@ final class ConfusionPairAnalysisTests: DiarizationBenchmarkTestBase {
                 significantSilence: chunk.significantSilence, inherited: chunk.inherited,
                 cosGT: cosGT, cosPred: cosPred,
                 margin: (cosGT != nil && cosPred != nil) ? cosPred! - cosGT! : nil,
-                cosines: chunk.cosines
+                cosines: chunk.cosines,
+                embedding: chunk.embedding
             ))
             if let cause {
                 splitByCause[cause, default: 0] += 1
