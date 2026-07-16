@@ -1,5 +1,9 @@
 # Resume Point — 2026-07-09 (calibration ceiling 診断、精度改善 3 ルート無効化)
 
+> **SUPERSEDED (2026-07-14)** by `2026-07-14-separability-verdict.md`:
+> 上流切り分け診断が完了し、犯人は Zoom 遠端音響と確定（モデル健全）。
+> See `docs/benchmarks/2026-07-14-separability/report.md`.
+
 > 話者識別精度作業の再開用ハンドオフ。`2026-06-10-post-diagnostic.md` を supersede する。
 > 全証拠: `docs/benchmarks/2026-07-09-calibration-ceiling/report.md`。
 
